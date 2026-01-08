@@ -1,0 +1,336 @@
+"""
+API для работы с подарками (бронирование из вишлиста)
+"""
+from datetime import datetime
+from uuid import UUID
+
+from fastapi import APIRouter, Depends, HTTPException, status
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
+
+from app.database import get_db
+from app.models.user import User
+from app.models.wishlist import Wishlist, WishlistItem
+from app.models.gift_booking import GiftBooking, GiftStatus
+from app.api.auth import get_current_user, get_current_user_optional
+from app.schemas.wishlist import (
+    GiftBookingCreate,
+    GiftBookingResponse,
+    GiftBookingOwnerResponse,
+)
+from app.schemas.record import RecordBrief
+from app.utils.security import generate_random_token
+
+router = APIRouter()
+
+
+@router.post("/book", response_model=GiftBookingResponse, status_code=status.HTTP_201_CREATED)
+async def book_gift(
+    data: GiftBookingCreate,
+    current_user: User | None = Depends(get_current_user_optional),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Бронирование подарка из вишлиста.
+    Не требует авторизации - может быть выполнено любым человеком по ссылке.
+    """
+    # Получаем элемент вишлиста
+    result = await db.execute(
+        select(WishlistItem)
+        .where(WishlistItem.id == data.wishlist_item_id)
+        .options(
+            selectinload(WishlistItem.wishlist),
+            selectinload(WishlistItem.record),
+            selectinload(WishlistItem.gift_booking)
+        )
+    )
+    item = result.scalar_one_or_none()
+    
+    if not item:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Элемент вишлиста не найден"
+        )
+    
+    # Проверяем, что вишлист публичный
+    if not item.wishlist.is_public:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Вишлист недоступен"
+        )
+    
+    # Проверяем, что ещё не забронировано
+    if item.gift_booking:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Этот подарок уже забронирован"
+        )
+    
+    # Проверяем, что не куплено
+    if item.is_purchased:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Эта пластинка уже куплена"
+        )
+    
+    # Создаём бронирование
+    cancel_token = generate_random_token(24)
+    
+    booking = GiftBooking(
+        wishlist_item_id=item.id,
+        booked_by_user_id=current_user.id if current_user else None,
+        gifter_name=data.gifter_name,
+        gifter_email=data.gifter_email,
+        gifter_phone=data.gifter_phone,
+        gifter_message=data.gifter_message,
+        status=GiftStatus.BOOKED,
+        cancel_token=cancel_token
+    )
+    db.add(booking)
+    await db.commit()
+    await db.refresh(booking)
+    
+    # TODO: Отправить уведомление владельцу вишлиста
+    
+    return GiftBookingResponse(
+        id=booking.id,
+        wishlist_item_id=booking.wishlist_item_id,
+        gifter_name=booking.gifter_name,
+        gifter_email=booking.gifter_email,
+        gifter_phone=booking.gifter_phone,
+        gifter_message=booking.gifter_message,
+        status=booking.status,
+        cancel_token=booking.cancel_token,
+        booked_at=booking.booked_at,
+        record=RecordBrief(
+            id=item.record.id,
+            title=item.record.title,
+            artist=item.record.artist,
+            year=item.record.year,
+            cover_image_url=item.record.cover_image_url,
+            thumb_image_url=item.record.thumb_image_url,
+            estimated_price_median=item.record.estimated_price_median,
+            price_currency=item.record.price_currency
+        )
+    )
+
+
+@router.get("/{booking_id}", response_model=GiftBookingResponse)
+async def get_booking(
+    booking_id: UUID,
+    db: AsyncSession = Depends(get_db)
+):
+    """Получение информации о бронировании"""
+    result = await db.execute(
+        select(GiftBooking)
+        .where(GiftBooking.id == booking_id)
+        .options(
+            selectinload(GiftBooking.wishlist_item)
+            .selectinload(WishlistItem.record)
+        )
+    )
+    booking = result.scalar_one_or_none()
+    
+    if not booking:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Бронирование не найдено"
+        )
+    
+    return GiftBookingResponse(
+        id=booking.id,
+        wishlist_item_id=booking.wishlist_item_id,
+        gifter_name=booking.gifter_name,
+        gifter_email=booking.gifter_email,
+        gifter_phone=booking.gifter_phone,
+        gifter_message=booking.gifter_message,
+        status=booking.status,
+        cancel_token="",  # Не показываем токен при просмотре
+        booked_at=booking.booked_at,
+        record=RecordBrief(
+            id=booking.wishlist_item.record.id,
+            title=booking.wishlist_item.record.title,
+            artist=booking.wishlist_item.record.artist,
+            year=booking.wishlist_item.record.year,
+            cover_image_url=booking.wishlist_item.record.cover_image_url,
+            thumb_image_url=booking.wishlist_item.record.thumb_image_url,
+            estimated_price_median=booking.wishlist_item.record.estimated_price_median,
+            price_currency=booking.wishlist_item.record.price_currency
+        )
+    )
+
+
+@router.put("/{booking_id}/cancel")
+async def cancel_booking(
+    booking_id: UUID,
+    cancel_token: str,
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Отмена бронирования.
+    Требуется cancel_token, который был выдан при бронировании.
+    """
+    result = await db.execute(
+        select(GiftBooking).where(GiftBooking.id == booking_id)
+    )
+    booking = result.scalar_one_or_none()
+    
+    if not booking:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Бронирование не найдено"
+        )
+    
+    if booking.cancel_token != cancel_token:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Неверный токен отмены"
+        )
+    
+    if booking.status == GiftStatus.COMPLETED:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Нельзя отменить завершённое бронирование"
+        )
+    
+    if booking.status == GiftStatus.CANCELLED:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Бронирование уже отменено"
+        )
+    
+    booking.status = GiftStatus.CANCELLED
+    booking.cancelled_at = datetime.utcnow()
+    await db.commit()
+    
+    return {"status": "cancelled"}
+
+
+@router.get("/my-bookings/by-email")
+async def get_my_bookings_by_email(
+    email: str,
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Получение списка бронирований по email.
+    Для дарителей без регистрации.
+    """
+    result = await db.execute(
+        select(GiftBooking)
+        .where(GiftBooking.gifter_email == email)
+        .options(
+            selectinload(GiftBooking.wishlist_item)
+            .selectinload(WishlistItem.record),
+            selectinload(GiftBooking.wishlist_item)
+            .selectinload(WishlistItem.wishlist)
+            .selectinload(Wishlist.user)
+        )
+        .order_by(GiftBooking.booked_at.desc())
+    )
+    bookings = result.scalars().all()
+    
+    return [{
+        "id": b.id,
+        "record": {
+            "title": b.wishlist_item.record.title,
+            "artist": b.wishlist_item.record.artist,
+            "cover_image_url": b.wishlist_item.record.cover_image_url,
+        },
+        "for_user": b.wishlist_item.wishlist.user.display_name or b.wishlist_item.wishlist.user.username,
+        "status": b.status,
+        "booked_at": b.booked_at,
+        "cancel_token": b.cancel_token
+    } for b in bookings]
+
+
+@router.get("/me/received", response_model=list[GiftBookingOwnerResponse])
+async def get_received_bookings(
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """Получение списка бронирований для владельца вишлиста"""
+    # Получаем вишлист пользователя
+    result = await db.execute(
+        select(Wishlist).where(Wishlist.user_id == current_user.id)
+    )
+    wishlist = result.scalar_one_or_none()
+    
+    if not wishlist:
+        return []
+    
+    # Получаем все бронирования
+    result = await db.execute(
+        select(GiftBooking)
+        .join(WishlistItem)
+        .where(WishlistItem.wishlist_id == wishlist.id)
+        .options(
+            selectinload(GiftBooking.wishlist_item)
+            .selectinload(WishlistItem.record)
+        )
+        .order_by(GiftBooking.booked_at.desc())
+    )
+    bookings = result.scalars().all()
+    
+    return [GiftBookingOwnerResponse(
+        id=b.id,
+        wishlist_item_id=b.wishlist_item_id,
+        gifter_name=b.gifter_name,
+        gifter_email=b.gifter_email,
+        gifter_phone=b.gifter_phone,
+        gifter_message=b.gifter_message,
+        status=b.status,
+        booked_at=b.booked_at,
+        completed_at=b.completed_at,
+        cancelled_at=b.cancelled_at,
+        record=RecordBrief(
+            id=b.wishlist_item.record.id,
+            title=b.wishlist_item.record.title,
+            artist=b.wishlist_item.record.artist,
+            year=b.wishlist_item.record.year,
+            cover_image_url=b.wishlist_item.record.cover_image_url,
+            thumb_image_url=b.wishlist_item.record.thumb_image_url,
+            estimated_price_median=b.wishlist_item.record.estimated_price_median,
+            price_currency=b.wishlist_item.record.price_currency
+        )
+    ) for b in bookings]
+
+
+@router.put("/me/received/{booking_id}/complete")
+async def complete_booking(
+    booking_id: UUID,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """Отметка подарка как полученного"""
+    result = await db.execute(
+        select(GiftBooking)
+        .where(GiftBooking.id == booking_id)
+        .options(
+            selectinload(GiftBooking.wishlist_item)
+            .selectinload(WishlistItem.wishlist)
+        )
+    )
+    booking = result.scalar_one_or_none()
+    
+    if not booking:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Бронирование не найдено"
+        )
+    
+    if booking.wishlist_item.wishlist.user_id != current_user.id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Нет доступа"
+        )
+    
+    booking.status = GiftStatus.COMPLETED
+    booking.completed_at = datetime.utcnow()
+    booking.wishlist_item.is_purchased = True
+    booking.wishlist_item.purchased_at = datetime.utcnow()
+    
+    await db.commit()
+    
+    return {"status": "completed"}
+

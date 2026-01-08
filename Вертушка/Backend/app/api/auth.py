@@ -1,0 +1,297 @@
+"""
+API для аутентификации
+"""
+from datetime import datetime
+from uuid import UUID
+
+from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.database import get_db
+from app.models.user import User
+from app.models.wishlist import Wishlist
+from app.models.collection import Collection
+from app.schemas.user import UserCreate, UserLogin, UserResponse
+from app.schemas.auth import Token, RefreshToken, AppleSignIn, GoogleSignIn
+from app.utils.security import (
+    hash_password,
+    verify_password,
+    create_access_token,
+    create_refresh_token,
+    verify_token_type,
+)
+
+router = APIRouter()
+security = HTTPBearer()
+
+
+async def get_current_user(
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+    db: AsyncSession = Depends(get_db)
+) -> User:
+    """Dependency для получения текущего пользователя"""
+    token = credentials.credentials
+    payload = verify_token_type(token, "access")
+    
+    if not payload:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Недействительный токен авторизации",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    
+    user_id = UUID(payload["sub"])
+    result = await db.execute(select(User).where(User.id == user_id))
+    user = result.scalar_one_or_none()
+    
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Пользователь не найден",
+        )
+    
+    if not user.is_active:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Аккаунт деактивирован",
+        )
+    
+    return user
+
+
+async def get_current_user_optional(
+    credentials: HTTPAuthorizationCredentials | None = Depends(
+        HTTPBearer(auto_error=False)
+    ),
+    db: AsyncSession = Depends(get_db)
+) -> User | None:
+    """Опциональная аутентификация"""
+    if not credentials:
+        return None
+    
+    try:
+        return await get_current_user(credentials, db)
+    except HTTPException:
+        return None
+
+
+@router.post("/register", response_model=Token, status_code=status.HTTP_201_CREATED)
+async def register(
+    user_data: UserCreate,
+    db: AsyncSession = Depends(get_db)
+):
+    """Регистрация нового пользователя"""
+    # Проверка уникальности email
+    result = await db.execute(select(User).where(User.email == user_data.email))
+    if result.scalar_one_or_none():
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Пользователь с таким email уже существует"
+        )
+    
+    # Проверка уникальности username
+    result = await db.execute(select(User).where(User.username == user_data.username))
+    if result.scalar_one_or_none():
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Имя пользователя уже занято"
+        )
+    
+    # Создание пользователя
+    user = User(
+        email=user_data.email,
+        username=user_data.username,
+        password_hash=hash_password(user_data.password),
+        display_name=user_data.display_name or user_data.username,
+    )
+    db.add(user)
+    await db.flush()
+    
+    # Создание вишлиста для пользователя
+    wishlist = Wishlist(user_id=user.id)
+    db.add(wishlist)
+    
+    # Создание дефолтной коллекции
+    collection = Collection(
+        user_id=user.id,
+        name="Моя коллекция",
+        description="Основная коллекция"
+    )
+    db.add(collection)
+    
+    await db.commit()
+    
+    # Создание токенов
+    access_token = create_access_token(user.id)
+    refresh_token = create_refresh_token(user.id)
+    
+    return Token(
+        access_token=access_token,
+        refresh_token=refresh_token
+    )
+
+
+@router.post("/login", response_model=Token)
+async def login(
+    credentials: UserLogin,
+    db: AsyncSession = Depends(get_db)
+):
+    """Вход в систему"""
+    result = await db.execute(select(User).where(User.email == credentials.email))
+    user = result.scalar_one_or_none()
+    
+    if not user or not user.password_hash:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Неверный email или пароль"
+        )
+    
+    if not verify_password(credentials.password, user.password_hash):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Неверный email или пароль"
+        )
+    
+    if not user.is_active:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Аккаунт деактивирован"
+        )
+    
+    # Обновление времени последнего входа
+    user.last_login_at = datetime.utcnow()
+    await db.commit()
+    
+    access_token = create_access_token(user.id)
+    refresh_token = create_refresh_token(user.id)
+    
+    return Token(
+        access_token=access_token,
+        refresh_token=refresh_token
+    )
+
+
+@router.post("/refresh", response_model=Token)
+async def refresh_token(
+    token_data: RefreshToken,
+    db: AsyncSession = Depends(get_db)
+):
+    """Обновление токенов"""
+    payload = verify_token_type(token_data.refresh_token, "refresh")
+    
+    if not payload:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Недействительный refresh токен"
+        )
+    
+    user_id = UUID(payload["sub"])
+    result = await db.execute(select(User).where(User.id == user_id))
+    user = result.scalar_one_or_none()
+    
+    if not user or not user.is_active:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Пользователь не найден или деактивирован"
+        )
+    
+    access_token = create_access_token(user.id)
+    new_refresh_token = create_refresh_token(user.id)
+    
+    return Token(
+        access_token=access_token,
+        refresh_token=new_refresh_token
+    )
+
+
+@router.get("/me", response_model=UserResponse)
+async def get_me(current_user: User = Depends(get_current_user)):
+    """Получение информации о текущем пользователе"""
+    return current_user
+
+
+@router.post("/apple", response_model=Token)
+async def apple_sign_in(
+    data: AppleSignIn,
+    db: AsyncSession = Depends(get_db)
+):
+    """Вход через Apple Sign In"""
+    # TODO: Верификация identity_token через Apple
+    # Пока заглушка для структуры
+    
+    # Поиск пользователя по Apple ID
+    result = await db.execute(
+        select(User).where(User.apple_id == data.user_identifier)
+    )
+    user = result.scalar_one_or_none()
+    
+    if not user:
+        # Создание нового пользователя
+        if not data.email:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Email обязателен для регистрации"
+            )
+        
+        # Генерация уникального username
+        base_username = data.email.split("@")[0]
+        username = base_username
+        counter = 1
+        while True:
+            result = await db.execute(select(User).where(User.username == username))
+            if not result.scalar_one_or_none():
+                break
+            username = f"{base_username}{counter}"
+            counter += 1
+        
+        user = User(
+            email=data.email,
+            username=username,
+            apple_id=data.user_identifier,
+            display_name=data.full_name or username,
+            is_verified=True,  # Apple верифицирует email
+        )
+        db.add(user)
+        await db.flush()
+        
+        # Создание вишлиста
+        wishlist = Wishlist(user_id=user.id)
+        db.add(wishlist)
+        
+        # Создание коллекции
+        collection = Collection(
+            user_id=user.id,
+            name="Моя коллекция"
+        )
+        db.add(collection)
+        
+        await db.commit()
+    
+    user.last_login_at = datetime.utcnow()
+    await db.commit()
+    
+    access_token = create_access_token(user.id)
+    refresh_token = create_refresh_token(user.id)
+    
+    return Token(
+        access_token=access_token,
+        refresh_token=refresh_token
+    )
+
+
+@router.post("/google", response_model=Token)
+async def google_sign_in(
+    data: GoogleSignIn,
+    db: AsyncSession = Depends(get_db)
+):
+    """Вход через Google Sign In"""
+    # TODO: Верификация id_token через Google
+    # Пока заглушка для структуры
+    
+    raise HTTPException(
+        status_code=status.HTTP_501_NOT_IMPLEMENTED,
+        detail="Google Sign In ещё не реализован"
+    )
+

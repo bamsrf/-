@@ -1,0 +1,541 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Вишлист {{ owner_name }} - Вертушка</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg-primary: #0f0f0f;
+            --bg-secondary: #1a1a1a;
+            --bg-card: #252525;
+            --text-primary: #ffffff;
+            --text-secondary: #a0a0a0;
+            --accent: #e85d04;
+            --accent-hover: #f77f00;
+            --success: #06d6a0;
+            --warning: #ffd166;
+            --border: #333333;
+            --radius: 12px;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Montserrat', sans-serif;
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            min-height: 100vh;
+            line-height: 1.6;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 2rem 1rem;
+        }
+
+        /* Header */
+        .wishlist-header {
+            text-align: center;
+            margin-bottom: 3rem;
+            padding: 2rem;
+            background: linear-gradient(135deg, var(--bg-secondary) 0%, var(--bg-card) 100%);
+            border-radius: var(--radius);
+            border: 1px solid var(--border);
+        }
+
+        .owner-avatar {
+            width: 80px;
+            height: 80px;
+            border-radius: 50%;
+            margin-bottom: 1rem;
+            border: 3px solid var(--accent);
+            object-fit: cover;
+        }
+
+        .owner-name {
+            font-size: 1.5rem;
+            font-weight: 700;
+            margin-bottom: 0.5rem;
+        }
+
+        .wishlist-title {
+            font-size: 1rem;
+            color: var(--text-secondary);
+            margin-bottom: 1rem;
+        }
+
+        .custom-message {
+            font-style: italic;
+            color: var(--text-secondary);
+            max-width: 600px;
+            margin: 0 auto;
+        }
+
+        /* Search */
+        .search-container {
+            margin-bottom: 2rem;
+        }
+
+        .search-input {
+            width: 100%;
+            padding: 1rem 1.5rem;
+            font-size: 1rem;
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            background: var(--bg-secondary);
+            color: var(--text-primary);
+            font-family: inherit;
+        }
+
+        .search-input:focus {
+            outline: none;
+            border-color: var(--accent);
+        }
+
+        .search-input::placeholder {
+            color: var(--text-secondary);
+        }
+
+        /* Records Grid */
+        .records-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+            gap: 1.5rem;
+        }
+
+        .record-card {
+            background: var(--bg-card);
+            border-radius: var(--radius);
+            overflow: hidden;
+            border: 1px solid var(--border);
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+
+        .record-card:hover {
+            transform: translateY(-4px);
+            box-shadow: 0 12px 24px rgba(0, 0, 0, 0.4);
+        }
+
+        .record-card.booked {
+            opacity: 0.7;
+        }
+
+        .record-cover {
+            aspect-ratio: 1;
+            width: 100%;
+            object-fit: cover;
+            background: var(--bg-secondary);
+        }
+
+        .record-info {
+            padding: 1.25rem;
+        }
+
+        .record-title {
+            font-size: 1rem;
+            font-weight: 600;
+            margin-bottom: 0.25rem;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .record-artist {
+            font-size: 0.875rem;
+            color: var(--text-secondary);
+            margin-bottom: 0.5rem;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .record-meta {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 1rem;
+        }
+
+        .record-year {
+            font-size: 0.8rem;
+            color: var(--text-secondary);
+        }
+
+        .record-price {
+            font-size: 0.9rem;
+            font-weight: 600;
+            color: var(--accent);
+        }
+
+        .booked-badge {
+            display: inline-block;
+            padding: 0.25rem 0.75rem;
+            background: var(--warning);
+            color: var(--bg-primary);
+            font-size: 0.75rem;
+            font-weight: 600;
+            border-radius: 100px;
+            margin-bottom: 0.75rem;
+        }
+
+        .book-btn {
+            width: 100%;
+            padding: 0.875rem;
+            background: var(--accent);
+            color: white;
+            border: none;
+            border-radius: 8px;
+            font-size: 0.9rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: background 0.2s;
+            font-family: inherit;
+        }
+
+        .book-btn:hover {
+            background: var(--accent-hover);
+        }
+
+        .book-btn:disabled {
+            background: var(--border);
+            cursor: not-allowed;
+        }
+
+        /* Modal */
+        .modal-overlay {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 0, 0, 0.8);
+            z-index: 1000;
+            align-items: center;
+            justify-content: center;
+            padding: 1rem;
+        }
+
+        .modal-overlay.active {
+            display: flex;
+        }
+
+        .modal {
+            background: var(--bg-card);
+            border-radius: var(--radius);
+            width: 100%;
+            max-width: 480px;
+            padding: 2rem;
+        }
+
+        .modal-title {
+            font-size: 1.25rem;
+            font-weight: 700;
+            margin-bottom: 1.5rem;
+        }
+
+        .form-group {
+            margin-bottom: 1rem;
+        }
+
+        .form-label {
+            display: block;
+            margin-bottom: 0.5rem;
+            font-size: 0.875rem;
+            color: var(--text-secondary);
+        }
+
+        .form-input {
+            width: 100%;
+            padding: 0.875rem 1rem;
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            background: var(--bg-secondary);
+            color: var(--text-primary);
+            font-size: 1rem;
+            font-family: inherit;
+        }
+
+        .form-input:focus {
+            outline: none;
+            border-color: var(--accent);
+        }
+
+        .form-textarea {
+            min-height: 100px;
+            resize: vertical;
+        }
+
+        .modal-actions {
+            display: flex;
+            gap: 1rem;
+            margin-top: 1.5rem;
+        }
+
+        .btn-secondary {
+            flex: 1;
+            padding: 0.875rem;
+            background: transparent;
+            border: 1px solid var(--border);
+            color: var(--text-primary);
+            border-radius: 8px;
+            font-size: 0.9rem;
+            font-weight: 600;
+            cursor: pointer;
+            font-family: inherit;
+        }
+
+        .btn-primary {
+            flex: 1;
+            padding: 0.875rem;
+            background: var(--accent);
+            border: none;
+            color: white;
+            border-radius: 8px;
+            font-size: 0.9rem;
+            font-weight: 600;
+            cursor: pointer;
+            font-family: inherit;
+        }
+
+        /* Empty State */
+        .empty-state {
+            text-align: center;
+            padding: 4rem 2rem;
+            color: var(--text-secondary);
+        }
+
+        .empty-state-icon {
+            font-size: 4rem;
+            margin-bottom: 1rem;
+        }
+
+        /* Footer */
+        .footer {
+            text-align: center;
+            padding: 3rem 1rem;
+            color: var(--text-secondary);
+            font-size: 0.875rem;
+        }
+
+        .footer a {
+            color: var(--accent);
+            text-decoration: none;
+        }
+
+        @media (max-width: 640px) {
+            .records-grid {
+                grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+                gap: 1rem;
+            }
+
+            .record-info {
+                padding: 1rem;
+            }
+
+            .container {
+                padding: 1rem;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header class="wishlist-header">
+            {% if owner_avatar %}
+            <img src="{{ owner_avatar }}" alt="{{ owner_name }}" class="owner-avatar">
+            {% endif %}
+            <h1 class="owner-name">{{ owner_name }}</h1>
+            <p class="wishlist-title">Вишлист виниловых пластинок</p>
+            {% if custom_message %}
+            <p class="custom-message">"{{ custom_message }}"</p>
+            {% endif %}
+        </header>
+
+        <div class="search-container">
+            <input 
+                type="text" 
+                class="search-input" 
+                placeholder="Поиск по названию или артисту..."
+                id="searchInput"
+            >
+        </div>
+
+        {% if items %}
+        <div class="records-grid" id="recordsGrid">
+            {% for item in items %}
+            <div class="record-card {% if item.is_booked %}booked{% endif %}" data-item-id="{{ item.id }}">
+                <img 
+                    src="{{ item.record.cover_image_url or '/static/placeholder.jpg' }}" 
+                    alt="{{ item.record.title }}"
+                    class="record-cover"
+                    loading="lazy"
+                >
+                <div class="record-info">
+                    {% if item.is_booked %}
+                    <span class="booked-badge">
+                        {% if item.gifter_name %}
+                        Забронировал {{ item.gifter_name }}
+                        {% else %}
+                        Забронировано
+                        {% endif %}
+                    </span>
+                    {% endif %}
+                    <h3 class="record-title">{{ item.record.title }}</h3>
+                    <p class="record-artist">{{ item.record.artist }}</p>
+                    <div class="record-meta">
+                        <span class="record-year">{{ item.record.year or '—' }}</span>
+                        {% if item.record.estimated_price_median %}
+                        <span class="record-price">~${{ item.record.estimated_price_median }}</span>
+                        {% endif %}
+                    </div>
+                    <button 
+                        class="book-btn" 
+                        {% if item.is_booked %}disabled{% endif %}
+                        onclick="openBookingModal('{{ item.id }}', '{{ item.record.title }}', '{{ item.record.artist }}')"
+                    >
+                        {% if item.is_booked %}
+                        Уже забронировано
+                        {% else %}
+                        Забронировать как подарок
+                        {% endif %}
+                    </button>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+        {% else %}
+        <div class="empty-state">
+            <div class="empty-state-icon">🎵</div>
+            <p>Вишлист пока пуст</p>
+        </div>
+        {% endif %}
+
+        <footer class="footer">
+            <p>Создано с помощью <a href="#">Вертушка</a></p>
+        </footer>
+    </div>
+
+    <!-- Booking Modal -->
+    <div class="modal-overlay" id="bookingModal">
+        <div class="modal">
+            <h2 class="modal-title">Забронировать подарок</h2>
+            <p id="bookingRecordInfo" style="margin-bottom: 1.5rem; color: var(--text-secondary);"></p>
+            
+            <form id="bookingForm">
+                <input type="hidden" id="itemId" name="wishlist_item_id">
+                
+                <div class="form-group">
+                    <label class="form-label">Ваше имя *</label>
+                    <input type="text" class="form-input" name="gifter_name" required>
+                </div>
+                
+                <div class="form-group">
+                    <label class="form-label">Email *</label>
+                    <input type="email" class="form-input" name="gifter_email" required>
+                </div>
+                
+                <div class="form-group">
+                    <label class="form-label">Телефон (необязательно)</label>
+                    <input type="tel" class="form-input" name="gifter_phone">
+                </div>
+                
+                <div class="form-group">
+                    <label class="form-label">Сообщение (необязательно)</label>
+                    <textarea class="form-input form-textarea" name="gifter_message" placeholder="Добавьте поздравление или пожелание..."></textarea>
+                </div>
+                
+                <div class="modal-actions">
+                    <button type="button" class="btn-secondary" onclick="closeBookingModal()">Отмена</button>
+                    <button type="submit" class="btn-primary">Забронировать</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <script>
+        // Search functionality
+        const searchInput = document.getElementById('searchInput');
+        const recordsGrid = document.getElementById('recordsGrid');
+        
+        if (searchInput && recordsGrid) {
+            searchInput.addEventListener('input', function(e) {
+                const query = e.target.value.toLowerCase();
+                const cards = recordsGrid.querySelectorAll('.record-card');
+                
+                cards.forEach(card => {
+                    const title = card.querySelector('.record-title').textContent.toLowerCase();
+                    const artist = card.querySelector('.record-artist').textContent.toLowerCase();
+                    
+                    if (title.includes(query) || artist.includes(query)) {
+                        card.style.display = '';
+                    } else {
+                        card.style.display = 'none';
+                    }
+                });
+            });
+        }
+
+        // Modal functionality
+        const bookingModal = document.getElementById('bookingModal');
+        const bookingForm = document.getElementById('bookingForm');
+        const bookingRecordInfo = document.getElementById('bookingRecordInfo');
+        const itemIdInput = document.getElementById('itemId');
+
+        function openBookingModal(itemId, title, artist) {
+            itemIdInput.value = itemId;
+            bookingRecordInfo.textContent = `${artist} — ${title}`;
+            bookingModal.classList.add('active');
+        }
+
+        function closeBookingModal() {
+            bookingModal.classList.remove('active');
+            bookingForm.reset();
+        }
+
+        bookingModal.addEventListener('click', function(e) {
+            if (e.target === bookingModal) {
+                closeBookingModal();
+            }
+        });
+
+        bookingForm.addEventListener('submit', async function(e) {
+            e.preventDefault();
+            
+            const formData = new FormData(bookingForm);
+            const data = Object.fromEntries(formData.entries());
+            
+            try {
+                const response = await fetch('/api/gifts/book', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify(data),
+                });
+                
+                if (response.ok) {
+                    alert('Подарок успешно забронирован! Спасибо!');
+                    closeBookingModal();
+                    location.reload();
+                } else {
+                    const error = await response.json();
+                    alert('Ошибка: ' + (error.detail || 'Не удалось забронировать'));
+                }
+            } catch (error) {
+                alert('Ошибка подключения. Попробуйте позже.');
+            }
+        });
+    </script>
+</body>
+</html>
+

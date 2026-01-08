@@ -1,4 +1,7 @@
+# macOS
 .DS_Store
+
+# Python
 __pycache__/
 *.pyc
 *.pyo
@@ -10,4 +13,33 @@ venv/
 *.egg-info/
 dist/
 build/
+*.egg
+.eggs/
 
+# Environment variables (ВАЖНО! Тут могут быть пароли)
+.env
+.env.local
+.env.*.local
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Database
+*.db
+*.sqlite
+*.sqlite3
+
+# Logs
+*.log
+logs/
+
+# Test coverage
+.coverage
+htmlcov/
+.pytest_cache/
+
+# Jupyter
+.ipynb_checkpoints/
