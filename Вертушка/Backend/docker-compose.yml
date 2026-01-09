@@ -4,12 +4,12 @@ services:
   # База данных PostgreSQL
   db:
     image: postgres:16-alpine
-    container_name: recordscanner_db
+    container_name: vertushka_db
     restart: unless-stopped
     environment:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
-      POSTGRES_DB: recordscanner
+      POSTGRES_DB: vertushka
     volumes:
       - postgres_data:/var/lib/postgresql/data
     ports:
@@ -25,11 +25,12 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: recordscanner_api
+    container_name: vertushka_api
     restart: unless-stopped
+    env_file:
+      - .env
     environment:
-      - DATABASE_URL=postgresql+asyncpg://postgres:postgres@db:5432/recordscanner
-      - DEBUG=true
+      - DATABASE_URL=postgresql+asyncpg://postgres:postgres@db:5432/vertushka
     ports:
       - "8000:8000"
     depends_on:
