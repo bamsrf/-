@@ -21,7 +21,7 @@ import {
 // API сервер
 const API_BASE_URL = __DEV__ 
   ? 'http://192.168.1.66:8000/api'  // Локальный IP для тестирования
-  : 'https://your-production-url.com/api';
+  : 'https://api.vertushka.ru/api'; // Продакшен сервер
 
 const TOKEN_KEY = 'auth_token';
 
