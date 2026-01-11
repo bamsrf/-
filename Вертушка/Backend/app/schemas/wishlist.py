@@ -11,7 +11,8 @@ from app.models.gift_booking import GiftStatus
 
 class WishlistItemCreate(BaseModel):
     """Схема для добавления пластинки в вишлист"""
-    record_id: UUID
+    discogs_id: str | None = Field(None, description="Discogs ID пластинки")
+    record_id: UUID | None = Field(None, description="UUID записи в БД (для обратной совместимости)")
     priority: int = Field(0, ge=0, le=10)
     notes: str | None = Field(None, max_length=1000)
 

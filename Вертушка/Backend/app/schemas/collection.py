@@ -41,7 +41,8 @@ class CollectionResponse(BaseModel):
 
 class CollectionItemCreate(BaseModel):
     """Схема для добавления пластинки в коллекцию"""
-    record_id: UUID
+    discogs_id: str | None = Field(None, description="Discogs ID пластинки")
+    record_id: UUID | None = Field(None, description="UUID записи в БД (для обратной совместимости)")
     condition: str | None = Field(None, max_length=50)
     sleeve_condition: str | None = Field(None, max_length=50)
     notes: str | None = Field(None, max_length=1000)

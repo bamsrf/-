@@ -83,13 +83,15 @@ async def get_my_wishlist(
     )
 
 
-@router.post("/records", response_model=WishlistItemResponse, status_code=status.HTTP_201_CREATED)
+@router.post("/items", response_model=WishlistItemResponse, status_code=status.HTTP_201_CREATED)
 async def add_to_wishlist(
     data: WishlistItemCreate,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ):
     """Добавление пластинки в вишлист"""
+    from app.api.records import get_or_create_record_by_discogs_id
+    
     # Получаем вишлист
     result = await db.execute(
         select(Wishlist).where(Wishlist.user_id == current_user.id)
@@ -101,14 +103,21 @@ async def add_to_wishlist(
         db.add(wishlist)
         await db.flush()
     
-    # Проверяем пластинку
-    result = await db.execute(select(Record).where(Record.id == data.record_id))
-    record = result.scalar_one_or_none()
-    
-    if not record:
+    # Получаем Record: либо по discogs_id, либо по record_id
+    if data.discogs_id:
+        record = await get_or_create_record_by_discogs_id(data.discogs_id, db)
+    elif data.record_id:
+        result = await db.execute(select(Record).where(Record.id == data.record_id))
+        record = result.scalar_one_or_none()
+        if not record:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Пластинка не найдена"
+            )
+    else:
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Пластинка не найдена"
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Необходимо указать либо discogs_id, либо record_id"
         )
     
     # Проверяем, не добавлена ли уже
@@ -116,7 +125,7 @@ async def add_to_wishlist(
         select(WishlistItem)
         .where(
             WishlistItem.wishlist_id == wishlist.id,
-            WishlistItem.record_id == data.record_id
+            WishlistItem.record_id == record.id
         )
     )
     if result.scalar_one_or_none():
@@ -128,7 +137,7 @@ async def add_to_wishlist(
     # Добавляем
     item = WishlistItem(
         wishlist_id=wishlist.id,
-        record_id=data.record_id,
+        record_id=record.id,
         priority=data.priority,
         notes=data.notes
     )

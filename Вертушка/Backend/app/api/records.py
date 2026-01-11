@@ -22,6 +22,65 @@ from app.services.discogs import DiscogsService
 router = APIRouter()
 
 
+async def get_or_create_record_by_discogs_id(
+    discogs_id: str,
+    db: AsyncSession
+) -> Record:
+    """
+    Найти или создать Record по discogs_id.
+    Используется в других endpoints для получения Record перед добавлением в коллекцию/вишлист.
+    """
+    # Проверяем локальную БД
+    result = await db.execute(
+        select(Record).where(Record.discogs_id == discogs_id)
+    )
+    record = result.scalar_one_or_none()
+    
+    if record:
+        return record
+    
+    # Запрос в Discogs
+    discogs = DiscogsService()
+    
+    try:
+        record_data = await discogs.get_release(discogs_id)
+        
+        # Создаём запись в БД
+        record = Record(
+            discogs_id=record_data.get("id"),
+            discogs_master_id=record_data.get("master_id"),
+            title=record_data.get("title", "Unknown"),
+            artist=record_data.get("artist", "Unknown"),
+            label=record_data.get("label"),
+            catalog_number=record_data.get("catalog_number"),
+            year=record_data.get("year"),
+            country=record_data.get("country"),
+            genre=record_data.get("genre"),
+            style=record_data.get("style"),
+            format_type=record_data.get("format"),
+            barcode=record_data.get("barcode"),
+            cover_image_url=record_data.get("cover_image"),
+            thumb_image_url=record_data.get("thumb_image"),
+            estimated_price_min=record_data.get("price_min"),
+            estimated_price_max=record_data.get("price_max"),
+            estimated_price_median=record_data.get("price_median"),
+            discogs_data=record_data,
+            tracklist=record_data.get("tracklist"),
+        )
+        
+        db.add(record)
+        await db.commit()
+        await db.refresh(record)
+        
+        return record
+        
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=f"Ошибка при получении данных из Discogs: {str(e)}"
+        )
+
+
 @router.get("/search", response_model=RecordSearchResponse)
 async def search_records(
     q: str = Query(..., min_length=1, description="Поисковый запрос"),
