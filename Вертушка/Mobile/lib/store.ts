@@ -194,7 +194,9 @@ export const useCollectionStore = create<CollectionState>((set, get) => ({
     set({ isLoading: true });
     try {
       const collections = await api.getCollections();
-      const defaultCollection = collections.find((c) => c.is_default) || collections[0] || null;
+      // Используем первую коллекцию по sort_order как дефолтную
+      const sortedCollections = [...collections].sort((a, b) => a.sort_order - b.sort_order);
+      const defaultCollection = sortedCollections[0] || null;
       set({ collections, defaultCollection, isLoading: false });
     } catch (error) {
       set({ isLoading: false });
@@ -228,14 +230,30 @@ export const useCollectionStore = create<CollectionState>((set, get) => ({
   },
 
   addToCollection: async (discogsId) => {
-    const { defaultCollection, fetchCollectionItems } = get();
-    if (!defaultCollection) return;
+    let { defaultCollection, collections, fetchCollectionItems } = get();
+    
+    // Если нет коллекций - создаём первую
+    if (!defaultCollection) {
+      if (collections.length === 0) {
+        // Создаём коллекцию по умолчанию
+        await api.createCollection({ name: 'Моя коллекция' });
+        await get().fetchCollections();
+        defaultCollection = get().defaultCollection;
+      }
+      
+      if (!defaultCollection) {
+        throw new Error('Не удалось создать коллекцию');
+      }
+    }
 
     await api.addToCollection(defaultCollection.id, discogsId);
     await fetchCollectionItems();
   },
 
   addToWishlist: async (discogsId) => {
+    if (!discogsId) {
+      throw new Error('Не указан ID пластинки');
+    }
     await api.addToWishlist(discogsId);
     await get().fetchWishlistItems();
   },

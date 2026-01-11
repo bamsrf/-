@@ -19,9 +19,13 @@ import {
 } from './types';
 
 // API сервер
-const API_BASE_URL = __DEV__ 
-  ? 'http://192.168.1.66:8000/api'  // Локальный IP для тестирования
-  : 'https://api.vinyl-vertushka.ru/api'; // Продакшен сервер
+// Для тестирования через Expo Go используем продакшен API
+const API_BASE_URL = 'https://api.vinyl-vertushka.ru/api';
+
+// Для локальной разработки с бэкендом на localhost:
+// const API_BASE_URL = __DEV__ 
+//   ? 'http://192.168.1.66:8000/api'  // Локальный IP для тестирования
+//   : 'https://api.vinyl-vertushka.ru/api'; // Продакшен сервер
 
 const TOKEN_KEY = 'auth_token';
 
@@ -147,6 +151,11 @@ class ApiClient {
 
   async getCollections(): Promise<Collection[]> {
     const response = await this.client.get<Collection[]>('/collections');
+    return response.data;
+  }
+
+  async createCollection(data: { name: string; description?: string }): Promise<Collection> {
+    const response = await this.client.post<Collection>('/collections', data);
     return response.data;
   }
 

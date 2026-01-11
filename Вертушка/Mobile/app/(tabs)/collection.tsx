@@ -50,7 +50,9 @@ export default function CollectionScreen() {
   }, [activeTab, fetchCollectionItems, fetchWishlistItems]);
 
   const handleRecordPress = (item: CollectionItem | WishlistItem) => {
-    router.push(`/record/${item.record.id}`);
+    // Предпочитаем discogs_id для навигации, если он есть
+    const recordId = item.record.discogs_id || item.record.id;
+    router.push(`/record/${recordId}`);
   };
 
   const handleRemoveFromCollection = async (item: CollectionItem) => {

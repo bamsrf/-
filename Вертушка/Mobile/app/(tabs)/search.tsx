@@ -54,8 +54,9 @@ export default function SearchScreen() {
     try {
       await addToCollection(record.discogs_id);
       Alert.alert('Готово!', `"${record.title}" добавлена в коллекцию`);
-    } catch (error) {
-      Alert.alert('Ошибка', 'Не удалось добавить в коллекцию');
+    } catch (error: any) {
+      const message = error?.response?.data?.detail || error?.message || 'Не удалось добавить в коллекцию';
+      Alert.alert('Ошибка', message);
     }
   };
 
@@ -63,8 +64,9 @@ export default function SearchScreen() {
     try {
       await addToWishlist(record.discogs_id);
       Alert.alert('Готово!', `"${record.title}" добавлена в список желаний`);
-    } catch (error) {
-      Alert.alert('Ошибка', 'Не удалось добавить в список желаний');
+    } catch (error: any) {
+      const message = error?.response?.data?.detail || error?.message || 'Не удалось добавить в список желаний';
+      Alert.alert('Ошибка', message);
     }
   };
 

@@ -70,6 +70,7 @@ class RecordBrief(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     
     id: UUID
+    discogs_id: str | None
     title: str
     artist: str
     year: int | None

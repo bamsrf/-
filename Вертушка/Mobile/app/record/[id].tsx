@@ -61,22 +61,38 @@ export default function RecordDetailScreen() {
   const handleAddToCollection = async () => {
     if (!record) return;
 
+    // Используем discogs_id если есть, иначе пробуем исходный id параметр
+    const discogsId = record.discogs_id || id;
+    if (!discogsId) {
+      Alert.alert('Ошибка', 'Не найден идентификатор пластинки');
+      return;
+    }
+
     try {
-      await addToCollection(record.discogs_id || record.id);
+      await addToCollection(discogsId);
       Alert.alert('Готово!', 'Пластинка добавлена в коллекцию');
-    } catch (error) {
-      Alert.alert('Ошибка', 'Не удалось добавить в коллекцию');
+    } catch (error: any) {
+      const message = error?.response?.data?.detail || error?.message || 'Не удалось добавить в коллекцию';
+      Alert.alert('Ошибка', message);
     }
   };
 
   const handleAddToWishlist = async () => {
     if (!record) return;
 
+    // Используем discogs_id если есть, иначе пробуем исходный id параметр
+    const discogsId = record.discogs_id || id;
+    if (!discogsId) {
+      Alert.alert('Ошибка', 'Не найден идентификатор пластинки');
+      return;
+    }
+
     try {
-      await addToWishlist(record.discogs_id || record.id);
+      await addToWishlist(discogsId);
       Alert.alert('Готово!', 'Пластинка добавлена в список желаний');
-    } catch (error) {
-      Alert.alert('Ошибка', 'Не удалось добавить в список желаний');
+    } catch (error: any) {
+      const message = error?.response?.data?.detail || error?.message || 'Не удалось добавить в список желаний';
+      Alert.alert('Ошибка', message);
     }
   };
 
