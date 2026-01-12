@@ -28,9 +28,12 @@ const API_BASE_URL = 'https://api.vinyl-vertushka.ru/api';
 //   : 'https://api.vinyl-vertushka.ru/api'; // Продакшен сервер
 
 const TOKEN_KEY = 'auth_token';
+const REFRESH_TOKEN_KEY = 'refresh_token';
 
 class ApiClient {
   private client: AxiosInstance;
+  private isRefreshing = false;
+  private refreshSubscribers: ((token: string) => void)[] = [];
 
   constructor() {
     this.client = axios.create({
@@ -50,13 +53,43 @@ class ApiClient {
       return config;
     });
 
-    // Интерцептор для обработки ошибок
+    // Интерцептор для обработки ошибок и автообновления токена
     this.client.interceptors.response.use(
       (response) => response,
-      (error: AxiosError) => {
-        if (error.response?.status === 401) {
-          this.removeToken();
+      async (error: AxiosError) => {
+        const originalRequest = error.config as any;
+        
+        // Если 401 и это не запрос на refresh — пробуем обновить токен
+        if (error.response?.status === 401 && !originalRequest._retry) {
+          if (this.isRefreshing) {
+            // Ждём пока токен обновится
+            return new Promise((resolve) => {
+              this.refreshSubscribers.push((token: string) => {
+                originalRequest.headers.Authorization = `Bearer ${token}`;
+                resolve(this.client(originalRequest));
+              });
+            });
+          }
+
+          originalRequest._retry = true;
+          this.isRefreshing = true;
+
+          try {
+            const newToken = await this.refreshToken();
+            if (newToken) {
+              this.refreshSubscribers.forEach((callback) => callback(newToken));
+              this.refreshSubscribers = [];
+              originalRequest.headers.Authorization = `Bearer ${newToken}`;
+              return this.client(originalRequest);
+            }
+          } catch {
+            // Refresh не удался — разлогиниваем
+            await this.removeTokens();
+          } finally {
+            this.isRefreshing = false;
+          }
         }
+        
         return Promise.reject(error);
       }
     );
@@ -76,8 +109,46 @@ class ApiClient {
     await SecureStore.setItemAsync(TOKEN_KEY, token);
   }
 
-  async removeToken(): Promise<void> {
+  async getRefreshToken(): Promise<string | null> {
+    try {
+      return await SecureStore.getItemAsync(REFRESH_TOKEN_KEY);
+    } catch {
+      return null;
+    }
+  }
+
+  async setRefreshToken(token: string): Promise<void> {
+    await SecureStore.setItemAsync(REFRESH_TOKEN_KEY, token);
+  }
+
+  async setTokens(accessToken: string, refreshToken: string): Promise<void> {
+    await this.setToken(accessToken);
+    await this.setRefreshToken(refreshToken);
+  }
+
+  async removeTokens(): Promise<void> {
     await SecureStore.deleteItemAsync(TOKEN_KEY);
+    await SecureStore.deleteItemAsync(REFRESH_TOKEN_KEY);
+  }
+
+  async removeToken(): Promise<void> {
+    await this.removeTokens();
+  }
+
+  private async refreshToken(): Promise<string | null> {
+    const refreshToken = await this.getRefreshToken();
+    if (!refreshToken) return null;
+
+    try {
+      const response = await axios.post<AuthTokens>(`${API_BASE_URL}/auth/refresh`, {
+        refresh_token: refreshToken,
+      });
+      
+      await this.setTokens(response.data.access_token, response.data.refresh_token || refreshToken);
+      return response.data.access_token;
+    } catch {
+      return null;
+    }
   }
 
   // ==================== Auth ====================
@@ -88,15 +159,16 @@ class ApiClient {
       password: data.password,
     });
     
-    await this.setToken(response.data.access_token);
+    // Сохраняем оба токена
+    await this.setTokens(response.data.access_token, response.data.refresh_token || '');
     return response.data;
   }
 
   async register(data: RegisterRequest): Promise<AuthTokens> {
     const response = await this.client.post<AuthTokens>('/auth/register', data);
     
-    // Сохраняем токен сразу после регистрации
-    await this.setToken(response.data.access_token);
+    // Сохраняем оба токена сразу после регистрации
+    await this.setTokens(response.data.access_token, response.data.refresh_token || '');
     return response.data;
   }
 
