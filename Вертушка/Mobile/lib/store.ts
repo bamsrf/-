@@ -49,9 +49,11 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   register: async (email, username, password) => {
     set({ isLoading: true });
     try {
+      // Регистрация сразу возвращает токен и сохраняет его
       await api.register({ email, username, password });
-      // После регистрации автоматически входим
-      await get().login(email, password);
+      // Получаем данные пользователя
+      const user = await api.getMe();
+      set({ user, isAuthenticated: true, isLoading: false });
     } catch (error) {
       set({ isLoading: false });
       throw error;

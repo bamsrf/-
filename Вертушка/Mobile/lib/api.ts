@@ -92,8 +92,11 @@ class ApiClient {
     return response.data;
   }
 
-  async register(data: RegisterRequest): Promise<User> {
-    const response = await this.client.post<User>('/auth/register', data);
+  async register(data: RegisterRequest): Promise<AuthTokens> {
+    const response = await this.client.post<AuthTokens>('/auth/register', data);
+    
+    // Сохраняем токен сразу после регистрации
+    await this.setToken(response.data.access_token);
     return response.data;
   }
 
