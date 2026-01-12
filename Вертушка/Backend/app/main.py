@@ -43,14 +43,10 @@ app = FastAPI(
     redoc_url="/api/redoc" if settings.debug else None,
 )
 
-# CORS настройки
+# CORS настройки - разрешаем все origins для мобильного приложения
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:3000",
-        "http://localhost:8080",
-        settings.frontend_url,
-    ],
+    allow_origins=["*"],  # Expo Go и мобильные приложения
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
