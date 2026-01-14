@@ -1,13 +1,34 @@
 """
 Сервис для работы с Discogs API
+
+Включает:
+- Rate limiting (max 5 параллельных запросов)
+- Retry с exponential backoff
+- Кэширование результатов (TTL 24 часа)
 """
+import asyncio
 import httpx
 from typing import Any
+
+from tenacity import (
+    retry,
+    stop_after_attempt,
+    wait_exponential,
+    retry_if_exception_type,
+)
+from cachetools import TTLCache
 
 from app.config import get_settings
 from app.schemas.record import RecordSearchResult, RecordSearchResponse
 
 settings = get_settings()
+
+# Глобальные ограничители для Discogs API
+# Максимум 5 параллельных запросов (Discogs limit: 60/min)
+_discogs_semaphore = asyncio.Semaphore(5)
+
+# Кэш для результатов get_release (1000 записей, TTL 24 часа)
+_release_cache: TTLCache = TTLCache(maxsize=1000, ttl=86400)
 
 
 class DiscogsService:
@@ -28,6 +49,50 @@ class DiscogsService:
         if self.api_key:
             headers["Authorization"] = f"Discogs key={self.api_key}, secret={self.api_secret}"
         return headers
+    
+    async def _request_with_limits(
+        self,
+        method: str,
+        url: str,
+        **kwargs
+    ) -> httpx.Response:
+        """
+        Выполнение запроса с учётом rate limits и retry.
+        Использует semaphore для ограничения параллельных запросов.
+        """
+        async with _discogs_semaphore:
+            return await self._request_with_retry(method, url, **kwargs)
+    
+    @retry(
+        stop=stop_after_attempt(3),
+        wait=wait_exponential(multiplier=1, min=1, max=10),
+        retry=retry_if_exception_type((httpx.HTTPStatusError, httpx.TimeoutException)),
+        reraise=True
+    )
+    async def _request_with_retry(
+        self,
+        method: str,
+        url: str,
+        **kwargs
+    ) -> httpx.Response:
+        """Выполнение запроса с retry при ошибках"""
+        async with httpx.AsyncClient() as client:
+            response = await client.request(
+                method,
+                url,
+                headers=self._get_headers(),
+                timeout=30.0,
+                **kwargs
+            )
+            # При 429 (rate limit) - выбрасываем для retry
+            if response.status_code == 429:
+                raise httpx.HTTPStatusError(
+                    "Rate limited",
+                    request=response.request,
+                    response=response
+                )
+            response.raise_for_status()
+            return response
     
     async def search(
         self,
@@ -66,15 +131,12 @@ class DiscogsService:
         if label:
             params["label"] = label
         
-        async with httpx.AsyncClient() as client:
-            response = await client.get(
-                f"{self.BASE_URL}/database/search",
-                params=params,
-                headers=self._get_headers(),
-                timeout=30.0
-            )
-            response.raise_for_status()
-            data = response.json()
+        response = await self._request_with_limits(
+            "GET",
+            f"{self.BASE_URL}/database/search",
+            params=params
+        )
+        data = response.json()
         
         results = []
         for item in data.get("results", []):
@@ -124,15 +186,12 @@ class DiscogsService:
             "type": "release",
         }
         
-        async with httpx.AsyncClient() as client:
-            response = await client.get(
-                f"{self.BASE_URL}/database/search",
-                params=params,
-                headers=self._get_headers(),
-                timeout=30.0
-            )
-            response.raise_for_status()
-            data = response.json()
+        response = await self._request_with_limits(
+            "GET",
+            f"{self.BASE_URL}/database/search",
+            params=params
+        )
+        data = response.json()
         
         results = []
         for item in data.get("results", []):
@@ -162,6 +221,7 @@ class DiscogsService:
     async def get_release(self, release_id: str) -> dict[str, Any]:
         """
         Получение детальной информации о релизе.
+        Результат кэшируется на 24 часа.
         
         Args:
             release_id: ID релиза в Discogs
@@ -169,14 +229,15 @@ class DiscogsService:
         Returns:
             Словарь с данными релиза
         """
-        async with httpx.AsyncClient() as client:
-            response = await client.get(
-                f"{self.BASE_URL}/releases/{release_id}",
-                headers=self._get_headers(),
-                timeout=30.0
-            )
-            response.raise_for_status()
-            data = response.json()
+        # Проверяем кэш
+        if release_id in _release_cache:
+            return _release_cache[release_id]
+        
+        response = await self._request_with_limits(
+            "GET",
+            f"{self.BASE_URL}/releases/{release_id}"
+        )
+        data = response.json()
         
         # Извлекаем артистов
         artists = data.get("artists", [])
@@ -238,7 +299,7 @@ class DiscogsService:
         except Exception:
             pass  # Игнорируем ошибки получения цен
         
-        return {
+        result = {
             "id": str(data.get("id")),
             "master_id": str(data.get("master_id")) if data.get("master_id") else None,
             "title": data.get("title"),
@@ -261,18 +322,23 @@ class DiscogsService:
             "notes": data.get("notes"),
             "data_quality": data.get("data_quality"),
         }
+        
+        # Сохраняем в кэш
+        _release_cache[release_id] = result
+        return result
     
     async def _get_price_stats(self, release_id: str) -> dict | None:
         """Получение статистики цен для релиза"""
         try:
-            async with httpx.AsyncClient() as client:
-                response = await client.get(
-                    f"{self.BASE_URL}/marketplace/stats/{release_id}",
-                    headers=self._get_headers(),
-                    timeout=10.0
-                )
-                if response.status_code == 200:
-                    return response.json()
+            async with _discogs_semaphore:
+                async with httpx.AsyncClient() as client:
+                    response = await client.get(
+                        f"{self.BASE_URL}/marketplace/stats/{release_id}",
+                        headers=self._get_headers(),
+                        timeout=10.0
+                    )
+                    if response.status_code == 200:
+                        return response.json()
         except Exception:
             pass
         return None
