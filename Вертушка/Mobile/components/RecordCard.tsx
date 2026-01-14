@@ -70,15 +70,15 @@ export function RecordCard({
         </Text>
         
         <View style={styles.meta}>
-          {record.year && (
+          {record.year ? (
             <Text style={styles.metaText}>{record.year}</Text>
-          )}
-          {record.format_type && (
+          ) : null}
+          {record.format_type ? (
             <>
-              {record.year && <Text style={styles.metaDot}>•</Text>}
+              {record.year ? <Text style={styles.metaDot}>•</Text> : null}
               <Text style={styles.metaText}>{record.format_type}</Text>
             </>
-          )}
+          ) : null}
         </View>
       </View>
 
