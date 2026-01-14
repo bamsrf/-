@@ -144,24 +144,24 @@ export default function RecordDetailScreen() {
           <Text style={styles.title}>{record.title}</Text>
 
           <View style={styles.metaRow}>
-            {record.year && (
+            {record.year ? (
               <View style={styles.metaItem}>
                 <Ionicons name="calendar-outline" size={16} color={Colors.textSecondary} />
                 <Text style={styles.metaText}>{record.year}</Text>
               </View>
-            )}
-            {record.format_type && (
+            ) : null}
+            {record.format_type ? (
               <View style={styles.metaItem}>
                 <Ionicons name="disc-outline" size={16} color={Colors.textSecondary} />
                 <Text style={styles.metaText}>{record.format_type}</Text>
               </View>
-            )}
-            {record.country && (
+            ) : null}
+            {record.country ? (
               <View style={styles.metaItem}>
                 <Ionicons name="globe-outline" size={16} color={Colors.textSecondary} />
                 <Text style={styles.metaText}>{record.country}</Text>
               </View>
-            )}
+            ) : null}
           </View>
         </View>
 

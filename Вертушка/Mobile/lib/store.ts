@@ -193,14 +193,25 @@ export const useCollectionStore = create<CollectionState>((set, get) => ({
   setActiveTab: (tab) => set({ activeTab: tab }),
 
   fetchCollections: async () => {
+    console.log('🔵 fetchCollections: start');
     set({ isLoading: true });
     try {
+      const token = await api.getToken();
+      console.log('🔵 fetchCollections: token exists:', !!token);
+      
       const collections = await api.getCollections();
+      console.log('🔵 fetchCollections: success, count:', collections.length);
+      
       // Используем первую коллекцию по sort_order как дефолтную
       const sortedCollections = [...collections].sort((a, b) => a.sort_order - b.sort_order);
       const defaultCollection = sortedCollections[0] || null;
       set({ collections, defaultCollection, isLoading: false });
-    } catch (error) {
+    } catch (error: any) {
+      console.log('❌ fetchCollections error:', {
+        message: error?.message,
+        status: error?.response?.status,
+        data: error?.response?.data,
+      });
       set({ isLoading: false });
       throw error;
     }
@@ -234,9 +245,16 @@ export const useCollectionStore = create<CollectionState>((set, get) => ({
   addToCollection: async (discogsId) => {
     let { defaultCollection, collections, fetchCollectionItems } = get();
     
+    console.log('🔵 addToCollection: start', {
+      discogsId,
+      hasDefaultCollection: !!defaultCollection,
+      collectionsCount: collections.length,
+    });
+    
     // Если нет коллекций - создаём первую
     if (!defaultCollection) {
       if (collections.length === 0) {
+        console.log('🔵 addToCollection: creating default collection...');
         // Создаём коллекцию по умолчанию
         await api.createCollection({ name: 'Моя коллекция' });
         await get().fetchCollections();
@@ -248,8 +266,10 @@ export const useCollectionStore = create<CollectionState>((set, get) => ({
       }
     }
 
+    console.log('🔵 addToCollection: adding to collection', defaultCollection.id);
     await api.addToCollection(defaultCollection.id, discogsId);
     await fetchCollectionItems();
+    console.log('✅ addToCollection: success');
   },
 
   addToWishlist: async (discogsId) => {

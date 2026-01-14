@@ -1,6 +1,4 @@
----
-alwaysApply: true
----
+text
 # Mobile App Development Rules (React Native + Expo + NestJS)
 
 ## General Guidelines
@@ -84,4 +82,11 @@ alwaysApply: true
 - Implement proper error handling on both frontend and backend.
 - User-friendly error messages on frontend.
 - Structured error responses from backend API.
-- Network error handling in Axios interceptors.
+- Network error handling in Axios interceptors.---
+name: guidlines-vertushka
+description: This is a new rule
+---
+
+# Overview
+
+Insert overview text here. The agent will only see this should they choose to apply the rule.

@@ -96,6 +96,7 @@ export interface Collection {
   description?: string;
   sort_order: number;
   items_count: number;
+  items?: CollectionItem[];
   created_at: string;
   updated_at: string;
 }
@@ -117,10 +118,11 @@ export interface CollectionItem {
 export interface Wishlist {
   id: string;
   user_id: string;
-  name: string;
+  share_token?: string;
   is_public: boolean;
-  public_slug?: string;
-  items_count: number;
+  show_gifter_names?: boolean;
+  custom_message?: string;
+  items?: WishlistItem[];
   created_at: string;
   updated_at: string;
 }

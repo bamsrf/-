@@ -44,12 +44,21 @@ class ApiClient {
       },
     });
 
-    // Интерцептор для добавления токена
+    // Интерцептор для добавления токена и логирования
     this.client.interceptors.request.use(async (config) => {
       const token = await this.getToken();
       if (token) {
         config.headers.Authorization = `Bearer ${token}`;
       }
+      // Debug logging
+      console.log('🔑 Request:', {
+        method: config.method,
+        url: config.url,
+        hasAuthHeader: !!config.headers.Authorization,
+        authHeaderPreview: config.headers.Authorization 
+          ? `${String(config.headers.Authorization).substring(0, 40)}...` 
+          : null,
+      });
       return config;
     });
 
@@ -240,10 +249,9 @@ class ApiClient {
   }
 
   async getCollectionItems(collectionId: string): Promise<CollectionItem[]> {
-    const response = await this.client.get<CollectionItem[]>(
-      `/collections/${collectionId}/items`
-    );
-    return response.data;
+    // Бэкенд возвращает коллекцию с items внутри через GET /collections/{id}
+    const collection = await this.getCollection(collectionId);
+    return collection.items || [];
   }
 
   async addToCollection(
@@ -258,8 +266,9 @@ class ApiClient {
     return response.data;
   }
 
-  async removeFromCollection(collectionId: string, itemId: string): Promise<void> {
-    await this.client.delete(`/collections/${collectionId}/items/${itemId}`);
+  async removeFromCollection(collectionId: string, recordId: string): Promise<void> {
+    // Бэкенд использует /collections/{collection_id}/records/{record_id}
+    await this.client.delete(`/collections/${collectionId}/records/${recordId}`);
   }
 
   // ==================== Wishlists ====================
@@ -270,8 +279,9 @@ class ApiClient {
   }
 
   async getWishlistItems(): Promise<WishlistItem[]> {
-    const response = await this.client.get<WishlistItem[]>('/wishlists/items');
-    return response.data;
+    // Бэкенд возвращает wishlist с items внутри через GET /wishlists
+    const wishlist = await this.getWishlist();
+    return wishlist.items || [];
   }
 
   async addToWishlist(
@@ -286,7 +296,8 @@ class ApiClient {
   }
 
   async removeFromWishlist(itemId: string): Promise<void> {
-    await this.client.delete(`/wishlists/items/${itemId}`);
+    // Бэкенд использует /wishlists/records/{item_id}
+    await this.client.delete(`/wishlists/records/${itemId}`);
   }
 
   async moveToCollection(wishlistItemId: string, collectionId: string): Promise<CollectionItem> {
