@@ -22,8 +22,12 @@ interface RecordCardProps {
   onPress?: () => void;
   onAddToCollection?: () => void;
   onAddToWishlist?: () => void;
+  onRemove?: () => void;
   showActions?: boolean;
   size?: 'default' | 'large';
+  isSelectionMode?: boolean;
+  isSelected?: boolean;
+  onToggleSelection?: () => void;
 }
 
 export function RecordCard({
@@ -31,20 +35,53 @@ export function RecordCard({
   onPress,
   onAddToCollection,
   onAddToWishlist,
+  onRemove,
   showActions = false,
   size = 'default',
+  isSelectionMode = false,
+  isSelected = false,
+  onToggleSelection,
 }: RecordCardProps) {
   const imageUrl = record.cover_image_url || record.thumb_image_url;
   const cardWidth = size === 'large' ? width - Spacing.md * 2 : CARD_WIDTH;
   const imageHeight = size === 'large' ? cardWidth * 0.8 : CARD_WIDTH;
 
+  const handlePress = () => {
+    if (isSelectionMode && onToggleSelection) {
+      onToggleSelection();
+    } else if (onPress) {
+      onPress();
+    }
+  };
+
   return (
     <TouchableOpacity
-      style={[styles.container, { width: cardWidth }, Shadows.md]}
-      onPress={onPress}
+      style={[
+        styles.container,
+        { width: cardWidth },
+        Shadows.md,
+        isSelectionMode && isSelected && styles.containerSelected,
+      ]}
+      onPress={handlePress}
       activeOpacity={0.9}
-      disabled={!onPress}
+      disabled={isSelectionMode ? !onToggleSelection : !onPress}
     >
+      {/* Чекбокс в режиме выбора */}
+      {isSelectionMode && (
+        <View style={styles.checkboxContainer}>
+          <View
+            style={[
+              styles.checkbox,
+              isSelected && styles.checkboxSelected,
+            ]}
+          >
+            {isSelected && (
+              <Ionicons name="checkmark" size={16} color={Colors.background} />
+            )}
+          </View>
+        </View>
+      )}
+
       {/* Обложка */}
       <View style={[styles.imageContainer, { height: imageHeight }]}>
         {imageUrl ? (
@@ -58,6 +95,9 @@ export function RecordCard({
             <Ionicons name="disc-outline" size={48} color={Colors.textMuted} />
           </View>
         )}
+        {isSelectionMode && isSelected && (
+          <View style={styles.selectedOverlay} />
+        )}
       </View>
 
       {/* Информация */}
@@ -70,15 +110,15 @@ export function RecordCard({
         </Text>
         
         <View style={styles.meta}>
-          {record.year ? (
+          {record.year && (
             <Text style={styles.metaText}>{record.year}</Text>
-          ) : null}
-          {record.format_type ? (
+          )}
+          {record.format_type && (
             <>
-              {record.year ? <Text style={styles.metaDot}>•</Text> : null}
+              {record.year && <Text style={styles.metaDot}>•</Text>}
               <Text style={styles.metaText}>{record.format_type}</Text>
             </>
-          ) : null}
+          )}
         </View>
       </View>
 
@@ -113,6 +153,38 @@ const styles = StyleSheet.create({
     borderRadius: BorderRadius.lg,
     overflow: 'hidden',
     marginBottom: Spacing.md,
+    position: 'relative',
+  },
+  containerSelected: {
+    borderWidth: 2,
+    borderColor: Colors.primary,
+  },
+  checkboxContainer: {
+    position: 'absolute',
+    top: Spacing.sm,
+    left: Spacing.sm,
+    zIndex: 10,
+  },
+  checkbox: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    borderWidth: 2,
+    borderColor: Colors.primary,
+    backgroundColor: Colors.background,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  checkboxSelected: {
+    backgroundColor: Colors.primary,
+  },
+  selectedOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: 'rgba(26, 26, 26, 0.3)',
   },
   imageContainer: {
     width: '100%',

@@ -1,0 +1,88 @@
+---
+description: Конвенции для API endpoints в FastAPI
+globs:
+  - "**/api/*.py"
+alwaysApply: true
+---
+
+# API Конвенции
+
+## Структура endpoints
+
+- Используй FastAPI роутеры (`APIRouter`)
+- Все endpoints требуют авторизации, кроме явно публичных
+- Используй Pydantic схемы для валидации запросов и ответов
+- Возвращай стандартные HTTP статус коды
+
+## Авторизация
+
+- Используй `Depends(get_current_user)` для защищённых endpoints
+- Используй `Depends(get_current_user_optional)` для публичных endpoints с опциональной авторизацией
+- Всегда проверяй права доступа перед изменением данных
+
+## Обработка ошибок
+
+- Используй `HTTPException` для ошибок клиента (4xx)
+- Логируй все ошибки сервера (5xx) перед возвратом
+- Не возвращай детали внутренних ошибок клиенту в продакшене
+- Используй понятные сообщения об ошибках на русском языке
+
+## Валидация данных
+
+- Используй Pydantic схемы для валидации
+- Добавляй описания к Query параметрам
+- Используй `Query`, `Path`, `Body` для явного указания источников данных
+
+## Примеры
+
+### Правильно:
+```python
+@router.get("/records/{record_id}", response_model=RecordResponse)
+async def get_record(
+    record_id: UUID = Path(..., description="ID пластинки"),
+    current_user: User | None = Depends(get_current_user_optional),
+    db: AsyncSession = Depends(get_db)
+):
+    """Получение информации о пластинке"""
+    try:
+        result = await db.execute(
+            select(Record).where(Record.id == record_id)
+        )
+        record = result.scalar_one_or_none()
+        
+        if not record:
+            raise HTTPException(
+                status_code=404,
+                detail="Пластинка не найдена"
+            )
+        
+        return RecordResponse.from_orm(record)
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error getting record {record_id}: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail="Внутренняя ошибка сервера"
+        )
+```
+
+### Неправильно:
+```python
+# ❌ Нет обработки ошибок
+@router.get("/records/{record_id}")
+async def get_record(record_id: UUID, db: AsyncSession = Depends(get_db)):
+    record = await db.get(Record, record_id)
+    return record
+
+# ❌ Нет валидации и описаний
+@router.post("/records")
+async def create_record(data: dict, db: AsyncSession = Depends(get_db)):
+    # ...
+```
+
+## Ссылки на файлы
+
+@Backend/app/api/records.py
+@Backend/app/api/users.py
+@Backend/app/utils/security.py

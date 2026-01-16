@@ -109,7 +109,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   rightSection: {
-    width: 44,
+    minWidth: 44,
     alignItems: 'flex-end',
   },
   title: {

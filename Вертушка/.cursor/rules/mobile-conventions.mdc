@@ -1,0 +1,100 @@
+---
+description: Конвенции для мобильного приложения на React Native/Expo
+globs:
+  - "Mobile/**/*.tsx"
+  - "Mobile/**/*.ts"
+alwaysApply: false
+---
+
+# Конвенции мобильного приложения
+
+## Структура компонентов
+
+- Используй функциональные компоненты с хуками
+- Разделяй логику и представление (custom hooks для бизнес-логики)
+- Используй TypeScript для типизации
+- Компоненты должны быть небольшими и переиспользуемыми
+
+## Стиль кода
+
+- Используй именованный экспорт для компонентов
+- Используй `const` для компонентов
+- Используй деструктуризацию пропсов
+- Используй `StyleSheet.create` для стилей
+
+## Работа с состоянием
+
+- Используй Zustand для глобального состояния (уже установлен)
+- Используй `useState` для локального состояния компонента
+- Используй `useEffect` для side effects
+- Всегда очищай подписки и таймеры в cleanup функции `useEffect`
+
+## Обработка ошибок
+
+- Всегда обрабатывай ошибки при асинхронных операциях
+- Показывай понятные сообщения пользователю
+- Используй `Alert` или toast для уведомлений об ошибках
+- Логируй ошибки для отладки
+
+## Работа с API
+
+- Используй централизованный API клиент (`lib/api.ts`)
+- Всегда обрабатывай loading состояния
+- Показывай индикаторы загрузки во время запросов
+- Кэшируй данные где возможно
+
+## Примеры
+
+### Правильно:
+```typescript
+import { useState, useEffect } from 'react';
+import { Alert } from 'react-native';
+import { useScannerStore } from '../../lib/store';
+import { api } from '../../lib/api';
+
+export default function ScannerScreen() {
+  const [isScanning, setIsScanning] = useState(true);
+  const { searchByBarcode, isLoading } = useScannerStore();
+
+  const handleBarCodeScanned = async ({ data }: { data: string }) => {
+    if (!isScanning || isLoading) return;
+    
+    setIsScanning(false);
+    
+    try {
+      await searchByBarcode(data);
+    } catch (error) {
+      Alert.alert(
+        'Ошибка',
+        'Не удалось найти пластинку. Попробуйте ещё раз.',
+        [{ text: 'OK', onPress: () => setIsScanning(true) }]
+      );
+    }
+  };
+
+  return (
+    // JSX
+  );
+}
+```
+
+### Неправильно:
+```typescript
+// ❌ Нет обработки ошибок
+const handleBarCodeScanned = async ({ data }: { data: string }) => {
+  await searchByBarcode(data);
+};
+
+// ❌ Нет проверки loading состояния
+const handleBarCodeScanned = async ({ data }: { data: string }) => {
+  setIsScanning(false);
+  await searchByBarcode(data);
+  setIsScanning(true);
+};
+```
+
+## Ссылки на файлы
+
+@Mobile/app/(tabs)/index.tsx
+@Mobile/lib/api.ts
+@Mobile/lib/store.ts

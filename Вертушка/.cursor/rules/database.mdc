@@ -1,0 +1,97 @@
+---
+description: Правила работы с базой данных
+globs:
+  - "**/models/*.py"
+  - "**/database.py"
+alwaysApply: false
+---
+
+# Работа с базой данных
+
+## Модели SQLAlchemy
+
+- Используй SQLAlchemy 2.0 синтаксис (Mapped типы)
+- Всегда используй UUID для первичных ключей
+- Добавляй индексы для часто используемых полей поиска
+- Используй `created_at` и `updated_at` для всех моделей с временными метками
+
+## Типы данных
+
+- Используй `String` с явной длиной для текстовых полей
+- Используй `Text` для длинных текстов
+- Используй `JSONB` для хранения структурированных данных (треклисты, метаданные)
+- Используй `Numeric` для денежных значений с точностью (10, 2)
+
+## Отношения
+
+- Используй `relationship` для связей между моделями
+- Всегда указывай `back_populates` для двунаправленных связей
+- Используй `cascade="all, delete-orphan"` где необходимо
+
+## Миграции
+
+- Всегда создавай миграции Alembic для изменений схемы
+- Не изменяй существующие миграции после применения
+- Создавай новые миграции для каждого изменения
+
+## Примеры
+
+### Правильно:
+```python
+from sqlalchemy.orm import Mapped, mapped_column, relationship
+from sqlalchemy import String, DateTime, Integer, Text
+from sqlalchemy.dialects.postgresql import UUID, JSONB
+import uuid
+from datetime import datetime
+
+class Record(Base):
+    __tablename__ = "records"
+    
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        primary_key=True,
+        default=uuid.uuid4
+    )
+    
+    title: Mapped[str] = mapped_column(
+        String(500),
+        nullable=False,
+        index=True
+    )
+    
+    tracklist: Mapped[list | None] = mapped_column(
+        JSONB,
+        nullable=True
+    )
+    
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime,
+        default=datetime.utcnow,
+        nullable=False
+    )
+    
+    collection_items = relationship(
+        "CollectionItem",
+        back_populates="record",
+        cascade="all, delete-orphan"
+    )
+```
+
+### Неправильно:
+```python
+# ❌ Старый синтаксис SQLAlchemy 1.x
+class Record(Base):
+    __tablename__ = "records"
+    id = Column(Integer, primary_key=True)
+    title = Column(String)  # Без длины и индекса
+
+# ❌ Нет типизации
+class Record(Base):
+    id = mapped_column(UUID, primary_key=True)
+```
+
+## Ссылки на файлы
+
+@Backend/app/models/record.py
+@Backend/app/database.py
+@Backend/alembic/env.py

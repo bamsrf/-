@@ -22,7 +22,6 @@ export default function SearchScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const [searchInput, setSearchInput] = useState('');
-  const [processingIds, setProcessingIds] = useState<Set<string>>(new Set());
 
   const {
     query,
@@ -52,45 +51,22 @@ export default function SearchScreen() {
   };
 
   const handleAddToCollection = async (record: RecordSearchResult) => {
-    const id = record.discogs_id;
-    if (processingIds.has(id)) return; // Блокируем повторные нажатия
-    
-    setProcessingIds(prev => new Set(prev).add(id));
     try {
-      await addToCollection(id);
+      await addToCollection(record.discogs_id);
       Alert.alert('Готово!', `"${record.title}" добавлена в коллекцию`);
     } catch (error: any) {
-      const status = error?.response?.status;
-      const detail = error?.response?.data?.detail;
-      const url = error?.config?.url;
-      const message = `Status: ${status}\nDetail: ${detail}\nURL: ${url}\n\n${error?.message || ''}`;
-      Alert.alert('Ошибка добавления', message);
-    } finally {
-      setProcessingIds(prev => {
-        const next = new Set(prev);
-        next.delete(id);
-        return next;
-      });
+      const message = error?.response?.data?.detail || error?.message || 'Не удалось добавить в коллекцию';
+      Alert.alert('Ошибка', message);
     }
   };
 
   const handleAddToWishlist = async (record: RecordSearchResult) => {
-    const id = record.discogs_id;
-    if (processingIds.has(id)) return; // Блокируем повторные нажатия
-    
-    setProcessingIds(prev => new Set(prev).add(id));
     try {
-      await addToWishlist(id);
+      await addToWishlist(record.discogs_id);
       Alert.alert('Готово!', `"${record.title}" добавлена в список желаний`);
     } catch (error: any) {
       const message = error?.response?.data?.detail || error?.message || 'Не удалось добавить в список желаний';
       Alert.alert('Ошибка', message);
-    } finally {
-      setProcessingIds(prev => {
-        const next = new Set(prev);
-        next.delete(id);
-        return next;
-      });
     }
   };
 

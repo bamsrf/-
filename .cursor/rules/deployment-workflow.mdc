@@ -1,0 +1,94 @@
+---
+alwaysApply: true
+---
+
+# Deployment & Git Workflow Rules
+
+## Git Workflow
+
+### Branch Synchronization
+- When local and remote branches have diverged, use `git pull --rebase` instead of merge
+- Always stash local changes (including untracked files) before rebase: `git stash --include-untracked`
+- After resolving conflicts, restore stashed changes: `git stash pop`
+- Never force push to main branch unless absolutely necessary
+
+### Commit Messages
+- Use conventional commit format: `fix:`, `feat:`, `refactor:`, etc.
+- Include brief description of changes in commit message
+- Example: `fix: update deploy script to use correct path Вертушка/Backend and handle local changes`
+
+### Handling Local Changes on Server
+- Server may have local modifications (e.g., nginx.conf)
+- Before deploying, check for local changes: `git diff`
+- If changes are production-specific, commit them to repository
+- If changes are temporary, reset them: `git checkout -- <file>`
+- Deploy script should automatically stash local changes before `git pull`
+
+## Deployment Process
+
+### Server Configuration
+- **Server**: `deploy@85.198.85.12`
+- **Project path**: `~/vertushka`
+- **Backend path**: `~/vertushka/Вертушка/Backend` (note: кириллица в пути)
+- **Deploy script**: `Вертушка/Backend/scripts/deploy.sh`
+
+### Deployment Command
+**From local machine:**
+```bash
+ssh deploy@85.198.85.12 'cd ~/vertushka && bash Вертушка/Backend/scripts/deploy.sh'
+```
+
+**Full workflow (push + deploy):**
+```bash
+git push && ssh deploy@85.198.85.12 'cd ~/vertushka && bash Вертушка/Backend/scripts/deploy.sh'
+```
+
+**When already on server:**
+```bash
+cd ~/vertushka && bash Вертушка/Backend/scripts/deploy.sh
+```
+
+### Deploy Script Requirements
+The deploy script (`scripts/deploy.sh`) must:
+1. Navigate to correct path: `cd ~/vertushka` then `cd Вертушка/Backend`
+2. Handle local changes automatically:
+   - Check for uncommitted changes with `git diff-index --quiet HEAD --`
+   - Stash changes before pull if needed: `git stash push -m "Auto-stash before deploy"`
+   - Attempt to restore stashed changes after pull: `git stash pop`
+3. Pull latest changes: `git pull`
+4. Build Docker image: `docker compose -f docker-compose.prod.yml build api`
+5. Restart containers: `docker compose -f docker-compose.prod.yml up -d`
+6. Apply database migrations: `docker compose -f docker-compose.prod.yml exec -T api alembic upgrade head`
+7. Clean up old images: `docker image prune -f`
+8. Show container status: `docker compose -f docker-compose.prod.yml ps`
+
+### Docker Configuration
+- Use production docker-compose file: `docker-compose.prod.yml`
+- Service names: `api`, `db`, `nginx`, `certbot`
+- Environment file: `.env.prod`
+- Database migrations via Alembic inside `api` container
+
+## Troubleshooting
+
+### Git Pull Conflicts
+- If `git pull` fails due to local changes, the deploy script should stash them automatically
+- If stash conflicts occur, manually resolve: `git stash list` and `git stash show`
+
+### Path Issues
+- Always use full path `Вертушка/Backend` (not just `Backend`)
+- Server structure: `~/vertushka/Вертушка/Backend`
+- Local structure: `Вертушка/Backend` (relative to repo root)
+
+### SSH Connection Issues
+- Ensure SSH key is configured for `deploy@85.198.85.12`
+- Test connection: `ssh deploy@85.198.85.12 'echo "Connected"'`
+
+## Best Practices
+- Always test deploy script locally before pushing changes
+- Keep deploy script synchronized with repository
+- Document any server-specific configurations
+- Use descriptive commit messages for deploy script changes
+- Consider adding alias in `~/.zshrc` for easier deployment:
+  ```bash
+  alias deploy-vertushka='ssh deploy@85.198.85.12 "cd ~/vertushka && bash Вертушка/Backend/scripts/deploy.sh"'
+  ```

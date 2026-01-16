@@ -21,6 +21,7 @@ interface RecordGridProps<T extends RecordItem = RecordItem> {
   onRecordPress?: (record: T) => void;
   onAddToCollection?: (record: T) => void;
   onAddToWishlist?: (record: T) => void;
+  onRemove?: (record: T) => void;
   showActions?: boolean;
   isLoading?: boolean;
   isRefreshing?: boolean;
@@ -28,6 +29,9 @@ interface RecordGridProps<T extends RecordItem = RecordItem> {
   onEndReached?: () => void;
   emptyMessage?: string;
   ListHeaderComponent?: React.ReactElement;
+  isSelectionMode?: boolean;
+  selectedItems?: Set<string>;
+  onToggleItemSelection?: (itemId: string) => void;
 }
 
 export function RecordGrid<T extends RecordItem = RecordItem>({
@@ -35,6 +39,7 @@ export function RecordGrid<T extends RecordItem = RecordItem>({
   onRecordPress,
   onAddToCollection,
   onAddToWishlist,
+  onRemove,
   showActions = false,
   isLoading = false,
   isRefreshing = false,
@@ -42,6 +47,9 @@ export function RecordGrid<T extends RecordItem = RecordItem>({
   onEndReached,
   emptyMessage = 'Пластинок пока нет',
   ListHeaderComponent,
+  isSelectionMode = false,
+  selectedItems = new Set(),
+  onToggleItemSelection,
 }: RecordGridProps<T>) {
   // Извлекаем запись из разных типов
   const getRecord = (item: RecordItem): RecordSearchResult | VinylRecord => {
@@ -53,6 +61,8 @@ export function RecordGrid<T extends RecordItem = RecordItem>({
 
   const renderItem = ({ item }: { item: T }) => {
     const record = getRecord(item);
+    const itemId = 'id' in item ? item.id : '';
+    const isSelected = isSelectionMode && selectedItems.has(itemId);
     
     return (
       <RecordCard
@@ -64,7 +74,15 @@ export function RecordGrid<T extends RecordItem = RecordItem>({
         onAddToWishlist={
           onAddToWishlist ? () => onAddToWishlist(item) : undefined
         }
-        showActions={showActions}
+        onRemove={onRemove ? () => onRemove(item) : undefined}
+        showActions={showActions && !isSelectionMode}
+        isSelectionMode={isSelectionMode}
+        isSelected={isSelected}
+        onToggleSelection={
+          onToggleItemSelection && itemId
+            ? () => onToggleItemSelection(itemId)
+            : undefined
+        }
       />
     );
   };

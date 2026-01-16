@@ -10,12 +10,13 @@ import {
   Image,
   ActivityIndicator,
   Alert,
+  TouchableOpacity,
 } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Header } from '../../components/Header';
-import { Button, Card } from '../../components/ui';
+import { Button, Card, ActionSheet, ActionSheetAction } from '../../components/ui';
 import { api } from '../../lib/api';
 import { useCollectionStore } from '../../lib/store';
 import { VinylRecord } from '../../lib/types';
@@ -29,12 +30,54 @@ export default function RecordDetailScreen() {
   const [record, setRecord] = useState<VinylRecord | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [showActionSheet, setShowActionSheet] = useState(false);
 
-  const { addToCollection, addToWishlist } = useCollectionStore();
+  const {
+    addToCollection,
+    addToWishlist,
+    removeFromCollection,
+    removeFromWishlist,
+    moveToCollection,
+    collectionItems,
+    wishlistItems,
+    fetchCollectionItems,
+    fetchWishlistItems,
+    fetchCollections,
+  } = useCollectionStore();
 
   useEffect(() => {
     loadRecord();
+    // Загружаем данные коллекции и вишлиста для проверки статуса
+    fetchCollections().then(() => {
+      fetchCollectionItems();
+      fetchWishlistItems();
+    });
   }, [id]);
+
+  // Проверяем статус пластинки
+  const getRecordStatus = () => {
+    if (!record) return { inCollection: false, inWishlist: false, collectionItemId: null, wishlistItemId: null };
+
+    const discogsId = record.discogs_id;
+    const recordId = record.id;
+
+    // Ищем в коллекции
+    const collectionItem = collectionItems.find(
+      (item) => item.record.discogs_id === discogsId || item.record.id === recordId
+    );
+
+    // Ищем в вишлисте
+    const wishlistItem = wishlistItems.find(
+      (item) => item.record.discogs_id === discogsId || item.record.id === recordId
+    );
+
+    return {
+      inCollection: !!collectionItem,
+      inWishlist: !!wishlistItem,
+      collectionItemId: collectionItem?.id || null,
+      wishlistItemId: wishlistItem?.id || null,
+    };
+  };
 
   const loadRecord = async () => {
     if (!id) return;
@@ -70,6 +113,7 @@ export default function RecordDetailScreen() {
 
     try {
       await addToCollection(discogsId);
+      await fetchCollectionItems();
       Alert.alert('Готово!', 'Пластинка добавлена в коллекцию');
     } catch (error: any) {
       const message = error?.response?.data?.detail || error?.message || 'Не удалось добавить в коллекцию';
@@ -89,11 +133,138 @@ export default function RecordDetailScreen() {
 
     try {
       await addToWishlist(discogsId);
+      await fetchWishlistItems();
       Alert.alert('Готово!', 'Пластинка добавлена в список желаний');
     } catch (error: any) {
       const message = error?.response?.data?.detail || error?.message || 'Не удалось добавить в список желаний';
       Alert.alert('Ошибка', message);
     }
+  };
+
+  const handleRemoveFromCollection = async () => {
+    const status = getRecordStatus();
+    if (!status.collectionItemId) return;
+
+    Alert.alert(
+      'Удалить из коллекции?',
+      `"${record?.title}" будет удалена из вашей коллекции`,
+      [
+        { text: 'Отмена', style: 'cancel' },
+        {
+          text: 'Удалить',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await removeFromCollection(status.collectionItemId!);
+              await fetchCollectionItems();
+              Alert.alert('Готово!', 'Пластинка удалена из коллекции');
+            } catch (error: any) {
+              Alert.alert('Ошибка', 'Не удалось удалить из коллекции');
+            }
+          },
+        },
+      ]
+    );
+  };
+
+  const handleRemoveFromWishlist = async () => {
+    const status = getRecordStatus();
+    if (!status.wishlistItemId) return;
+
+    Alert.alert(
+      'Удалить из списка?',
+      `"${record?.title}" будет удалена из списка желаний`,
+      [
+        { text: 'Отмена', style: 'cancel' },
+        {
+          text: 'Удалить',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await removeFromWishlist(status.wishlistItemId!);
+              await fetchWishlistItems();
+              Alert.alert('Готово!', 'Пластинка удалена из списка желаний');
+            } catch (error: any) {
+              Alert.alert('Ошибка', 'Не удалось удалить из списка');
+            }
+          },
+        },
+      ]
+    );
+  };
+
+  const handleAddCopyToCollection = async () => {
+    if (!record) return;
+    const discogsId = record.discogs_id || id;
+    if (!discogsId) {
+      Alert.alert('Ошибка', 'Не найден идентификатор пластинки');
+      return;
+    }
+
+    try {
+      await addToCollection(discogsId);
+      await fetchCollectionItems();
+      Alert.alert('Готово!', 'Копия добавлена в коллекцию');
+    } catch (error: any) {
+      const message = error?.response?.data?.detail || error?.message || 'Не удалось добавить в коллекцию';
+      Alert.alert('Ошибка', message);
+    }
+  };
+
+  const handleMoveToWishlist = async () => {
+    const status = getRecordStatus();
+    if (!status.collectionItemId || !record) return;
+
+    Alert.alert(
+      'Перенести в вишлист?',
+      `"${record.title}" будет удалена из коллекции и добавлена в список желаний`,
+      [
+        { text: 'Отмена', style: 'cancel' },
+        {
+          text: 'Перенести',
+          onPress: async () => {
+            try {
+              await removeFromCollection(status.collectionItemId!);
+              const discogsId = record.discogs_id || id;
+              if (discogsId) {
+                await addToWishlist(discogsId);
+              }
+              await fetchCollectionItems();
+              await fetchWishlistItems();
+              Alert.alert('Готово!', 'Пластинка перенесена в список желаний');
+            } catch (error: any) {
+              Alert.alert('Ошибка', 'Не удалось перенести');
+            }
+          },
+        },
+      ]
+    );
+  };
+
+  const getActionSheetActions = (): ActionSheetAction[] => {
+    const status = getRecordStatus();
+    const actions: ActionSheetAction[] = [];
+
+    if (status.inCollection) {
+      actions.push({
+        label: 'Добавить копию в коллекцию',
+        icon: 'copy-outline',
+        onPress: handleAddCopyToCollection,
+      });
+      actions.push({
+        label: 'Отправить в вишлист',
+        icon: 'heart-outline',
+        onPress: handleMoveToWishlist,
+      });
+      actions.push({
+        label: 'Удалить',
+        icon: 'trash-outline',
+        onPress: handleRemoveFromCollection,
+        destructive: true,
+      });
+    }
+
+    return actions;
   };
 
   if (isLoading) {
@@ -246,19 +417,73 @@ export default function RecordDetailScreen() {
       </ScrollView>
 
       {/* Кнопки действий */}
-      <View style={[styles.actionsContainer, { paddingBottom: insets.bottom + Spacing.md }]}>
-        <Button
-          title="В коллекцию"
-          onPress={handleAddToCollection}
-          style={styles.actionButton}
-        />
-        <Button
-          title="Хочу"
-          onPress={handleAddToWishlist}
-          variant="outline"
-          style={styles.actionButton}
-        />
-      </View>
+      {(() => {
+        const status = getRecordStatus();
+        
+        // Если добавлено в вишлист - показываем "В коллекцию" + "Удалить"
+        // (приоритет вишлиста выше, чтобы можно было управлять пластинкой из вишлиста)
+        if (status.inWishlist) {
+          return (
+            <View style={[styles.actionsContainer, { paddingBottom: insets.bottom + Spacing.md }]}>
+              <Button
+                title="В коллекцию"
+                onPress={handleAddToCollection}
+                style={styles.actionButton}
+              />
+              <TouchableOpacity
+                style={[styles.actionButton, styles.removeButton]}
+                onPress={handleRemoveFromWishlist}
+              >
+                <Text style={styles.removeButtonText}>Удалить</Text>
+              </TouchableOpacity>
+            </View>
+          );
+        }
+        
+        // Если добавлено в коллекцию (но не в вишлист) - показываем кнопку "Добавлено" + три точки
+        if (status.inCollection) {
+          return (
+            <View style={[styles.actionsContainer, { paddingBottom: insets.bottom + Spacing.md }]}>
+              <View style={styles.addedButtonContainer}>
+                <View style={styles.addedButton}>
+                  <Ionicons name="checkmark-circle" size={20} color={Colors.textSecondary} />
+                  <Text style={styles.addedButtonText}>Добавлено</Text>
+                </View>
+                <TouchableOpacity
+                  style={styles.moreButton}
+                  onPress={() => setShowActionSheet(true)}
+                >
+                  <Ionicons name="ellipsis-vertical" size={24} color={Colors.background} />
+                </TouchableOpacity>
+              </View>
+            </View>
+          );
+        }
+        
+        // По умолчанию - обычные кнопки добавления
+        return (
+          <View style={[styles.actionsContainer, { paddingBottom: insets.bottom + Spacing.md }]}>
+            <Button
+              title="В коллекцию"
+              onPress={handleAddToCollection}
+              style={styles.actionButton}
+            />
+            <Button
+              title="Хочу"
+              onPress={handleAddToWishlist}
+              variant="outline"
+              style={styles.actionButton}
+            />
+          </View>
+        );
+      })()}
+
+      {/* ActionSheet для действий с пластинкой в коллекции */}
+      <ActionSheet
+        visible={showActionSheet}
+        actions={getActionSheetActions()}
+        onClose={() => setShowActionSheet(false)}
+      />
     </View>
   );
 }
@@ -412,5 +637,45 @@ const styles = StyleSheet.create({
   },
   actionButton: {
     flex: 1,
+  },
+  addedButtonContainer: {
+    flex: 1,
+    flexDirection: 'row',
+    gap: Spacing.sm,
+    alignItems: 'center',
+  },
+  addedButton: {
+    flex: 1,
+    height: 56,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: Spacing.sm,
+    backgroundColor: Colors.surface,
+    borderRadius: BorderRadius.md,
+  },
+  addedButtonText: {
+    ...Typography.button,
+    color: Colors.textSecondary,
+  },
+  moreButton: {
+    width: 56,
+    height: 56,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: Colors.primary,
+    borderRadius: BorderRadius.md,
+  },
+  removeButton: {
+    flex: 1,
+    height: 56,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: Colors.surface,
+    borderRadius: BorderRadius.md,
+  },
+  removeButtonText: {
+    ...Typography.button,
+    color: Colors.text,
   },
 });

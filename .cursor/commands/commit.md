@@ -1,1 +1,1 @@
-commit my changes to git & write short but meaningful messages
+💾 commit my changes to git & write short but meaningful messages

@@ -1,0 +1,79 @@
+---
+description: Правила работы с данными виниловых пластинок
+globs:
+  - "**/models/record.py"
+  - "**/api/records.py"
+  - "**/schemas/record.py"
+alwaysApply: false
+---
+
+# Работа с виниловыми пластинками
+
+## Структура данных
+
+Все записи о пластинках должны содержать следующие обязательные поля:
+- `discogs_id` — ID в Discogs (может быть null для ручного ввода)
+- `title` — название альбома (обязательно, String(500))
+- `artist` — исполнитель (обязательно, String(500))
+- `year` — год выпуска (опционально, Integer)
+- `label` — лейбл (опционально, String(255))
+- `barcode` — штрихкод (опционально, но рекомендуется для сканирования)
+
+## Интеграция с Discogs API
+
+### Приоритет поиска:
+1. Сначала проверяй локальную БД перед запросом к Discogs API
+2. Если найдено локально — возвращай локальные данные
+3. Если не найдено — запрос к Discogs API
+4. После получения данных от Discogs — сохраняй в локальную БД
+
+### Обработка ошибок:
+- Всегда обрабатывай ошибки API gracefully
+- Не падай, если Discogs недоступен — показывай понятное сообщение пользователю
+- Логируй все ошибки для отладки
+
+### Кэширование:
+- Кэшируй результаты поиска на 24 часа
+- Кэшируй детали релизов на 7 дней
+- Используй TTLCache или Redis для кэширования
+
+## Примеры кода
+
+### Правильно:
+```python
+# Сначала проверяем локальную БД
+local_record = await db.execute(
+    select(Record).where(Record.barcode == barcode)
+).scalar_one_or_none()
+
+if local_record:
+    return RecordSearchResult.from_orm(local_record)
+
+# Затем запрос к Discogs
+try:
+    discogs = DiscogsService()
+    results = await discogs.search_by_barcode(barcode)
+    # Сохраняем в БД для будущих запросов
+    for result in results:
+        await save_record_to_db(result, db)
+    return results
+except Exception as e:
+    logger.error(f"Discogs API error: {e}")
+    raise HTTPException(
+        status_code=503,
+        detail="Сервис поиска временно недоступен"
+    )
+```
+
+### Неправильно:
+```python
+# ❌ Прямой запрос к Discogs без проверки локальной БД
+results = await discogs.search_by_barcode(barcode)
+return results
+```
+
+## Ссылки на файлы
+
+@Backend/app/models/record.py
+@Backend/app/services/discogs.py
+@Backend/app/api/records.py

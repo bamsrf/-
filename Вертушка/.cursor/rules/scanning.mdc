@@ -1,0 +1,132 @@
+---
+description: Правила для функций сканирования пластинок
+globs:
+  - "**/api/records.py"
+  - "Mobile/**/*scan*.tsx"
+  - "Mobile/**/index.tsx"
+alwaysApply: false
+---
+
+# Сканирование пластинок
+
+## Штрихкоды
+
+### Поддерживаемые форматы:
+- EAN-13 (13 цифр)
+- EAN-8 (8 цифр)
+- UPC-A (12 цифр)
+- UPC-E (8 цифр)
+
+### Процесс сканирования:
+1. Пользователь сканирует штрихкод камерой
+2. Проверка формата штрихкода (валидация)
+3. Поиск в локальной БД по штрихкоду
+4. Если не найдено — запрос к Discogs API
+5. Отображение результатов пользователю
+6. Возможность добавить в коллекцию или wishlist
+
+### Обработка ошибок:
+- Если штрихкод не распознан — показать сообщение "Не удалось распознать штрихкод"
+- Если пластинка не найдена — показать "Пластинка не найдена в базе Discogs"
+- Если ошибка сети — показать "Проблемы с подключением к интернету"
+
+## Распознавание обложек (будущая функция)
+
+### Требования к изображениям:
+- Минимальное разрешение: 800x800 пикселей
+- Поддерживаемые форматы: JPG, PNG
+- Максимальный размер файла: 10MB
+
+### Процесс распознавания:
+1. Пользователь фотографирует обложку
+2. Предобработка изображения (выравнивание, улучшение контраста)
+3. OCR для извлечения текста (артист, название, год)
+4. Поиск в Discogs по извлечённым данным
+5. Отображение результатов
+
+### Обработка плохих условий:
+- Плохое освещение — предложить использовать вспышку
+- Размытие — предложить переснять
+- Частичное перекрытие — предупреждение о возможной неточности
+
+## UI/UX требования
+
+### Индикаторы состояния:
+- Показывать индикатор загрузки во время поиска
+- Отключать сканирование во время обработки (предотвращение дубликатов)
+- Показывать прогресс для долгих операций
+
+### Обратная связь:
+- Звуковой сигнал при успешном сканировании (опционально)
+- Визуальная обратная связь (подсветка рамки сканера)
+- Toast/Alert для важных сообщений
+
+## Примеры
+
+### Backend (Python):
+```python
+@router.post("/scan/barcode", response_model=list[RecordSearchResult])
+async def scan_barcode(
+    barcode: str = Query(..., min_length=8, max_length=20),
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    # Валидация формата
+    if not is_valid_barcode(barcode):
+        raise HTTPException(
+            status_code=400,
+            detail="Некорректный формат штрихкода"
+        )
+    
+    # Поиск в локальной БД
+    local_record = await db.execute(
+        select(Record).where(Record.barcode == barcode)
+    ).scalar_one_or_none()
+    
+    if local_record:
+        return [RecordSearchResult.from_orm(local_record)]
+    
+    # Поиск в Discogs
+    try:
+        discogs = DiscogsService()
+        results = await discogs.search_by_barcode(barcode)
+        return results
+    except Exception as e:
+        logger.error(f"Discogs scan error: {e}")
+        raise HTTPException(
+            status_code=503,
+            detail="Сервис поиска временно недоступен"
+        )
+```
+
+### Mobile (TypeScript):
+```typescript
+const handleBarCodeScanned = async ({ data }: { data: string }) => {
+  if (!isScanning || isLoading) return;
+  
+  // Валидация
+  if (data.length < 8 || data.length > 20) {
+    Alert.alert('Ошибка', 'Некорректный формат штрихкода');
+    return;
+  }
+  
+  setIsScanning(false);
+  
+  try {
+    await searchByBarcode(data);
+    setShowResults(true);
+  } catch (error) {
+    Alert.alert(
+      'Не найдено',
+      'Пластинка с таким штрихкодом не найдена',
+      [{ text: 'OK', onPress: () => setIsScanning(true) }]
+    );
+  }
+};
+```
+
+## Ссылки на файлы
+
+@Backend/app/api/records.py
+@Mobile/app/(tabs)/index.tsx
+@Mobile/lib/store.ts
