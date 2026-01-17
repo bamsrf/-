@@ -284,21 +284,7 @@ async def add_record_to_collection(
             detail="Необходимо указать либо discogs_id, либо record_id"
         )
     
-    # Проверяем, не добавлена ли уже
-    result = await db.execute(
-        select(CollectionItem)
-        .where(
-            CollectionItem.collection_id == collection_id,
-            CollectionItem.record_id == record.id
-        )
-    )
-    if result.scalar_one_or_none():
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Пластинка уже в коллекции"
-        )
-    
-    # Добавляем
+    # Добавляем (дубликаты разрешены - можно иметь несколько копий одной пластинки)
     item = CollectionItem(
         collection_id=collection_id,
         record_id=record.id,
@@ -345,7 +331,7 @@ async def remove_record_from_collection(
             detail="Коллекция не найдена"
         )
     
-    # Находим и удаляем элемент
+    # Находим и удаляем элемент (first() т.к. могут быть дубликаты)
     result = await db.execute(
         select(CollectionItem)
         .where(
@@ -353,7 +339,7 @@ async def remove_record_from_collection(
             CollectionItem.record_id == record_id
         )
     )
-    item = result.scalar_one_or_none()
+    item = result.scalars().first()
     
     if not item:
         raise HTTPException(
