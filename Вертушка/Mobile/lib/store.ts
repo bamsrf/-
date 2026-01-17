@@ -177,9 +177,10 @@ interface CollectionState {
   fetchWishlistItems: () => Promise<void>;
   addToCollection: (discogsId: string) => Promise<void>;
   addToWishlist: (discogsId: string) => Promise<void>;
-  removeFromCollection: (itemId: string) => Promise<void>;
-  removeFromWishlist: (itemId: string) => Promise<void>;
-  moveToCollection: (wishlistItemId: string) => Promise<void>;
+  removeFromCollection: (recordId: string) => Promise<void>;  // recordId = Record.id (ID пластинки)
+  removeFromWishlist: (wishlistItemId: string) => Promise<void>;  // wishlistItemId = WishlistItem.id
+  moveToCollection: (wishlistItem: WishlistItem) => Promise<void>;  // передаём весь WishlistItem
+  moveToWishlist: (collectionItem: CollectionItem) => Promise<void>;  // передаём весь CollectionItem
 }
 
 export const useCollectionStore = create<CollectionState>((set, get) => ({
@@ -280,11 +281,19 @@ export const useCollectionStore = create<CollectionState>((set, get) => ({
     await get().fetchWishlistItems();
   },
 
-  removeFromCollection: async (itemId) => {
+  removeFromCollection: async (recordId) => {
     const { defaultCollection, fetchCollectionItems } = get();
-    if (!defaultCollection) return;
+    
+    console.log('🗑️ removeFromCollection:', { recordId, hasDefaultCollection: !!defaultCollection });
+    
+    if (!defaultCollection) {
+      console.error('❌ removeFromCollection: defaultCollection is null');
+      throw new Error('Коллекция не найдена');
+    }
 
-    await api.removeFromCollection(defaultCollection.id, itemId);
+    console.log('🗑️ removeFromCollection: calling API', { collectionId: defaultCollection.id, recordId });
+    await api.removeFromCollection(defaultCollection.id, recordId);
+    console.log('✅ removeFromCollection: success');
     await fetchCollectionItems();
   },
 
@@ -293,13 +302,87 @@ export const useCollectionStore = create<CollectionState>((set, get) => ({
     await get().fetchWishlistItems();
   },
 
-  moveToCollection: async (wishlistItemId) => {
+  moveToCollection: async (wishlistItem: WishlistItem) => {
     const { defaultCollection, fetchCollectionItems, fetchWishlistItems } = get();
-    if (!defaultCollection) return;
+    
+    console.log('➡️ moveToCollection:', { 
+      wishlistItemId: wishlistItem.id,
+      recordId: wishlistItem.record_id,
+      discogsId: wishlistItem.record.discogs_id,
+      hasDefaultCollection: !!defaultCollection 
+    });
+    
+    if (!defaultCollection) {
+      console.error('❌ moveToCollection: defaultCollection is null');
+      throw new Error('Коллекция не найдена');
+    }
 
-    await api.moveToCollection(wishlistItemId, defaultCollection.id);
+    // Сначала добавляем в коллекцию (чтобы не потерять при ошибке)
+    const discogsId = wishlistItem.record.discogs_id;
+    if (!discogsId) {
+      console.error('❌ moveToCollection: discogs_id is null');
+      throw new Error('Не найден идентификатор пластинки');
+    }
+    
+    console.log('➡️ moveToCollection: adding to collection', { discogsId });
+    await api.addToCollection(defaultCollection.id, discogsId);
+    console.log('✅ moveToCollection: added to collection');
+    
+    // Потом удаляем из вишлиста (API ожидает WishlistItem.id)
+    console.log('➡️ moveToCollection: removing from wishlist', { wishlistItemId: wishlistItem.id });
+    await api.removeFromWishlist(wishlistItem.id);
+    console.log('✅ moveToCollection: removed from wishlist');
+    
+    // Обновляем оба списка
     await fetchCollectionItems();
     await fetchWishlistItems();
+    console.log('✅ moveToCollection: complete');
+  },
+
+  moveToWishlist: async (collectionItem) => {
+    const { defaultCollection, fetchCollectionItems, fetchWishlistItems } = get();
+    
+    console.log('➡️ moveToWishlist:', { 
+      collectionItemId: collectionItem.id,
+      recordId: collectionItem.record_id,
+      discogsId: collectionItem.record.discogs_id,
+      hasDefaultCollection: !!defaultCollection 
+    });
+    
+    if (!defaultCollection) {
+      console.error('❌ moveToWishlist: defaultCollection is null');
+      throw new Error('Коллекция не найдена');
+    }
+
+    // Сначала добавляем в вишлист (чтобы не потерять при ошибке)
+    const discogsId = collectionItem.record.discogs_id;
+    if (!discogsId) {
+      console.error('❌ moveToWishlist: discogs_id is null');
+      throw new Error('Не найден идентификатор пластинки');
+    }
+    
+    try {
+      console.log('➡️ moveToWishlist: adding to wishlist', { discogsId });
+      await api.addToWishlist(discogsId);
+      console.log('✅ moveToWishlist: added to wishlist');
+    } catch (error: any) {
+      // Если пластинка уже в вишлисте — это OK, продолжаем удаление из коллекции
+      if (error?.response?.status === 400 && error?.response?.data?.detail?.includes('уже в вишлисте')) {
+        console.log('ℹ️ moveToWishlist: already in wishlist, continuing...');
+      } else {
+        throw error;
+      }
+    }
+    
+    // Потом удаляем из коллекции
+    console.log('➡️ moveToWishlist: removing from collection', { collectionId: defaultCollection.id, recordId: collectionItem.record_id });
+    await api.removeFromCollection(defaultCollection.id, collectionItem.record_id);
+    console.log('✅ moveToWishlist: removed from collection');
+    
+    // Обновляем оба списка
+    await fetchCollectionItems();
+    await fetchWishlistItems();
+    console.log('✅ moveToWishlist: complete');
   },
 }));
 
