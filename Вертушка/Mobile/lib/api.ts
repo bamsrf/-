@@ -271,8 +271,17 @@ class ApiClient {
     console.log('🌐 API removeFromCollection:', { collectionId, recordId });
     const url = `/collections/${collectionId}/records/${recordId}`;
     console.log('🌐 API DELETE:', url);
-    await this.client.delete(url);
-    console.log('🌐 API removeFromCollection: success');
+    try {
+      const response = await this.client.delete(url);
+      console.log('🌐 API removeFromCollection: success', response.status);
+    } catch (error: any) {
+      console.error('❌ API removeFromCollection ERROR:', {
+        status: error?.response?.status,
+        data: error?.response?.data,
+        message: error?.message,
+      });
+      throw error;
+    }
   }
 
   // ==================== Wishlists ====================

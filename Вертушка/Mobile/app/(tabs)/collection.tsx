@@ -78,7 +78,8 @@ export default function CollectionScreen() {
           style: 'destructive',
           onPress: async () => {
             try {
-              await removeFromCollection(item.record_id);
+              // Передаём collection_id из самого item!
+              await removeFromCollection(item.collection_id, item.record_id);
             } catch (error) {
               Alert.alert('Ошибка', 'Не удалось удалить из коллекции');
             }
@@ -196,10 +197,10 @@ export default function CollectionScreen() {
               const itemsToDelete = Array.from(selectedItems);
               for (const itemId of itemsToDelete) {
                 if (activeTab === 'collection') {
-                  // Для коллекции API ожидает record_id
+                  // Для коллекции API ожидает collection_id и record_id
                   const item = collectionItems.find((i) => i.id === itemId);
                   if (item) {
-                    await removeFromCollection(item.record_id);
+                    await removeFromCollection(item.collection_id, item.record_id);
                   }
                 } else {
                   // Для вишлиста API ожидает WishlistItem.id
