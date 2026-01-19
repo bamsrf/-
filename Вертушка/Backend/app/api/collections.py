@@ -331,7 +331,7 @@ async def remove_record_from_collection(
             detail="Коллекция не найдена"
         )
     
-    # Находим и удаляем элемент
+    # Находим и удаляем элемент (first() т.к. могут быть дубликаты)
     result = await db.execute(
         select(CollectionItem)
         .where(
@@ -339,7 +339,7 @@ async def remove_record_from_collection(
             CollectionItem.record_id == record_id
         )
     )
-    item = result.scalar_one_or_none()
+    item = result.scalars().first()
     
     if not item:
         raise HTTPException(

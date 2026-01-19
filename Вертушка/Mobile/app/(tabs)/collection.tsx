@@ -78,8 +78,13 @@ export default function CollectionScreen() {
           style: 'destructive',
           onPress: async () => {
             try {
+<<<<<<< HEAD
               // Передаем item.id (ID конкретного элемента CollectionItem)
               await removeFromCollection(item.id);
+=======
+              // Передаём collection_id из самого item!
+              await removeFromCollection(item.collection_id, item.record_id);
+>>>>>>> 17e2253b636d0d2036d6c0d8956b88ff75f365d9
             } catch (error) {
               Alert.alert('Ошибка', 'Не удалось удалить из коллекции');
             }
@@ -100,6 +105,7 @@ export default function CollectionScreen() {
           style: 'destructive',
           onPress: async () => {
             try {
+              // Для вишлиста API ожидает WishlistItem.id, не record_id
               await removeFromWishlist(item.id);
             } catch (error) {
               Alert.alert('Ошибка', 'Не удалось удалить из списка');
@@ -120,7 +126,7 @@ export default function CollectionScreen() {
           text: 'Перенести',
           onPress: async () => {
             try {
-              await moveToCollection(item.id);
+              await moveToCollection(item);
               Alert.alert('Готово!', 'Пластинка добавлена в коллекцию');
             } catch (error) {
               Alert.alert('Ошибка', 'Не удалось перенести в коллекцию');
@@ -141,7 +147,11 @@ export default function CollectionScreen() {
           text: 'Перенести',
           onPress: async () => {
             try {
+<<<<<<< HEAD
               await moveToWishlist(item.record_id);
+=======
+              await moveToWishlist(item);
+>>>>>>> 17e2253b636d0d2036d6c0d8956b88ff75f365d9
               Alert.alert('Готово!', 'Пластинка перенесена в список желаний');
             } catch (error) {
               Alert.alert('Ошибка', 'Не удалось перенести в список желаний');
@@ -196,9 +206,19 @@ export default function CollectionScreen() {
               const itemsToDelete = Array.from(selectedItems);
               for (const itemId of itemsToDelete) {
                 if (activeTab === 'collection') {
+<<<<<<< HEAD
                   // Передаем itemId напрямую (ID элемента CollectionItem)
                   await removeFromCollection(itemId);
                 } else {
+=======
+                  // Для коллекции API ожидает collection_id и record_id
+                  const item = collectionItems.find((i) => i.id === itemId);
+                  if (item) {
+                    await removeFromCollection(item.collection_id, item.record_id);
+                  }
+                } else {
+                  // Для вишлиста API ожидает WishlistItem.id
+>>>>>>> 17e2253b636d0d2036d6c0d8956b88ff75f365d9
                   await removeFromWishlist(itemId);
                 }
               }
@@ -229,7 +249,15 @@ export default function CollectionScreen() {
             try {
               const itemsToMove = Array.from(selectedItems);
               for (const itemId of itemsToMove) {
+<<<<<<< HEAD
                 await moveToCollection(itemId);
+=======
+                // Находим элемент вишлиста по id
+                const item = wishlistItems.find((i) => i.id === itemId);
+                if (item) {
+                  await moveToCollection(item);
+                }
+>>>>>>> 17e2253b636d0d2036d6c0d8956b88ff75f365d9
               }
               setSelectedItems(new Set());
               setIsSelectionMode(false);
@@ -258,11 +286,23 @@ export default function CollectionScreen() {
             try {
               const itemsToMove = Array.from(selectedItems);
               for (const itemId of itemsToMove) {
+<<<<<<< HEAD
                 // Передаем itemId напрямую
                 await moveToWishlist(itemId);
               }
               setSelectedItems(new Set());
               setIsSelectionMode(false);
+=======
+                // Находим элемент коллекции по id
+                const item = collectionItems.find((i) => i.id === itemId);
+                if (item) {
+                  await moveToWishlist(item);
+                }
+              }
+              setSelectedItems(new Set());
+              setIsSelectionMode(false);
+              Alert.alert('Готово!', 'Пластинки перенесены в список желаний');
+>>>>>>> 17e2253b636d0d2036d6c0d8956b88ff75f365d9
             } catch (error) {
               Alert.alert('Ошибка', 'Не удалось перенести пластинки');
             }
@@ -356,7 +396,11 @@ export default function CollectionScreen() {
               <Ionicons
                 name="heart-outline"
                 size={24}
+<<<<<<< HEAD
                 color={selectedItems.size > 0 ? Colors.primary : Colors.textMuted}
+=======
+                color={selectedItems.size > 0 ? Colors.accent : Colors.textMuted}
+>>>>>>> 17e2253b636d0d2036d6c0d8956b88ff75f365d9
               />
               <Text
                 style={[
@@ -364,7 +408,11 @@ export default function CollectionScreen() {
                   selectedItems.size === 0 && styles.footerButtonTextDisabled,
                 ]}
               >
+<<<<<<< HEAD
                 В хочу {selectedItems.size > 0 && `(${selectedItems.size})`}
+=======
+                В желания {selectedItems.size > 0 && `(${selectedItems.size})`}
+>>>>>>> 17e2253b636d0d2036d6c0d8956b88ff75f365d9
               </Text>
             </TouchableOpacity>
           )}
@@ -412,11 +460,21 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.md,
     paddingVertical: Spacing.xs,
     borderRadius: BorderRadius.md,
+<<<<<<< HEAD
     backgroundColor: Colors.primary,
   },
   selectButtonText: {
     ...Typography.buttonSmall,
     color: Colors.background,
+=======
+    backgroundColor: 'transparent',
+    borderWidth: 1.5,
+    borderColor: Colors.primary,
+  },
+  selectButtonText: {
+    ...Typography.buttonSmall,
+    color: Colors.primary,
+>>>>>>> 17e2253b636d0d2036d6c0d8956b88ff75f365d9
   },
   cancelButtonText: {
     ...Typography.buttonSmall,

@@ -266,6 +266,7 @@ class ApiClient {
     return response.data;
   }
 
+<<<<<<< HEAD
   async removeFromCollection(collectionId: string, itemId: string): Promise<void> {
     console.log('🔴 API.removeFromCollection:', { collectionId, itemId });
     try {
@@ -276,6 +277,19 @@ class ApiClient {
       console.error('❌ API.removeFromCollection: error', {
         status: error?.response?.status,
         statusText: error?.response?.statusText,
+=======
+  async removeFromCollection(collectionId: string, recordId: string): Promise<void> {
+    // Бэкенд ожидает record_id = Record.id (ID пластинки в БД)
+    console.log('🌐 API removeFromCollection:', { collectionId, recordId });
+    const url = `/collections/${collectionId}/records/${recordId}`;
+    console.log('🌐 API DELETE:', url);
+    try {
+      const response = await this.client.delete(url);
+      console.log('🌐 API removeFromCollection: success', response.status);
+    } catch (error: any) {
+      console.error('❌ API removeFromCollection ERROR:', {
+        status: error?.response?.status,
+>>>>>>> 17e2253b636d0d2036d6c0d8956b88ff75f365d9
         data: error?.response?.data,
         message: error?.message,
       });
@@ -307,6 +321,7 @@ class ApiClient {
     return response.data;
   }
 
+<<<<<<< HEAD
   async addToWishlistByRecordId(
     recordId: string,
     data?: { priority?: number; notes?: string }
@@ -329,6 +344,11 @@ class ApiClient {
       { collection_id: collectionId }
     );
     return response.data;
+=======
+  async removeFromWishlist(wishlistItemId: string): Promise<void> {
+    // Бэкенд ожидает wishlistItemId = WishlistItem.id (НЕ record_id!)
+    await this.client.delete(`/wishlists/records/${wishlistItemId}`);
+>>>>>>> 17e2253b636d0d2036d6c0d8956b88ff75f365d9
   }
 
   async getPublicWishlistUrl(): Promise<string> {

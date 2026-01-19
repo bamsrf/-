@@ -177,10 +177,17 @@ interface CollectionState {
   fetchWishlistItems: () => Promise<void>;
   addToCollection: (discogsId: string) => Promise<void>;
   addToWishlist: (discogsId: string) => Promise<void>;
+<<<<<<< HEAD
   removeFromCollection: (itemId: string) => Promise<void>;
   removeFromWishlist: (itemId: string) => Promise<void>;
   moveToCollection: (wishlistItemId: string) => Promise<void>;
   moveToWishlist: (itemId: string) => Promise<void>;
+=======
+  removeFromCollection: (collectionId: string, recordId: string) => Promise<void>;  // Теперь принимает оба ID
+  removeFromWishlist: (wishlistItemId: string) => Promise<void>;  // wishlistItemId = WishlistItem.id
+  moveToCollection: (wishlistItem: WishlistItem) => Promise<void>;  // передаём весь WishlistItem
+  moveToWishlist: (collectionItem: CollectionItem) => Promise<void>;  // передаём весь CollectionItem
+>>>>>>> 17e2253b636d0d2036d6c0d8956b88ff75f365d9
 }
 
 export const useCollectionStore = create<CollectionState>((set, get) => ({
@@ -220,18 +227,29 @@ export const useCollectionStore = create<CollectionState>((set, get) => ({
 
   fetchCollectionItems: async () => {
     const { defaultCollection } = get();
+    console.log('🔵 fetchCollectionItems:', { hasDefaultCollection: !!defaultCollection, collectionId: defaultCollection?.id });
     if (!defaultCollection) return;
 
     set({ isLoading: true });
     try {
       const items = await api.getCollectionItems(defaultCollection.id);
       console.log('🔵 fetchCollectionItems: loaded', items.length, 'items');
+<<<<<<< HEAD
       items.slice(0, 3).forEach((item, index) => {
         console.log(`🔵 Item ${index}:`, {
           id: item.id,
           collection_id: item.collection_id,
           record_id: item.record_id,
           recordId: (item as any).recordId,
+=======
+      // Логируем первые 3 item для проверки структуры
+      items.slice(0, 3).forEach((item, i) => {
+        console.log(`🔵 Item ${i}:`, { 
+          id: item.id, 
+          record_id: item.record_id, 
+          collection_id: item.collection_id,
+          recordId: item.record?.id 
+>>>>>>> 17e2253b636d0d2036d6c0d8956b88ff75f365d9
         });
       });
       set({ collectionItems: items, isLoading: false });
@@ -290,6 +308,7 @@ export const useCollectionStore = create<CollectionState>((set, get) => ({
     await get().fetchWishlistItems();
   },
 
+<<<<<<< HEAD
   removeFromCollection: async (itemId) => {
     const { defaultCollection, fetchCollectionItems } = get();
 
@@ -302,6 +321,21 @@ export const useCollectionStore = create<CollectionState>((set, get) => ({
 
     // API ожидает item_id (ID конкретного элемента CollectionItem)
     await api.removeFromCollection(defaultCollection.id, itemId);
+=======
+  removeFromCollection: async (collectionId: string, recordId: string) => {
+    const { fetchCollectionItems } = get();
+    
+    console.log('🗑️ removeFromCollection:', { collectionId, recordId });
+    
+    if (!collectionId || !recordId) {
+      console.error('❌ removeFromCollection: missing collectionId or recordId');
+      throw new Error('Не указана коллекция или пластинка');
+    }
+
+    console.log('🗑️ removeFromCollection: calling API', { collectionId, recordId });
+    await api.removeFromCollection(collectionId, recordId);
+    console.log('✅ removeFromCollection: success');
+>>>>>>> 17e2253b636d0d2036d6c0d8956b88ff75f365d9
     await fetchCollectionItems();
   },
 
@@ -310,13 +344,85 @@ export const useCollectionStore = create<CollectionState>((set, get) => ({
     await get().fetchWishlistItems();
   },
 
-  moveToCollection: async (wishlistItemId) => {
+  moveToCollection: async (wishlistItem: WishlistItem) => {
     const { defaultCollection, fetchCollectionItems, fetchWishlistItems } = get();
-    if (!defaultCollection) return;
+    
+    console.log('➡️ moveToCollection:', { 
+      wishlistItemId: wishlistItem.id,
+      recordId: wishlistItem.record_id,
+      discogsId: wishlistItem.record.discogs_id,
+      hasDefaultCollection: !!defaultCollection 
+    });
+    
+    if (!defaultCollection) {
+      console.error('❌ moveToCollection: defaultCollection is null');
+      throw new Error('Коллекция не найдена');
+    }
 
-    await api.moveToCollection(wishlistItemId, defaultCollection.id);
+    // Сначала добавляем в коллекцию (чтобы не потерять при ошибке)
+    const discogsId = wishlistItem.record.discogs_id;
+    if (!discogsId) {
+      console.error('❌ moveToCollection: discogs_id is null');
+      throw new Error('Не найден идентификатор пластинки');
+    }
+    
+    console.log('➡️ moveToCollection: adding to collection', { discogsId });
+    await api.addToCollection(defaultCollection.id, discogsId);
+    console.log('✅ moveToCollection: added to collection');
+    
+    // Потом удаляем из вишлиста (API ожидает WishlistItem.id)
+    console.log('➡️ moveToCollection: removing from wishlist', { wishlistItemId: wishlistItem.id });
+    await api.removeFromWishlist(wishlistItem.id);
+    console.log('✅ moveToCollection: removed from wishlist');
+    
+    // Обновляем оба списка
     await fetchCollectionItems();
     await fetchWishlistItems();
+    console.log('✅ moveToCollection: complete');
+  },
+
+  moveToWishlist: async (collectionItem) => {
+    const { fetchCollectionItems, fetchWishlistItems } = get();
+    
+    console.log('➡️ moveToWishlist:', { 
+      collectionItemId: collectionItem.id,
+      collectionId: collectionItem.collection_id,
+      recordId: collectionItem.record_id,
+      discogsId: collectionItem.record.discogs_id
+    });
+
+    // Сначала добавляем в вишлист (чтобы не потерять при ошибке)
+    const discogsId = collectionItem.record.discogs_id;
+    if (!discogsId) {
+      console.error('❌ moveToWishlist: discogs_id is null');
+      throw new Error('Не найден идентификатор пластинки');
+    }
+    
+    try {
+      console.log('➡️ moveToWishlist: adding to wishlist', { discogsId });
+      await api.addToWishlist(discogsId);
+      console.log('✅ moveToWishlist: added to wishlist');
+    } catch (error: any) {
+      // Если пластинка уже в вишлисте — это OK, продолжаем удаление из коллекции
+      if (error?.response?.status === 400 && error?.response?.data?.detail?.includes('уже в вишлисте')) {
+        console.log('ℹ️ moveToWishlist: already in wishlist, continuing...');
+      } else {
+        throw error;
+      }
+    }
+    
+    // Потом удаляем из коллекции — используем collection_id из самого item!
+    console.log('➡️ moveToWishlist: removing from collection', { 
+      collectionId: collectionItem.collection_id, 
+      recordId: collectionItem.record_id 
+    });
+    await api.removeFromCollection(collectionItem.collection_id, collectionItem.record_id);
+    console.log('✅ moveToWishlist: removed from collection');
+    
+    // Обновляем оба списка
+    await fetchCollectionItems();
+    await fetchWishlistItems();
+    console.log('✅ moveToWishlist: complete');
   },
 
   moveToWishlist: async (itemId) => {
