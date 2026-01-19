@@ -36,6 +36,7 @@ export default function CollectionScreen() {
     removeFromCollection,
     removeFromWishlist,
     moveToCollection,
+    moveToWishlist,
   } = useCollectionStore();
 
   // Загрузка данных при монтировании
@@ -77,6 +78,7 @@ export default function CollectionScreen() {
           style: 'destructive',
           onPress: async () => {
             try {
+              // Передаем item.id (ID конкретного элемента CollectionItem)
               await removeFromCollection(item.id);
             } catch (error) {
               Alert.alert('Ошибка', 'Не удалось удалить из коллекции');
@@ -129,6 +131,27 @@ export default function CollectionScreen() {
     );
   };
 
+  const handleMoveToWishlist = async (item: CollectionItem) => {
+    Alert.alert(
+      'В список желаний',
+      `Перенести "${item.record.title}" в список желаний?`,
+      [
+        { text: 'Отмена', style: 'cancel' },
+        {
+          text: 'Перенести',
+          onPress: async () => {
+            try {
+              await moveToWishlist(item.record_id);
+              Alert.alert('Готово!', 'Пластинка перенесена в список желаний');
+            } catch (error) {
+              Alert.alert('Ошибка', 'Не удалось перенести в список желаний');
+            }
+          },
+        },
+      ]
+    );
+  };
+
   // Режим выбора
   const handleToggleSelectionMode = () => {
     setIsSelectionMode(!isSelectionMode);
@@ -173,6 +196,7 @@ export default function CollectionScreen() {
               const itemsToDelete = Array.from(selectedItems);
               for (const itemId of itemsToDelete) {
                 if (activeTab === 'collection') {
+                  // Передаем itemId напрямую (ID элемента CollectionItem)
                   await removeFromCollection(itemId);
                 } else {
                   await removeFromWishlist(itemId);
@@ -206,6 +230,36 @@ export default function CollectionScreen() {
               const itemsToMove = Array.from(selectedItems);
               for (const itemId of itemsToMove) {
                 await moveToCollection(itemId);
+              }
+              setSelectedItems(new Set());
+              setIsSelectionMode(false);
+            } catch (error) {
+              Alert.alert('Ошибка', 'Не удалось перенести пластинки');
+            }
+          },
+        },
+      ]
+    );
+  };
+
+  const handleBulkMoveToWishlist = async () => {
+    if (selectedItems.size === 0 || activeTab !== 'collection') return;
+
+    const count = selectedItems.size;
+
+    Alert.alert(
+      'Перенести в список желаний?',
+      `Будет перенесено ${count} пластинок в список желаний`,
+      [
+        { text: 'Отмена', style: 'cancel' },
+        {
+          text: 'Перенести',
+          onPress: async () => {
+            try {
+              const itemsToMove = Array.from(selectedItems);
+              for (const itemId of itemsToMove) {
+                // Передаем itemId напрямую
+                await moveToWishlist(itemId);
               }
               setSelectedItems(new Set());
               setIsSelectionMode(false);
@@ -294,12 +348,23 @@ export default function CollectionScreen() {
               </Text>
             </TouchableOpacity>
           ) : (
-            <TouchableOpacity style={styles.footerButton} onPress={handleSelectAll}>
-              <Ionicons name="checkmark-circle" size={24} color={Colors.primary} />
-              <Text style={styles.footerButtonText}>
-                {selectedItems.size === data.length && data.length > 0
-                  ? 'Снять все'
-                  : 'Выбрать все'}
+            <TouchableOpacity
+              style={styles.footerButton}
+              onPress={handleBulkMoveToWishlist}
+              disabled={selectedItems.size === 0}
+            >
+              <Ionicons
+                name="heart-outline"
+                size={24}
+                color={selectedItems.size > 0 ? Colors.primary : Colors.textMuted}
+              />
+              <Text
+                style={[
+                  styles.footerButtonText,
+                  selectedItems.size === 0 && styles.footerButtonTextDisabled,
+                ]}
+              >
+                В хочу {selectedItems.size > 0 && `(${selectedItems.size})`}
               </Text>
             </TouchableOpacity>
           )}

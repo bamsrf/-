@@ -351,6 +351,48 @@ async def remove_record_from_collection(
     await db.commit()
 
 
+@router.delete("/{collection_id}/items/{item_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def remove_item_from_collection(
+    collection_id: UUID,
+    item_id: UUID,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """Удаление конкретного элемента (копии) из коллекции по item_id"""
+    # Проверяем коллекцию
+    result = await db.execute(
+        select(Collection)
+        .where(
+            Collection.id == collection_id,
+            Collection.user_id == current_user.id
+        )
+    )
+    if not result.scalar_one_or_none():
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Коллекция не найдена"
+        )
+
+    # Находим и удаляем конкретный элемент по item_id
+    result = await db.execute(
+        select(CollectionItem)
+        .where(
+            CollectionItem.id == item_id,
+            CollectionItem.collection_id == collection_id
+        )
+    )
+    item = result.scalar_one_or_none()
+
+    if not item:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Элемент не найден в коллекции"
+        )
+
+    await db.delete(item)
+    await db.commit()
+
+
 @router.get("/{collection_id}/stats", response_model=CollectionStats)
 async def get_collection_stats(
     collection_id: UUID,

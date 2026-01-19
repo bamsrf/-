@@ -38,6 +38,7 @@ export default function RecordDetailScreen() {
     removeFromCollection,
     removeFromWishlist,
     moveToCollection,
+    moveToWishlist,
     collectionItems,
     wishlistItems,
     fetchCollectionItems,
@@ -155,6 +156,7 @@ export default function RecordDetailScreen() {
           style: 'destructive',
           onPress: async () => {
             try {
+              // Передаем collectionItemId (ID конкретного элемента CollectionItem)
               await removeFromCollection(status.collectionItemId!);
               await fetchCollectionItems();
               Alert.alert('Готово!', 'Пластинка удалена из коллекции');
@@ -224,13 +226,8 @@ export default function RecordDetailScreen() {
           text: 'Перенести',
           onPress: async () => {
             try {
-              await removeFromCollection(status.collectionItemId!);
-              const discogsId = record.discogs_id || id;
-              if (discogsId) {
-                await addToWishlist(discogsId);
-              }
-              await fetchCollectionItems();
-              await fetchWishlistItems();
+              // Используем moveToWishlist которая принимает itemId
+              await moveToWishlist(status.collectionItemId!);
               Alert.alert('Готово!', 'Пластинка перенесена в список желаний');
             } catch (error: any) {
               Alert.alert('Ошибка', 'Не удалось перенести');

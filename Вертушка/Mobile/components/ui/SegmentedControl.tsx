@@ -1,13 +1,14 @@
 /**
  * Сегментированный контрол (Моё / Хочу)
  */
-import React from 'react';
+import React, { useState } from 'react';
 import {
   View,
   Text,
   TouchableOpacity,
   StyleSheet,
   ViewStyle,
+  LayoutChangeEvent,
 } from 'react-native';
 import Animated, {
   useSharedValue,
@@ -16,11 +17,14 @@ import Animated, {
 } from 'react-native-reanimated';
 import { Colors, Typography, BorderRadius, Spacing } from '../../constants/theme';
 
+const PADDING = 4;
+
 interface SegmentedControlProps<T extends string> {
   segments: { key: T; label: string }[];
   selectedKey: T;
   onSelect: (key: T) => void;
   style?: ViewStyle;
+  disabled?: boolean;
 }
 
 export function SegmentedControl<T extends string>({
@@ -28,24 +32,38 @@ export function SegmentedControl<T extends string>({
   selectedKey,
   onSelect,
   style,
+  disabled = false,
 }: SegmentedControlProps<T>) {
+  const [containerWidth, setContainerWidth] = useState(0);
   const selectedIndex = segments.findIndex((s) => s.key === selectedKey);
   const translateX = useSharedValue(0);
 
+  const segmentWidth = containerWidth > 0 
+    ? (containerWidth - PADDING * 2) / segments.length 
+    : 0;
+
   React.useEffect(() => {
-    translateX.value = withTiming(selectedIndex * (100 / segments.length), {
-      duration: 200,
-    });
-  }, [selectedIndex, segments.length]);
+    if (segmentWidth > 0) {
+      translateX.value = withTiming(selectedIndex * segmentWidth, {
+        duration: 200,
+      });
+    }
+  }, [selectedIndex, segmentWidth]);
 
   const indicatorStyle = useAnimatedStyle(() => ({
-    transform: [{ translateX: `${translateX.value}%` }],
-    width: `${100 / segments.length}%`,
+    transform: [{ translateX: translateX.value }],
+    width: segmentWidth,
   }));
 
+  const handleLayout = (event: LayoutChangeEvent) => {
+    setContainerWidth(event.nativeEvent.layout.width);
+  };
+
   return (
-    <View style={[styles.container, style]}>
-      <Animated.View style={[styles.indicator, indicatorStyle]} />
+    <View style={[styles.container, style]} onLayout={handleLayout}>
+      {containerWidth > 0 && (
+        <Animated.View style={[styles.indicator, indicatorStyle]} />
+      )}
       
       {segments.map((segment) => {
         const isSelected = segment.key === selectedKey;
@@ -54,13 +72,15 @@ export function SegmentedControl<T extends string>({
           <TouchableOpacity
             key={segment.key}
             style={styles.segment}
-            onPress={() => onSelect(segment.key)}
+            onPress={() => !disabled && onSelect(segment.key)}
             activeOpacity={0.7}
+            disabled={disabled}
           >
             <Text
               style={[
                 styles.segmentText,
                 isSelected && styles.segmentTextSelected,
+                disabled && styles.segmentTextDisabled,
               ]}
             >
               {segment.label}
@@ -77,14 +97,14 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     backgroundColor: Colors.surface,
     borderRadius: BorderRadius.md,
-    padding: 4,
+    padding: PADDING,
     position: 'relative',
   },
   indicator: {
     position: 'absolute',
-    top: 4,
-    bottom: 4,
-    left: 4,
+    top: PADDING,
+    bottom: PADDING,
+    left: PADDING,
     backgroundColor: Colors.background,
     borderRadius: BorderRadius.sm,
     shadowColor: '#000',
@@ -107,6 +127,9 @@ const styles = StyleSheet.create({
   segmentTextSelected: {
     color: Colors.primary,
     fontWeight: '600',
+  },
+  segmentTextDisabled: {
+    opacity: 0.5,
   },
 });
 

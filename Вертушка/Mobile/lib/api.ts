@@ -38,7 +38,7 @@ class ApiClient {
   constructor() {
     this.client = axios.create({
       baseURL: API_BASE_URL,
-      timeout: 30000,
+      timeout: 60000, // 60 секунд — бэкенд может долго запрашивать Discogs API
       headers: {
         'Content-Type': 'application/json',
       },
@@ -234,12 +234,12 @@ class ApiClient {
   // ==================== Collections ====================
 
   async getCollections(): Promise<Collection[]> {
-    const response = await this.client.get<Collection[]>('/collections');
+    const response = await this.client.get<Collection[]>('/collections/');
     return response.data;
   }
 
   async createCollection(data: { name: string; description?: string }): Promise<Collection> {
-    const response = await this.client.post<Collection>('/collections', data);
+    const response = await this.client.post<Collection>('/collections/', data);
     return response.data;
   }
 
@@ -266,15 +266,27 @@ class ApiClient {
     return response.data;
   }
 
-  async removeFromCollection(collectionId: string, recordId: string): Promise<void> {
-    // Бэкенд использует /collections/{collection_id}/records/{record_id}
-    await this.client.delete(`/collections/${collectionId}/records/${recordId}`);
+  async removeFromCollection(collectionId: string, itemId: string): Promise<void> {
+    console.log('🔴 API.removeFromCollection:', { collectionId, itemId });
+    try {
+      // Используем новый endpoint для удаления конкретного элемента по item_id
+      const response = await this.client.delete(`/collections/${collectionId}/items/${itemId}`);
+      console.log('✅ API.removeFromCollection: success', response.status);
+    } catch (error: any) {
+      console.error('❌ API.removeFromCollection: error', {
+        status: error?.response?.status,
+        statusText: error?.response?.statusText,
+        data: error?.response?.data,
+        message: error?.message,
+      });
+      throw error;
+    }
   }
 
   // ==================== Wishlists ====================
 
   async getWishlist(): Promise<Wishlist> {
-    const response = await this.client.get<Wishlist>('/wishlists');
+    const response = await this.client.get<Wishlist>('/wishlists/');
     return response.data;
   }
 
@@ -288,8 +300,19 @@ class ApiClient {
     discogsId: string,
     data?: { priority?: number; notes?: string }
   ): Promise<WishlistItem> {
-    const response = await this.client.post<WishlistItem>('/wishlists/items', {
+    const response = await this.client.post<WishlistItem>('/wishlists/items/', {
       discogs_id: discogsId,
+      ...data,
+    });
+    return response.data;
+  }
+
+  async addToWishlistByRecordId(
+    recordId: string,
+    data?: { priority?: number; notes?: string }
+  ): Promise<WishlistItem> {
+    const response = await this.client.post<WishlistItem>('/wishlists/items/', {
+      record_id: recordId,
       ...data,
     });
     return response.data;

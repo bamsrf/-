@@ -180,6 +180,7 @@ interface CollectionState {
   removeFromCollection: (itemId: string) => Promise<void>;
   removeFromWishlist: (itemId: string) => Promise<void>;
   moveToCollection: (wishlistItemId: string) => Promise<void>;
+  moveToWishlist: (itemId: string) => Promise<void>;
 }
 
 export const useCollectionStore = create<CollectionState>((set, get) => ({
@@ -224,6 +225,15 @@ export const useCollectionStore = create<CollectionState>((set, get) => ({
     set({ isLoading: true });
     try {
       const items = await api.getCollectionItems(defaultCollection.id);
+      console.log('🔵 fetchCollectionItems: loaded', items.length, 'items');
+      items.slice(0, 3).forEach((item, index) => {
+        console.log(`🔵 Item ${index}:`, {
+          id: item.id,
+          collection_id: item.collection_id,
+          record_id: item.record_id,
+          recordId: (item as any).recordId,
+        });
+      });
       set({ collectionItems: items, isLoading: false });
     } catch (error) {
       set({ isLoading: false });
@@ -282,8 +292,15 @@ export const useCollectionStore = create<CollectionState>((set, get) => ({
 
   removeFromCollection: async (itemId) => {
     const { defaultCollection, fetchCollectionItems } = get();
-    if (!defaultCollection) return;
 
+    console.log('🗑️ removeFromCollection:', { collectionId: defaultCollection?.id, itemId });
+
+    if (!defaultCollection || !itemId) {
+      console.error('❌ removeFromCollection: missing collectionId or itemId');
+      throw new Error('Не указана коллекция или элемент');
+    }
+
+    // API ожидает item_id (ID конкретного элемента CollectionItem)
     await api.removeFromCollection(defaultCollection.id, itemId);
     await fetchCollectionItems();
   },
@@ -298,6 +315,25 @@ export const useCollectionStore = create<CollectionState>((set, get) => ({
     if (!defaultCollection) return;
 
     await api.moveToCollection(wishlistItemId, defaultCollection.id);
+    await fetchCollectionItems();
+    await fetchWishlistItems();
+  },
+
+  moveToWishlist: async (itemId) => {
+    const { defaultCollection, collectionItems, fetchCollectionItems, fetchWishlistItems } = get();
+    if (!defaultCollection) return;
+
+    // Находим элемент в коллекции, чтобы получить record_id
+    const item = collectionItems.find((i) => i.id === itemId);
+    if (!item) {
+      throw new Error('Элемент не найден в коллекции');
+    }
+
+    // 1. Добавляем в вишлист по record_id
+    await api.addToWishlistByRecordId(item.record_id);
+    // 2. Удаляем из коллекции по itemId
+    await api.removeFromCollection(defaultCollection.id, itemId);
+    // 3. Обновляем оба списка
     await fetchCollectionItems();
     await fetchWishlistItems();
   },
