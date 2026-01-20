@@ -156,6 +156,12 @@ export interface PaginatedResponse<T> {
 
 export type CollectionTab = 'collection' | 'wishlist';
 
+// Статус пластинки в системе (взаимоисключающие состояния)
+export type RecordStatus =
+  | 'not_added'      // Нигде не добавлена
+  | 'in_collection'  // В коллекции (может быть несколько копий)
+  | 'in_wishlist';   // В вишлисте
+
 export interface SearchFilters {
   artist?: string;
   year?: number;

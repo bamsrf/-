@@ -141,6 +141,14 @@ export function RecordCard({
               <Ionicons name="heart-outline" size={24} color={Colors.accent} />
             </TouchableOpacity>
           )}
+          {onRemove && (
+            <TouchableOpacity
+              style={styles.actionButton}
+              onPress={onRemove}
+            >
+              <Ionicons name="trash-outline" size={24} color={Colors.error} />
+            </TouchableOpacity>
+          )}
         </View>
       )}
     </TouchableOpacity>

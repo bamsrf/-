@@ -283,8 +283,26 @@ async def add_record_to_collection(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Необходимо указать либо discogs_id, либо record_id"
         )
-    
-    # Добавляем (дубликаты разрешены - можно иметь несколько копий одной пластинки)
+
+    # Проверяем, есть ли эта пластинка в вишлисте текущего пользователя
+    from app.models.wishlist import Wishlist, WishlistItem
+
+    wishlist_item_query = await db.execute(
+        select(WishlistItem)
+        .join(Wishlist)
+        .where(
+            Wishlist.user_id == current_user.id,
+            WishlistItem.record_id == record.id
+        )
+    )
+    wishlist_item = wishlist_item_query.scalar_one_or_none()
+
+    # Если в вишлисте - автоматически удаляем (атомарный перенос)
+    if wishlist_item:
+        print(f"🔄 add_record_to_collection: removing from wishlist, item_id={wishlist_item.id}")
+        await db.delete(wishlist_item)
+
+    # Добавляем в коллекцию (дубликаты разрешены - можно иметь несколько копий одной пластинки)
     item = CollectionItem(
         collection_id=collection_id,
         record_id=record.id,

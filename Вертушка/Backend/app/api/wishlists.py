@@ -22,8 +22,10 @@ from app.schemas.wishlist import (
     WishlistPublicResponse,
     WishlistPublicItemResponse,
     GiftBookingInfo,
+    MoveToCollectionRequest,
 )
 from app.schemas.record import RecordBrief
+from app.schemas.collection import CollectionItemResponse
 
 router = APIRouter()
 
@@ -91,36 +93,67 @@ async def add_to_wishlist(
 ):
     """Добавление пластинки в вишлист"""
     from app.api.records import get_or_create_record_by_discogs_id
-    
+
+    print(f"💜 add_to_wishlist: START, user={current_user.id}, data={data}")
+
     # Получаем вишлист
     result = await db.execute(
         select(Wishlist).where(Wishlist.user_id == current_user.id)
     )
     wishlist = result.scalar_one_or_none()
-    
+
     if not wishlist:
+        print(f"💜 add_to_wishlist: creating new wishlist for user {current_user.id}")
         wishlist = Wishlist(user_id=current_user.id)
         db.add(wishlist)
         await db.flush()
-    
+    else:
+        print(f"💜 add_to_wishlist: found wishlist {wishlist.id}")
+
     # Получаем Record: либо по discogs_id, либо по record_id
     if data.discogs_id:
+        print(f"💜 add_to_wishlist: fetching record by discogs_id={data.discogs_id}")
         record = await get_or_create_record_by_discogs_id(data.discogs_id, db)
+        print(f"💜 add_to_wishlist: got record {record.id}")
     elif data.record_id:
+        print(f"💜 add_to_wishlist: fetching record by record_id={data.record_id}")
         result = await db.execute(select(Record).where(Record.id == data.record_id))
         record = result.scalar_one_or_none()
         if not record:
+            print(f"❌ add_to_wishlist: record not found")
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="Пластинка не найдена"
             )
+        print(f"💜 add_to_wishlist: got record {record.id}")
     else:
+        print(f"❌ add_to_wishlist: no discogs_id or record_id provided")
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Необходимо указать либо discogs_id, либо record_id"
         )
     
-    # Проверяем, не добавлена ли уже
+    # Проверяем, есть ли эта пластинка в коллекции (хотя бы одна копия)
+    from app.models.collection import Collection, CollectionItem
+
+    print(f"💜 add_to_wishlist: checking if in collection...")
+    collection_item_query = await db.execute(
+        select(CollectionItem)
+        .join(Collection)
+        .where(
+            Collection.user_id == current_user.id,
+            CollectionItem.record_id == record.id
+        )
+    )
+    if collection_item_query.scalar_one_or_none():
+        print(f"❌ add_to_wishlist: record already in collection")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Пластинка уже в вашей коллекции"
+        )
+
+    # Проверяем, не добавлена ли уже в вишлист
+    print(f"💜 add_to_wishlist: checking if already exists...")
     result = await db.execute(
         select(WishlistItem)
         .where(
@@ -129,12 +162,14 @@ async def add_to_wishlist(
         )
     )
     if result.scalar_one_or_none():
+        print(f"❌ add_to_wishlist: already in wishlist")
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Пластинка уже в вишлисте"
         )
-    
+
     # Добавляем
+    print(f"💜 add_to_wishlist: adding to wishlist...")
     item = WishlistItem(
         wishlist_id=wishlist.id,
         record_id=record.id,
@@ -144,7 +179,9 @@ async def add_to_wishlist(
     db.add(item)
     await db.commit()
     await db.refresh(item)
-    
+
+    print(f"✅ add_to_wishlist: SUCCESS, item_id={item.id}")
+
     return WishlistItemResponse(
         id=item.id,
         wishlist_id=item.wishlist_id,
@@ -406,16 +443,16 @@ async def search_wishlist(
         )
     )
     wishlist = result.scalar_one_or_none()
-    
+
     if not wishlist:
         return []
-    
+
     q_lower = q.lower()
     matching_items = [
         item for item in wishlist.items
         if q_lower in item.record.title.lower() or q_lower in item.record.artist.lower()
     ]
-    
+
     return [WishlistItemResponse(
         id=item.id,
         wishlist_id=item.wishlist_id,
@@ -433,4 +470,83 @@ async def search_wishlist(
             booked_at=item.gift_booking.booked_at
         ) if item.gift_booking else None
     ) for item in matching_items]
+
+
+@router.post("/items/{item_id}/move-to-collection", response_model=CollectionItemResponse)
+async def move_to_collection(
+    item_id: UUID,
+    data: MoveToCollectionRequest,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """Атомарный перенос из вишлиста в коллекцию"""
+    from app.models.collection import Collection, CollectionItem
+
+    print(f"🔄 move_to_collection: START, item_id={item_id}, collection_id={data.collection_id}, user={current_user.id}")
+
+    # 1. Находим элемент вишлиста
+    result = await db.execute(
+        select(WishlistItem)
+        .where(WishlistItem.id == item_id)
+        .options(
+            selectinload(WishlistItem.wishlist),
+            selectinload(WishlistItem.record)
+        )
+    )
+    item = result.scalar_one_or_none()
+
+    if not item or item.wishlist.user_id != current_user.id:
+        print(f"❌ move_to_collection: wishlist item not found or access denied")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Элемент не найден"
+        )
+
+    print(f"🔄 move_to_collection: found wishlist item, record_id={item.record_id}")
+
+    # 2. Проверяем коллекцию
+    result = await db.execute(
+        select(Collection).where(
+            Collection.id == data.collection_id,
+            Collection.user_id == current_user.id
+        )
+    )
+    if not result.scalar_one_or_none():
+        print(f"❌ move_to_collection: collection not found")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Коллекция не найдена"
+        )
+
+    print(f"🔄 move_to_collection: collection verified")
+
+    # 3. Создаем элемент коллекции
+    collection_item = CollectionItem(
+        collection_id=data.collection_id,
+        record_id=item.record_id
+    )
+    db.add(collection_item)
+    print(f"🔄 move_to_collection: collection item created")
+
+    # 4. Удаляем из вишлиста
+    await db.delete(item)
+    print(f"🔄 move_to_collection: wishlist item deleted")
+
+    # 5. Коммит (атомарно!)
+    await db.commit()
+    await db.refresh(collection_item)
+
+    print(f"✅ move_to_collection: SUCCESS, new collection_item_id={collection_item.id}")
+
+    return CollectionItemResponse(
+        id=collection_item.id,
+        collection_id=collection_item.collection_id,
+        record_id=collection_item.record_id,
+        condition=collection_item.condition,
+        sleeve_condition=collection_item.sleeve_condition,
+        notes=collection_item.notes,
+        shelf_position=collection_item.shelf_position,
+        added_at=collection_item.added_at,
+        record=item.record
+    )
 

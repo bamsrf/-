@@ -113,7 +113,7 @@ class GiftBookingResponse(BaseModel):
 class GiftBookingOwnerResponse(BaseModel):
     """Схема бронирования для владельца вишлиста"""
     model_config = ConfigDict(from_attributes=True)
-    
+
     id: UUID
     wishlist_item_id: UUID
     gifter_name: str
@@ -125,4 +125,9 @@ class GiftBookingOwnerResponse(BaseModel):
     completed_at: datetime | None
     cancelled_at: datetime | None
     record: RecordBrief
+
+
+class MoveToCollectionRequest(BaseModel):
+    """Схема для переноса из вишлиста в коллекцию"""
+    collection_id: UUID
 

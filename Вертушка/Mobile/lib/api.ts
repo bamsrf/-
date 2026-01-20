@@ -19,13 +19,10 @@ import {
 } from './types';
 
 // API сервер
-// Для тестирования через Expo Go используем продакшен API
-const API_BASE_URL = 'https://api.vinyl-vertushka.ru/api';
-
 // Для локальной разработки с бэкендом на localhost:
-// const API_BASE_URL = __DEV__ 
-//   ? 'http://192.168.1.66:8000/api'  // Локальный IP для тестирования
-//   : 'https://api.vinyl-vertushka.ru/api'; // Продакшен сервер
+const API_BASE_URL = __DEV__
+  ? 'http://192.168.0.180:8000/api'  // Локальный IP для разработки (работает на симуляторе и физическом устройстве)
+  : 'https://api.vinyl-vertushka.ru/api'; // Продакшен сервер
 
 const TOKEN_KEY = 'auth_token';
 const REFRESH_TOKEN_KEY = 'refresh_token';
@@ -300,22 +297,45 @@ class ApiClient {
     discogsId: string,
     data?: { priority?: number; notes?: string }
   ): Promise<WishlistItem> {
-    const response = await this.client.post<WishlistItem>('/wishlists/items/', {
-      discogs_id: discogsId,
-      ...data,
-    });
-    return response.data;
+    console.log('💜 API.addToWishlist: START', { discogsId, data });
+    try {
+      const response = await this.client.post<WishlistItem>('/wishlists/items', {
+        discogs_id: discogsId,
+        ...data,
+      });
+      console.log('✅ API.addToWishlist: SUCCESS', { status: response.status, data: response.data });
+      return response.data;
+    } catch (error: any) {
+      console.error('❌ API.addToWishlist: ERROR', {
+        status: error?.response?.status,
+        statusText: error?.response?.statusText,
+        data: error?.response?.data,
+        message: error?.message,
+      });
+      throw error;
+    }
   }
 
   async addToWishlistByRecordId(
     recordId: string,
     data?: { priority?: number; notes?: string }
   ): Promise<WishlistItem> {
-    const response = await this.client.post<WishlistItem>('/wishlists/items/', {
-      record_id: recordId,
-      ...data,
-    });
-    return response.data;
+    console.log('💜 API.addToWishlistByRecordId: START', { recordId, data });
+    try {
+      const response = await this.client.post<WishlistItem>('/wishlists/items', {
+        record_id: recordId,
+        ...data,
+      });
+      console.log('✅ API.addToWishlistByRecordId: SUCCESS', response.data);
+      return response.data;
+    } catch (error: any) {
+      console.error('❌ API.addToWishlistByRecordId: ERROR', {
+        status: error?.response?.status,
+        data: error?.response?.data,
+        message: error?.message,
+      });
+      throw error;
+    }
   }
 
   async removeFromWishlist(itemId: string): Promise<void> {

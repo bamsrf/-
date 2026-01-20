@@ -180,7 +180,6 @@ interface CollectionState {
   removeFromCollection: (itemId: string) => Promise<void>;
   removeFromWishlist: (itemId: string) => Promise<void>;
   moveToCollection: (wishlistItemId: string) => Promise<void>;
-  moveToWishlist: (itemId: string) => Promise<void>;
 }
 
 export const useCollectionStore = create<CollectionState>((set, get) => ({
@@ -254,14 +253,14 @@ export const useCollectionStore = create<CollectionState>((set, get) => ({
   },
 
   addToCollection: async (discogsId) => {
-    let { defaultCollection, collections, fetchCollectionItems } = get();
-    
+    let { defaultCollection, collections, fetchCollectionItems, fetchWishlistItems } = get();
+
     console.log('🔵 addToCollection: start', {
       discogsId,
       hasDefaultCollection: !!defaultCollection,
       collectionsCount: collections.length,
     });
-    
+
     // Если нет коллекций - создаём первую
     if (!defaultCollection) {
       if (collections.length === 0) {
@@ -271,7 +270,7 @@ export const useCollectionStore = create<CollectionState>((set, get) => ({
         await get().fetchCollections();
         defaultCollection = get().defaultCollection;
       }
-      
+
       if (!defaultCollection) {
         throw new Error('Не удалось создать коллекцию');
       }
@@ -279,7 +278,13 @@ export const useCollectionStore = create<CollectionState>((set, get) => ({
 
     console.log('🔵 addToCollection: adding to collection', defaultCollection.id);
     await api.addToCollection(defaultCollection.id, discogsId);
-    await fetchCollectionItems();
+
+    // Обновляем ОБА списка, т.к. сервер мог автоматически удалить из вишлиста
+    await Promise.all([
+      fetchCollectionItems(),
+      fetchWishlistItems()
+    ]);
+
     console.log('✅ addToCollection: success');
   },
 
@@ -312,50 +317,21 @@ export const useCollectionStore = create<CollectionState>((set, get) => ({
   },
 
   moveToCollection: async (wishlistItemId) => {
-    const { defaultCollection, wishlistItems, fetchCollectionItems, fetchWishlistItems } = get();
+    const { defaultCollection, fetchCollectionItems, fetchWishlistItems } = get();
     if (!defaultCollection) {
       throw new Error('Коллекция не найдена');
     }
 
-    // Находим элемент в вишлисте
-    const item = wishlistItems.find((i) => i.id === wishlistItemId);
-    if (!item) {
-      throw new Error('Элемент не найден в списке желаний');
-    }
+    // Используем атомарный endpoint
+    await api.moveToCollection(wishlistItemId, defaultCollection.id);
 
-    // 1. Добавляем в коллекцию
-    const discogsId = item.record.discogs_id;
-    if (!discogsId) {
-      throw new Error('Не найден идентификатор пластинки');
-    }
-    await api.addToCollection(defaultCollection.id, discogsId);
-
-    // 2. Удаляем из вишлиста
-    await api.removeFromWishlist(wishlistItemId);
-
-    // 3. Обновляем оба списка
-    await fetchCollectionItems();
-    await fetchWishlistItems();
+    // Обновляем оба списка
+    await Promise.all([
+      fetchCollectionItems(),
+      fetchWishlistItems(),
+    ]);
   },
 
-  moveToWishlist: async (itemId) => {
-    const { defaultCollection, collectionItems, fetchCollectionItems, fetchWishlistItems } = get();
-    if (!defaultCollection) return;
-
-    // Находим элемент в коллекции, чтобы получить record_id
-    const item = collectionItems.find((i) => i.id === itemId);
-    if (!item) {
-      throw new Error('Элемент не найден в коллекции');
-    }
-
-    // 1. Добавляем в вишлист по record_id
-    await api.addToWishlistByRecordId(item.record_id);
-    // 2. Удаляем из коллекции по itemId
-    await api.removeFromCollection(defaultCollection.id, itemId);
-    // 3. Обновляем оба списка
-    await fetchCollectionItems();
-    await fetchWishlistItems();
-  },
 }));
 
 // ==================== Scanner Store ====================

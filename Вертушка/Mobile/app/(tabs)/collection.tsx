@@ -36,7 +36,6 @@ export default function CollectionScreen() {
     removeFromCollection,
     removeFromWishlist,
     moveToCollection,
-    moveToWishlist,
   } = useCollectionStore();
 
   // Загрузка данных при монтировании
@@ -121,7 +120,7 @@ export default function CollectionScreen() {
           text: 'Перенести',
           onPress: async () => {
             try {
-              await moveToCollection(item);
+              await moveToCollection(item.id);
               Alert.alert('Готово!', 'Пластинка добавлена в коллекцию');
             } catch (error) {
               Alert.alert('Ошибка', 'Не удалось перенести в коллекцию');
@@ -132,26 +131,6 @@ export default function CollectionScreen() {
     );
   };
 
-  const handleMoveToWishlist = async (item: CollectionItem) => {
-    Alert.alert(
-      'В список желаний',
-      `Перенести "${item.record.title}" в список желаний?`,
-      [
-        { text: 'Отмена', style: 'cancel' },
-        {
-          text: 'Перенести',
-          onPress: async () => {
-            try {
-              await moveToWishlist(item.record_id);
-              Alert.alert('Готово!', 'Пластинка перенесена в список желаний');
-            } catch (error) {
-              Alert.alert('Ошибка', 'Не удалось перенести в список желаний');
-            }
-          },
-        },
-      ]
-    );
-  };
 
   // Режим выбора
   const handleToggleSelectionMode = () => {
@@ -243,35 +222,6 @@ export default function CollectionScreen() {
     );
   };
 
-  const handleBulkMoveToWishlist = async () => {
-    if (selectedItems.size === 0 || activeTab !== 'collection') return;
-
-    const count = selectedItems.size;
-
-    Alert.alert(
-      'Перенести в список желаний?',
-      `Будет перенесено ${count} пластинок в список желаний`,
-      [
-        { text: 'Отмена', style: 'cancel' },
-        {
-          text: 'Перенести',
-          onPress: async () => {
-            try {
-              const itemsToMove = Array.from(selectedItems);
-              for (const itemId of itemsToMove) {
-                // Передаем itemId напрямую
-                await moveToWishlist(itemId);
-              }
-              setSelectedItems(new Set());
-              setIsSelectionMode(false);
-            } catch (error) {
-              Alert.alert('Ошибка', 'Не удалось перенести пластинки');
-            }
-          },
-        },
-      ]
-    );
-  };
 
   const data = activeTab === 'collection' ? collectionItems : wishlistItems;
 
@@ -306,6 +256,7 @@ export default function CollectionScreen() {
         onRemove={
           activeTab === 'collection' ? handleRemoveFromCollection : handleRemoveFromWishlist
         }
+        showActions={false}
         isLoading={isLoading}
         isRefreshing={isLoading}
         onRefresh={handleRefresh}
@@ -328,7 +279,7 @@ export default function CollectionScreen() {
             { paddingBottom: insets.bottom + Spacing.md },
           ]}
         >
-          {activeTab === 'wishlist' ? (
+          {activeTab === 'wishlist' && (
             <TouchableOpacity
               style={styles.footerButton}
               onPress={handleBulkMoveToCollection}
@@ -346,26 +297,6 @@ export default function CollectionScreen() {
                 ]}
               >
                 В коллекцию {selectedItems.size > 0 && `(${selectedItems.size})`}
-              </Text>
-            </TouchableOpacity>
-          ) : (
-            <TouchableOpacity
-              style={styles.footerButton}
-              onPress={handleBulkMoveToWishlist}
-              disabled={selectedItems.size === 0}
-            >
-              <Ionicons
-                name="heart-outline"
-                size={24}
-                color={selectedItems.size > 0 ? Colors.primary : Colors.textMuted}
-              />
-              <Text
-                style={[
-                  styles.footerButtonText,
-                  selectedItems.size === 0 && styles.footerButtonTextDisabled,
-                ]}
-              >
-                В хочу {selectedItems.size > 0 && `(${selectedItems.size})`}
               </Text>
             </TouchableOpacity>
           )}
