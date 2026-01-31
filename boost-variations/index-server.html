@@ -1,0 +1,841 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>BOOST Variations - Preview</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            background: #f5f5f5;
+            padding: 40px 20px;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+
+        h1 {
+            text-align: center;
+            margin-bottom: 40px;
+            font-size: 42px;
+        }
+
+        .themes-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(350px, 1fr));
+            gap: 30px;
+        }
+
+        .theme-card {
+            background: white;
+            border-radius: 12px;
+            overflow: hidden;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            transition: transform 0.3s ease, box-shadow 0.3s ease;
+        }
+
+        .theme-card:hover {
+            transform: translateY(-4px);
+            box-shadow: 0 12px 24px rgba(0, 0, 0, 0.15);
+        }
+
+        .theme-preview {
+            height: 400px;
+            border-bottom: 3px solid #000;
+            overflow: hidden;
+            position: relative;
+        }
+
+        .theme-preview iframe {
+            width: 200%;
+            height: 800px;
+            border: none;
+            transform: scale(0.5);
+            transform-origin: top left;
+            pointer-events: none;
+        }
+
+        .theme-info {
+            padding: 24px;
+        }
+
+        .theme-title {
+            font-size: 24px;
+            font-weight: 700;
+            margin-bottom: 12px;
+        }
+
+        .theme-description {
+            color: #666;
+            margin-bottom: 16px;
+            line-height: 1.6;
+        }
+
+        .theme-tags {
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
+            margin-bottom: 16px;
+        }
+
+        .tag {
+            background: #f0f0f0;
+            padding: 4px 12px;
+            border-radius: 16px;
+            font-size: 12px;
+            font-weight: 600;
+            color: #666;
+        }
+
+        .theme-link {
+            display: inline-block;
+            width: 100%;
+            text-align: center;
+            padding: 12px;
+            background: #2B5CE6;
+            color: white;
+            text-decoration: none;
+            border-radius: 6px;
+            font-weight: 600;
+            transition: background 0.3s ease;
+        }
+
+        .theme-link:hover {
+            background: #1E40AF;
+        }
+
+        .status {
+            text-align: center;
+            margin-bottom: 40px;
+            padding: 20px;
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+        }
+
+        .status h2 {
+            margin-bottom: 8px;
+        }
+
+        .progress {
+            font-size: 48px;
+            font-weight: 700;
+            color: #2B5CE6;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>BOOST Intensive - Визуальные Вариации</h1>
+
+        <div class="status">
+            <h2>Статус проекта</h2>
+            <div class="progress">30/30 тем готовы</div>
+        </div>
+
+        <div class="themes-grid">
+            <!-- Theme 1: Pure Minimalism -->
+            <div class="theme-card">
+                <div class="theme-preview">
+                    <iframe src="v1/index.html"></iframe>
+                </div>
+                <div class="theme-info">
+                    <h3 class="theme-title">Theme 1: Pure Minimalism</h3>
+                    <p class="theme-description">
+                        Чистый минимализм с максимальным количеством воздуха.
+                        Белый фон, четкая типографика, синий акцент.
+                    </p>
+                    <div class="theme-tags">
+                        <span class="tag">Минимализм</span>
+                        <span class="tag">Белый</span>
+                        <span class="tag">Чистый</span>
+                        <span class="tag">B2B</span>
+                    </div>
+                    <a href="v1/index.html" target="_blank" class="theme-link">
+                        Открыть полную версию
+                    </a>
+                </div>
+            </div>
+
+            <!-- Theme 2: Glassmorphism Blue -->
+            <div class="theme-card">
+                <div class="theme-preview">
+                    <iframe src="v2/index.html"></iframe>
+                </div>
+                <div class="theme-info">
+                    <h3 class="theme-title">Theme 2: Glassmorphism Blue</h3>
+                    <p class="theme-description">
+                        Эффект матового стекла с blur и полупрозрачностью.
+                        Градиентный фон, премиальный вид в стиле iOS.
+                    </p>
+                    <div class="theme-tags">
+                        <span class="tag">Glassmorphism</span>
+                        <span class="tag">Blur</span>
+                        <span class="tag">Premium</span>
+                        <span class="tag">Modern</span>
+                    </div>
+                    <a href="v2/index.html" target="_blank" class="theme-link">
+                        Открыть полную версию
+                    </a>
+                </div>
+            </div>
+
+            <!-- Theme 3: Neubrutalism Bright -->
+            <div class="theme-card">
+                <div class="theme-preview">
+                    <iframe src="v3/index.html"></iframe>
+                </div>
+                <div class="theme-info">
+                    <h3 class="theme-title">Theme 3: Neubrutalism Bright</h3>
+                    <p class="theme-description">
+                        Яркий нео-брутализм с толстыми черными границами.
+                        Смелые цвета, жирная типографика, честный дизайн.
+                    </p>
+                    <div class="theme-tags">
+                        <span class="tag">Neubrutalism</span>
+                        <span class="tag">Яркий</span>
+                        <span class="tag">Bold</span>
+                        <span class="tag">Креативный</span>
+                    </div>
+                    <a href="v3/index.html" target="_blank" class="theme-link">
+                        Открыть полную версию
+                    </a>
+                </div>
+            </div>
+
+            <!-- Theme 4: Neumorphism Soft -->
+            <div class="theme-card">
+                <div class="theme-preview">
+                    <iframe src="v4/index.html"></iframe>
+                </div>
+                <div class="theme-info">
+                    <h3 class="theme-title">Theme 4: Neumorphism Soft</h3>
+                    <p class="theme-description">
+                        Мягкий неоморфизм с объемными тенями.
+                        Светлый фон, тактильный интерфейс, 3D эффекты.
+                    </p>
+                    <div class="theme-tags">
+                        <span class="tag">Neumorphism</span>
+                        <span class="tag">Soft</span>
+                        <span class="tag">3D</span>
+                        <span class="tag">Минимализм</span>
+                    </div>
+                    <a href="v4/index.html" target="_blank" class="theme-link">
+                        Открыть полную версию
+                    </a>
+                </div>
+            </div>
+
+            <!-- Theme 5: Bento Grid Modern -->
+            <div class="theme-card">
+                <div class="theme-preview">
+                    <iframe src="v5/index.html"></iframe>
+                </div>
+                <div class="theme-info">
+                    <h3 class="theme-title">Theme 5: Bento Grid Modern</h3>
+                    <p class="theme-description">
+                        Современная карточная сетка в стиле Bento.
+                        Темный фон, яркие акценты, iOS-дизайн.
+                    </p>
+                    <div class="theme-tags">
+                        <span class="tag">Bento</span>
+                        <span class="tag">Grid</span>
+                        <span class="tag">Modern</span>
+                        <span class="tag">iOS</span>
+                    </div>
+                    <a href="v5/index.html" target="_blank" class="theme-link">
+                        Открыть полную версию
+                    </a>
+                </div>
+            </div>
+
+            <!-- Theme 6: Swiss Typography -->
+            <div class="theme-card">
+                <div class="theme-preview">
+                    <iframe src="v6/index.html"></iframe>
+                </div>
+                <div class="theme-info">
+                    <h3 class="theme-title">Theme 6: Swiss Typography</h3>
+                    <p class="theme-description">
+                        Швейцарский типографический стиль.
+                        Красный акцент, сетка, Helvetica, минимализм.
+                    </p>
+                    <div class="theme-tags">
+                        <span class="tag">Swiss</span>
+                        <span class="tag">Typography</span>
+                        <span class="tag">Grid</span>
+                        <span class="tag">Classic</span>
+                    </div>
+                    <a href="v6/index.html" target="_blank" class="theme-link">
+                        Открыть полную версию
+                    </a>
+                </div>
+            </div>
+
+            <!-- Theme 7: Liquid Motion -->
+            <div class="theme-card">
+                <div class="theme-preview">
+                    <iframe src="v7/index.html"></iframe>
+                </div>
+                <div class="theme-info">
+                    <h3 class="theme-title">Theme 7: Liquid Motion</h3>
+                    <p class="theme-description">
+                        Жидкие органические формы и градиенты.
+                        Фиолетовые тона, плавные анимации, blob-фигуры.
+                    </p>
+                    <div class="theme-tags">
+                        <span class="tag">Liquid</span>
+                        <span class="tag">Organic</span>
+                        <span class="tag">Gradients</span>
+                        <span class="tag">Modern</span>
+                    </div>
+                    <a href="v7/index.html" target="_blank" class="theme-link">
+                        Открыть полную версию
+                    </a>
+                </div>
+            </div>
+
+            <!-- Theme 8: Cyberpunk Neon -->
+            <div class="theme-card">
+                <div class="theme-preview">
+                    <iframe src="v8/index.html"></iframe>
+                </div>
+                <div class="theme-info">
+                    <h3 class="theme-title">Theme 8: Cyberpunk Neon</h3>
+                    <p class="theme-description">
+                        Киберпанк эстетика с неоновыми акцентами.
+                        Темный фон, cyan и pink свечение, tech стиль.
+                    </p>
+                    <div class="theme-tags">
+                        <span class="tag">Cyberpunk</span>
+                        <span class="tag">Neon</span>
+                        <span class="tag">Tech</span>
+                        <span class="tag">Futuristic</span>
+                    </div>
+                    <a href="v8/index.html" target="_blank" class="theme-link">
+                        Открыть полную версию
+                    </a>
+                </div>
+            </div>
+
+            <!-- Theme 9: Y2K Revival -->
+            <div class="theme-card">
+                <div class="theme-preview">
+                    <iframe src="v9/index.html"></iframe>
+                </div>
+                <div class="theme-info">
+                    <h3 class="theme-title">Theme 9: Y2K Revival</h3>
+                    <p class="theme-description">
+                        Ностальгия 2000-х с хромированными эффектами.
+                        Металлик, звезды, блестящие градиенты, Y2K стиль.
+                    </p>
+                    <div class="theme-tags">
+                        <span class="tag">Y2K</span>
+                        <span class="tag">Chrome</span>
+                        <span class="tag">Retro</span>
+                        <span class="tag">Glossy</span>
+                    </div>
+                    <a href="v9/index.html" target="_blank" class="theme-link">
+                        Открыть полную версию
+                    </a>
+                </div>
+            </div>
+
+            <!-- Theme 10: Gradient Overdose -->
+            <div class="theme-card">
+                <div class="theme-preview">
+                    <iframe src="v10/index.html"></iframe>
+                </div>
+                <div class="theme-info">
+                    <h3 class="theme-title">Theme 10: Gradient Overdose</h3>
+                    <p class="theme-description">
+                        Максимум градиентов на всех элементах.
+                        Яркие цвета, анимированные переходы, энергичный стиль.
+                    </p>
+                    <div class="theme-tags">
+                        <span class="tag">Gradients</span>
+                        <span class="tag">Colorful</span>
+                        <span class="tag">Vibrant</span>
+                        <span class="tag">Bold</span>
+                    </div>
+                    <a href="v10/index.html" target="_blank" class="theme-link">
+                        Открыть полную версию
+                    </a>
+                </div>
+            </div>
+
+            <!-- Theme 11: Duotone -->
+            <div class="theme-card">
+                <div class="theme-preview">
+                    <iframe src="v11/index.html"></iframe>
+                </div>
+                <div class="theme-info">
+                    <h3 class="theme-title">Theme 11: Duotone</h3>
+                    <p class="theme-description">
+                        Двухцветный дизайн с яркими контрастами.
+                        Розовый и синий, смелая типографика, modern стиль.
+                    </p>
+                    <div class="theme-tags">
+                        <span class="tag">Duotone</span>
+                        <span class="tag">Контрастный</span>
+                        <span class="tag">Modern</span>
+                        <span class="tag">Яркий</span>
+                    </div>
+                    <a href="v11/index.html" target="_blank" class="theme-link">
+                        Открыть полную версию
+                    </a>
+                </div>
+            </div>
+
+            <!-- Theme 12: Comic -->
+            <div class="theme-card">
+                <div class="theme-preview">
+                    <iframe src="v12/index.html"></iframe>
+                </div>
+                <div class="theme-info">
+                    <h3 class="theme-title">Theme 12: Comic</h3>
+                    <p class="theme-description">
+                        Комиксный стиль с рисованными элементами.
+                        Яркие цвета, пузыри речи, fun дизайн.
+                    </p>
+                    <div class="theme-tags">
+                        <span class="tag">Comic</span>
+                        <span class="tag">Playful</span>
+                        <span class="tag">Hand-drawn</span>
+                        <span class="tag">Fun</span>
+                    </div>
+                    <a href="v12/index.html" target="_blank" class="theme-link">
+                        Открыть полную версию
+                    </a>
+                </div>
+            </div>
+
+            <!-- Theme 13: Acid -->
+            <div class="theme-card">
+                <div class="theme-preview">
+                    <iframe src="v13/index.html"></iframe>
+                </div>
+                <div class="theme-info">
+                    <h3 class="theme-title">Theme 13: Acid</h3>
+                    <p class="theme-description">
+                        Психоделическая кислотная эстетика.
+                        Яркие цвета, волнистые формы, trippy эффекты.
+                    </p>
+                    <div class="theme-tags">
+                        <span class="tag">Acid</span>
+                        <span class="tag">Psychedelic</span>
+                        <span class="tag">Trippy</span>
+                        <span class="tag">Bold</span>
+                    </div>
+                    <a href="v13/index.html" target="_blank" class="theme-link">
+                        Открыть полную версию
+                    </a>
+                </div>
+            </div>
+
+            <!-- Theme 14: Rainbow -->
+            <div class="theme-card">
+                <div class="theme-preview">
+                    <iframe src="v14/index.html"></iframe>
+                </div>
+                <div class="theme-info">
+                    <h3 class="theme-title">Theme 14: Rainbow</h3>
+                    <p class="theme-description">
+                        Радужная палитра с всеми цветами спектра.
+                        Яркий градиент, позитивный стиль, colorful дизайн.
+                    </p>
+                    <div class="theme-tags">
+                        <span class="tag">Rainbow</span>
+                        <span class="tag">Colorful</span>
+                        <span class="tag">Bright</span>
+                        <span class="tag">Positive</span>
+                    </div>
+                    <a href="v14/index.html" target="_blank" class="theme-link">
+                        Открыть полную версию
+                    </a>
+                </div>
+            </div>
+
+            <!-- Theme 15: Dark -->
+            <div class="theme-card">
+                <div class="theme-preview">
+                    <iframe src="v15/index.html"></iframe>
+                </div>
+                <div class="theme-info">
+                    <h3 class="theme-title">Theme 15: Dark</h3>
+                    <p class="theme-description">
+                        Темная тема с контрастными акцентами.
+                        Черный фон, яркие цвета, премиальный вид.
+                    </p>
+                    <div class="theme-tags">
+                        <span class="tag">Dark</span>
+                        <span class="tag">Premium</span>
+                        <span class="tag">Контрастный</span>
+                        <span class="tag">Modern</span>
+                    </div>
+                    <a href="v15/index.html" target="_blank" class="theme-link">
+                        Открыть полную версию
+                    </a>
+                </div>
+            </div>
+
+            <!-- Theme 16: Midnight -->
+            <div class="theme-card">
+                <div class="theme-preview">
+                    <iframe src="v16/index.html"></iframe>
+                </div>
+                <div class="theme-info">
+                    <h3 class="theme-title">Theme 16: Midnight</h3>
+                    <p class="theme-description">
+                        Полуночная тема с синими оттенками.
+                        Глубокий синий, звездное небо, спокойный стиль.
+                    </p>
+                    <div class="theme-tags">
+                        <span class="tag">Midnight</span>
+                        <span class="tag">Blue</span>
+                        <span class="tag">Calm</span>
+                        <span class="tag">Premium</span>
+                    </div>
+                    <a href="v16/index.html" target="_blank" class="theme-link">
+                        Открыть полную версию
+                    </a>
+                </div>
+            </div>
+
+            <!-- Theme 17: Brutalist -->
+            <div class="theme-card">
+                <div class="theme-preview">
+                    <iframe src="v17/index.html"></iframe>
+                </div>
+                <div class="theme-info">
+                    <h3 class="theme-title">Theme 17: Brutalist</h3>
+                    <p class="theme-description">
+                        Брутальный дизайн с сырым бетоном.
+                        Грубые формы, честная типографика, raw стиль.
+                    </p>
+                    <div class="theme-tags">
+                        <span class="tag">Brutalist</span>
+                        <span class="tag">Raw</span>
+                        <span class="tag">Concrete</span>
+                        <span class="tag">Bold</span>
+                    </div>
+                    <a href="v17/index.html" target="_blank" class="theme-link">
+                        Открыть полную версию
+                    </a>
+                </div>
+            </div>
+
+            <!-- Theme 18: Purple -->
+            <div class="theme-card">
+                <div class="theme-preview">
+                    <iframe src="v18/index.html"></iframe>
+                </div>
+                <div class="theme-info">
+                    <h3 class="theme-title">Theme 18: Purple</h3>
+                    <p class="theme-description">
+                        Фиолетовая гамма с градиентами.
+                        Премиальный стиль, мягкие переходы, элегантный дизайн.
+                    </p>
+                    <div class="theme-tags">
+                        <span class="tag">Purple</span>
+                        <span class="tag">Premium</span>
+                        <span class="tag">Elegant</span>
+                        <span class="tag">Gradient</span>
+                    </div>
+                    <a href="v18/index.html" target="_blank" class="theme-link">
+                        Открыть полную версию
+                    </a>
+                </div>
+            </div>
+
+            <!-- Theme 19: Monochrome -->
+            <div class="theme-card">
+                <div class="theme-preview">
+                    <iframe src="v19/index.html"></iframe>
+                </div>
+                <div class="theme-info">
+                    <h3 class="theme-title">Theme 19: Monochrome</h3>
+                    <p class="theme-description">
+                        Монохромная палитра в черно-белых тонах.
+                        Минимализм, контраст, классический стиль.
+                    </p>
+                    <div class="theme-tags">
+                        <span class="tag">Monochrome</span>
+                        <span class="tag">Minimal</span>
+                        <span class="tag">Classic</span>
+                        <span class="tag">B&W</span>
+                    </div>
+                    <a href="v19/index.html" target="_blank" class="theme-link">
+                        Открыть полную версию
+                    </a>
+                </div>
+            </div>
+
+            <!-- Theme 20: Matrix -->
+            <div class="theme-card">
+                <div class="theme-preview">
+                    <iframe src="v20/index.html"></iframe>
+                </div>
+                <div class="theme-info">
+                    <h3 class="theme-title">Theme 20: Matrix</h3>
+                    <p class="theme-description">
+                        Стиль Матрицы с зеленым кодом.
+                        Хакерская эстетика, цифровой дождь, cyber стиль.
+                    </p>
+                    <div class="theme-tags">
+                        <span class="tag">Matrix</span>
+                        <span class="tag">Hacker</span>
+                        <span class="tag">Green</span>
+                        <span class="tag">Cyber</span>
+                    </div>
+                    <a href="v20/index.html" target="_blank" class="theme-link">
+                        Открыть полную версию
+                    </a>
+                </div>
+            </div>
+
+            <!-- Theme 21: Gold -->
+            <div class="theme-card">
+                <div class="theme-preview">
+                    <iframe src="v21/index.html"></iframe>
+                </div>
+                <div class="theme-info">
+                    <h3 class="theme-title">Theme 21: Gold</h3>
+                    <p class="theme-description">
+                        Золотая роскошь с премиальными акцентами.
+                        Темный фон, золото, элитный стиль.
+                    </p>
+                    <div class="theme-tags">
+                        <span class="tag">Gold</span>
+                        <span class="tag">Luxury</span>
+                        <span class="tag">Premium</span>
+                        <span class="tag">Elegant</span>
+                    </div>
+                    <a href="v21/index.html" target="_blank" class="theme-link">
+                        Открыть полную версию
+                    </a>
+                </div>
+            </div>
+
+            <!-- Theme 22: Earthy -->
+            <div class="theme-card">
+                <div class="theme-preview">
+                    <iframe src="v22/index.html"></iframe>
+                </div>
+                <div class="theme-info">
+                    <h3 class="theme-title">Theme 22: Earthy</h3>
+                    <p class="theme-description">
+                        Земляные тона с натуральными оттенками.
+                        Коричневый, бежевый, органический стиль.
+                    </p>
+                    <div class="theme-tags">
+                        <span class="tag">Earthy</span>
+                        <span class="tag">Natural</span>
+                        <span class="tag">Organic</span>
+                        <span class="tag">Warm</span>
+                    </div>
+                    <a href="v22/index.html" target="_blank" class="theme-link">
+                        Открыть полную версию
+                    </a>
+                </div>
+            </div>
+
+            <!-- Theme 23: Pastel -->
+            <div class="theme-card">
+                <div class="theme-preview">
+                    <iframe src="v23/index.html"></iframe>
+                </div>
+                <div class="theme-info">
+                    <h3 class="theme-title">Theme 23: Pastel</h3>
+                    <p class="theme-description">
+                        Нежные пастельные оттенки.
+                        Мягкие цвета, легкий стиль, delicate дизайн.
+                    </p>
+                    <div class="theme-tags">
+                        <span class="tag">Pastel</span>
+                        <span class="tag">Soft</span>
+                        <span class="tag">Gentle</span>
+                        <span class="tag">Light</span>
+                    </div>
+                    <a href="v23/index.html" target="_blank" class="theme-link">
+                        Открыть полную версию
+                    </a>
+                </div>
+            </div>
+
+            <!-- Theme 24: Forest -->
+            <div class="theme-card">
+                <div class="theme-preview">
+                    <iframe src="v24/index.html"></iframe>
+                </div>
+                <div class="theme-info">
+                    <h3 class="theme-title">Theme 24: Forest</h3>
+                    <p class="theme-description">
+                        Лесная тематика с зелеными тонами.
+                        Природные цвета, органические формы, eco стиль.
+                    </p>
+                    <div class="theme-tags">
+                        <span class="tag">Forest</span>
+                        <span class="tag">Green</span>
+                        <span class="tag">Nature</span>
+                        <span class="tag">Eco</span>
+                    </div>
+                    <a href="v24/index.html" target="_blank" class="theme-link">
+                        Открыть полную версию
+                    </a>
+                </div>
+            </div>
+
+            <!-- Theme 25: Sunset -->
+            <div class="theme-card">
+                <div class="theme-preview">
+                    <iframe src="v25/index.html"></iframe>
+                </div>
+                <div class="theme-info">
+                    <h3 class="theme-title">Theme 25: Sunset</h3>
+                    <p class="theme-description">
+                        Закатная палитра с теплыми оттенками.
+                        Оранжевый, розовый, романтичный стиль.
+                    </p>
+                    <div class="theme-tags">
+                        <span class="tag">Sunset</span>
+                        <span class="tag">Warm</span>
+                        <span class="tag">Romantic</span>
+                        <span class="tag">Gradient</span>
+                    </div>
+                    <a href="v25/index.html" target="_blank" class="theme-link">
+                        Открыть полную версию
+                    </a>
+                </div>
+            </div>
+
+            <!-- Theme 26: Ocean -->
+            <div class="theme-card">
+                <div class="theme-preview">
+                    <iframe src="v26/index.html"></iframe>
+                </div>
+                <div class="theme-info">
+                    <h3 class="theme-title">Theme 26: Ocean</h3>
+                    <p class="theme-description">
+                        Океаническая тема с синими тонами.
+                        Водные оттенки, волны, спокойный дизайн.
+                    </p>
+                    <div class="theme-tags">
+                        <span class="tag">Ocean</span>
+                        <span class="tag">Blue</span>
+                        <span class="tag">Calm</span>
+                        <span class="tag">Water</span>
+                    </div>
+                    <a href="v26/index.html" target="_blank" class="theme-link">
+                        Открыть полную версию
+                    </a>
+                </div>
+            </div>
+
+            <!-- Theme 27: Retro -->
+            <div class="theme-card">
+                <div class="theme-preview">
+                    <iframe src="v27/index.html"></iframe>
+                </div>
+                <div class="theme-info">
+                    <h3 class="theme-title">Theme 27: Retro</h3>
+                    <p class="theme-description">
+                        Ретро 80-х с синтвейв эстетикой.
+                        Неоновые цвета, ретро сетка, Miami Vice стиль.
+                    </p>
+                    <div class="theme-tags">
+                        <span class="tag">Retro</span>
+                        <span class="tag">80s</span>
+                        <span class="tag">Synthwave</span>
+                        <span class="tag">Neon</span>
+                    </div>
+                    <a href="v27/index.html" target="_blank" class="theme-link">
+                        Открыть полную версию
+                    </a>
+                </div>
+            </div>
+
+            <!-- Theme 28: Vintage -->
+            <div class="theme-card">
+                <div class="theme-preview">
+                    <iframe src="v28/index.html"></iframe>
+                </div>
+                <div class="theme-info">
+                    <h3 class="theme-title">Theme 28: Vintage</h3>
+                    <p class="theme-description">
+                        Винтажный стиль с состаренными элементами.
+                        Приглушенные цвета, ретро типографика, классика.
+                    </p>
+                    <div class="theme-tags">
+                        <span class="tag">Vintage</span>
+                        <span class="tag">Classic</span>
+                        <span class="tag">Retro</span>
+                        <span class="tag">Aged</span>
+                    </div>
+                    <a href="v28/index.html" target="_blank" class="theme-link">
+                        Открыть полную версию
+                    </a>
+                </div>
+            </div>
+
+            <!-- Theme 29: Constructivism -->
+            <div class="theme-card">
+                <div class="theme-preview">
+                    <iframe src="v29/index.html"></iframe>
+                </div>
+                <div class="theme-info">
+                    <h3 class="theme-title">Theme 29: Constructivism</h3>
+                    <p class="theme-description">
+                        Конструктивизм с геометрическими формами.
+                        Красный, черный, белый, советский авангард.
+                    </p>
+                    <div class="theme-tags">
+                        <span class="tag">Constructivism</span>
+                        <span class="tag">Geometric</span>
+                        <span class="tag">Soviet</span>
+                        <span class="tag">Avant-garde</span>
+                    </div>
+                    <a href="v29/index.html" target="_blank" class="theme-link">
+                        Открыть полную версию
+                    </a>
+                </div>
+            </div>
+
+            <!-- Theme 30: Memphis -->
+            <div class="theme-card">
+                <div class="theme-preview">
+                    <iframe src="v30/index.html"></iframe>
+                </div>
+                <div class="theme-info">
+                    <h3 class="theme-title">Theme 30: Memphis</h3>
+                    <p class="theme-description">
+                        Мемфис дизайн с яркими формами.
+                        Геометрия, паттерны, постмодернизм, 90-е.
+                    </p>
+                    <div class="theme-tags">
+                        <span class="tag">Memphis</span>
+                        <span class="tag">Postmodern</span>
+                        <span class="tag">Geometric</span>
+                        <span class="tag">90s</span>
+                    </div>
+                    <a href="v30/index.html" target="_blank" class="theme-link">
+                        Открыть полную версию
+                    </a>
+                </div>
+            </div>
+        </div>
+
+        <div style="text-align: center; margin-top: 60px; color: #666;">
+            <p>Все 30 тем готовы!</p>
+        </div>
+    </div>
+</body>
+</html>

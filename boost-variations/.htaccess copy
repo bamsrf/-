@@ -1,0 +1,152 @@
+RewriteEngine on
+RewriteBase /
+
+# Поддомен v1.vladi9zq.beget.tech
+RewriteCond %{HTTP_HOST} ^(www\.)?v1\.vladi9zq\.beget\.tech$ [NC]
+RewriteCond %{REQUEST_URI} !^/v1/
+RewriteRule ^(.*)$ v1/$1 [L]
+
+# Поддомен v2.vladi9zq.beget.tech
+RewriteCond %{HTTP_HOST} ^(www\.)?v2\.vladi9zq\.beget\.tech$ [NC]
+RewriteCond %{REQUEST_URI} !^/v2/
+RewriteRule ^(.*)$ v2/$1 [L]
+
+# Поддомен v3.vladi9zq.beget.tech
+RewriteCond %{HTTP_HOST} ^(www\.)?v3\.vladi9zq\.beget\.tech$ [NC]
+RewriteCond %{REQUEST_URI} !^/v3/
+RewriteRule ^(.*)$ v3/$1 [L]
+
+# Поддомен v4.vladi9zq.beget.tech
+RewriteCond %{HTTP_HOST} ^(www\.)?v4\.vladi9zq\.beget\.tech$ [NC]
+RewriteCond %{REQUEST_URI} !^/v4/
+RewriteRule ^(.*)$ v4/$1 [L]
+
+# Поддомен v5.vladi9zq.beget.tech
+RewriteCond %{HTTP_HOST} ^(www\.)?v5\.vladi9zq\.beget\.tech$ [NC]
+RewriteCond %{REQUEST_URI} !^/v5/
+RewriteRule ^(.*)$ v5/$1 [L]
+
+# Поддомен v6.vladi9zq.beget.tech
+RewriteCond %{HTTP_HOST} ^(www\.)?v6\.vladi9zq\.beget\.tech$ [NC]
+RewriteCond %{REQUEST_URI} !^/v6/
+RewriteRule ^(.*)$ v6/$1 [L]
+
+# Поддомен v7.vladi9zq.beget.tech
+RewriteCond %{HTTP_HOST} ^(www\.)?v7\.vladi9zq\.beget\.tech$ [NC]
+RewriteCond %{REQUEST_URI} !^/v7/
+RewriteRule ^(.*)$ v7/$1 [L]
+
+# Поддомен v8.vladi9zq.beget.tech
+RewriteCond %{HTTP_HOST} ^(www\.)?v8\.vladi9zq\.beget\.tech$ [NC]
+RewriteCond %{REQUEST_URI} !^/v8/
+RewriteRule ^(.*)$ v8/$1 [L]
+
+# Поддомен v9.vladi9zq.beget.tech
+RewriteCond %{HTTP_HOST} ^(www\.)?v9\.vladi9zq\.beget\.tech$ [NC]
+RewriteCond %{REQUEST_URI} !^/v9/
+RewriteRule ^(.*)$ v9/$1 [L]
+
+# Поддомен v10.vladi9zq.beget.tech
+RewriteCond %{HTTP_HOST} ^(www\.)?v10\.vladi9zq\.beget\.tech$ [NC]
+RewriteCond %{REQUEST_URI} !^/v10/
+RewriteRule ^(.*)$ v10/$1 [L]
+
+# Поддомен v11.vladi9zq.beget.tech
+RewriteCond %{HTTP_HOST} ^(www\.)?v11\.vladi9zq\.beget\.tech$ [NC]
+RewriteCond %{REQUEST_URI} !^/v11/
+RewriteRule ^(.*)$ v11/$1 [L]
+
+# Поддомен v12.vladi9zq.beget.tech
+RewriteCond %{HTTP_HOST} ^(www\.)?v12\.vladi9zq\.beget\.tech$ [NC]
+RewriteCond %{REQUEST_URI} !^/v12/
+RewriteRule ^(.*)$ v12/$1 [L]
+
+# Поддомен v13.vladi9zq.beget.tech
+RewriteCond %{HTTP_HOST} ^(www\.)?v13\.vladi9zq\.beget\.tech$ [NC]
+RewriteCond %{REQUEST_URI} !^/v13/
+RewriteRule ^(.*)$ v13/$1 [L]
+
+# Поддомен v14.vladi9zq.beget.tech
+RewriteCond %{HTTP_HOST} ^(www\.)?v14\.vladi9zq\.beget\.tech$ [NC]
+RewriteCond %{REQUEST_URI} !^/v14/
+RewriteRule ^(.*)$ v14/$1 [L]
+
+# Поддомен v15.vladi9zq.beget.tech
+RewriteCond %{HTTP_HOST} ^(www\.)?v15\.vladi9zq\.beget\.tech$ [NC]
+RewriteCond %{REQUEST_URI} !^/v15/
+RewriteRule ^(.*)$ v15/$1 [L]
+
+# Поддомен v16.vladi9zq.beget.tech
+RewriteCond %{HTTP_HOST} ^(www\.)?v16\.vladi9zq\.beget\.tech$ [NC]
+RewriteCond %{REQUEST_URI} !^/v16/
+RewriteRule ^(.*)$ v16/$1 [L]
+
+# Поддомен v17.vladi9zq.beget.tech
+RewriteCond %{HTTP_HOST} ^(www\.)?v17\.vladi9zq\.beget\.tech$ [NC]
+RewriteCond %{REQUEST_URI} !^/v17/
+RewriteRule ^(.*)$ v17/$1 [L]
+
+# Поддомен v18.vladi9zq.beget.tech
+RewriteCond %{HTTP_HOST} ^(www\.)?v18\.vladi9zq\.beget\.tech$ [NC]
+RewriteCond %{REQUEST_URI} !^/v18/
+RewriteRule ^(.*)$ v18/$1 [L]
+
+# Поддомен v19.vladi9zq.beget.tech
+RewriteCond %{HTTP_HOST} ^(www\.)?v19\.vladi9zq\.beget\.tech$ [NC]
+RewriteCond %{REQUEST_URI} !^/v19/
+RewriteRule ^(.*)$ v19/$1 [L]
+
+# Поддомен v20.vladi9zq.beget.tech
+RewriteCond %{HTTP_HOST} ^(www\.)?v20\.vladi9zq\.beget\.tech$ [NC]
+RewriteCond %{REQUEST_URI} !^/v20/
+RewriteRule ^(.*)$ v20/$1 [L]
+
+# Поддомен v21.vladi9zq.beget.tech
+RewriteCond %{HTTP_HOST} ^(www\.)?v21\.vladi9zq\.beget\.tech$ [NC]
+RewriteCond %{REQUEST_URI} !^/v21/
+RewriteRule ^(.*)$ v21/$1 [L]
+
+# Поддомен v22.vladi9zq.beget.tech
+RewriteCond %{HTTP_HOST} ^(www\.)?v22\.vladi9zq\.beget\.tech$ [NC]
+RewriteCond %{REQUEST_URI} !^/v22/
+RewriteRule ^(.*)$ v22/$1 [L]
+
+# Поддомен v23.vladi9zq.beget.tech
+RewriteCond %{HTTP_HOST} ^(www\.)?v23\.vladi9zq\.beget\.tech$ [NC]
+RewriteCond %{REQUEST_URI} !^/v23/
+RewriteRule ^(.*)$ v23/$1 [L]
+
+# Поддомен v24.vladi9zq.beget.tech
+RewriteCond %{HTTP_HOST} ^(www\.)?v24\.vladi9zq\.beget\.tech$ [NC]
+RewriteCond %{REQUEST_URI} !^/v24/
+RewriteRule ^(.*)$ v24/$1 [L]
+
+# Поддомен v25.vladi9zq.beget.tech
+RewriteCond %{HTTP_HOST} ^(www\.)?v25\.vladi9zq\.beget\.tech$ [NC]
+RewriteCond %{REQUEST_URI} !^/v25/
+RewriteRule ^(.*)$ v25/$1 [L]
+
+# Поддомен v26.vladi9zq.beget.tech
+RewriteCond %{HTTP_HOST} ^(www\.)?v26\.vladi9zq\.beget\.tech$ [NC]
+RewriteCond %{REQUEST_URI} !^/v26/
+RewriteRule ^(.*)$ v26/$1 [L]
+
+# Поддомен v27.vladi9zq.beget.tech
+RewriteCond %{HTTP_HOST} ^(www\.)?v27\.vladi9zq\.beget\.tech$ [NC]
+RewriteCond %{REQUEST_URI} !^/v27/
+RewriteRule ^(.*)$ v27/$1 [L]
+
+# Поддомен v28.vladi9zq.beget.tech
+RewriteCond %{HTTP_HOST} ^(www\.)?v28\.vladi9zq\.beget\.tech$ [NC]
+RewriteCond %{REQUEST_URI} !^/v28/
+RewriteRule ^(.*)$ v28/$1 [L]
+
+# Поддомен v29.vladi9zq.beget.tech
+RewriteCond %{HTTP_HOST} ^(www\.)?v29\.vladi9zq\.beget\.tech$ [NC]
+RewriteCond %{REQUEST_URI} !^/v29/
+RewriteRule ^(.*)$ v29/$1 [L]
+
+# Поддомен v30.vladi9zq.beget.tech
+RewriteCond %{HTTP_HOST} ^(www\.)?v30\.vladi9zq\.beget\.tech$ [NC]
+RewriteCond %{REQUEST_URI} !^/v30/
+RewriteRule ^(.*)$ v30/$1 [L]
