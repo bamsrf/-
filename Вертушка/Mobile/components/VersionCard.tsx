@@ -49,7 +49,7 @@ export function VersionCard({ version, onPress }: VersionCardProps) {
           {version.title}
         </Text>
 
-        {(version.country || version.year) && (
+        {!!(version.country || version.year) && (
           <View style={styles.meta}>
             {version.country && (
               <View style={styles.metaRow}>

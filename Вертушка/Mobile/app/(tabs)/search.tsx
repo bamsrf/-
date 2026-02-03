@@ -1,58 +1,262 @@
 /**
  * Экран поиска по Discogs
  */
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import {
   View,
   StyleSheet,
   TextInput,
   TouchableOpacity,
   Alert,
+  Text,
+  Image,
+  Modal,
+  ScrollView,
+  Animated,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Header } from '../../components/Header';
 import { RecordGrid } from '../../components/RecordGrid';
 import { useSearchStore, useCollectionStore } from '../../lib/store';
-import { RecordSearchResult } from '../../lib/types';
+import { api } from '../../lib/api';
+import { MasterSearchResult, ReleaseSearchResult, ArtistSearchResult } from '../../lib/types';
 import { Colors, Typography, Spacing, BorderRadius } from '../../constants/theme';
+
+// Маппинг форматов для отображения на русском
+const FORMAT_OPTIONS = [
+  { value: undefined, label: 'Все' },
+  { value: 'Vinyl', label: 'Винил' },
+  { value: 'CD', label: 'CD' },
+  { value: 'Cassette', label: 'Кассета' },
+  { value: 'Box Set', label: 'Бокс-сет' },
+  { value: 'File', label: 'Цифровой' },
+];
+
+// Основные страны (показываются по умолчанию)
+const MAIN_COUNTRIES = [
+  { value: undefined, label: 'Все' },
+  { value: 'US', label: 'США' },
+  { value: 'UK', label: 'Великобритания' },
+  { value: 'Germany', label: 'Германия' },
+  { value: 'Japan', label: 'Япония' },
+  { value: 'Russia', label: 'Россия' },
+];
+
+// Все страны (показываются при нажатии "Показать все")
+const ALL_COUNTRIES = [
+  ...MAIN_COUNTRIES,
+  { value: 'France', label: 'Франция' },
+  { value: 'Italy', label: 'Италия' },
+  { value: 'Netherlands', label: 'Нидерланды' },
+  { value: 'Canada', label: 'Канада' },
+  { value: 'Australia', label: 'Австралия' },
+  { value: 'Sweden', label: 'Швеция' },
+  { value: 'Spain', label: 'Испания' },
+  { value: 'Brazil', label: 'Бразилия' },
+  { value: 'Poland', label: 'Польша' },
+  { value: 'Belgium', label: 'Бельгия' },
+  { value: 'Austria', label: 'Австрия' },
+  { value: 'Denmark', label: 'Дания' },
+  { value: 'Finland', label: 'Финляндия' },
+  { value: 'Norway', label: 'Норвегия' },
+  { value: 'Greece', label: 'Греция' },
+  { value: 'Portugal', label: 'Португалия' },
+  { value: 'Czechoslovakia', label: 'Чехословакия' },
+  { value: 'Yugoslavia', label: 'Югославия' },
+  { value: 'USSR', label: 'СССР' },
+];
+
+// Опции года (декады)
+const YEAR_OPTIONS = [
+  { value: undefined, label: 'Все годы' },
+  { value: '2020s', label: '2020-е', min: 2020, max: 2029 },
+  { value: '2010s', label: '2010-е', min: 2010, max: 2019 },
+  { value: '2000s', label: '2000-е', min: 2000, max: 2009 },
+  { value: '1990s', label: '1990-е', min: 1990, max: 1999 },
+  { value: '1980s', label: '1980-е', min: 1980, max: 1989 },
+  { value: '1970s', label: '1970-е', min: 1970, max: 1979 },
+  { value: '1960s', label: '1960-е', min: 1960, max: 1969 },
+  { value: '1950s', label: '1950-е и ранее', min: 0, max: 1959 },
+];
 
 export default function SearchScreen() {
   const router = useRouter();
-  const insets = useSafeAreaInsets();
   const [searchInput, setSearchInput] = useState('');
+  const [isFocused, setIsFocused] = useState(false);
+  const [showFilters, setShowFilters] = useState(false);
+  const [showAllCountries, setShowAllCountries] = useState(false);
+  const [selectedDecade, setSelectedDecade] = useState<string | undefined>(undefined);
+
+  // Временные фильтры для модалки (применяются только при закрытии)
+  const [tempFilters, setTempFilters] = useState<{ format?: string; country?: string; year?: number }>({});
+
+  // Анимация для модала фильтров
+  const overlayOpacity = useRef(new Animated.Value(0)).current;
+  const slideAnim = useRef(new Animated.Value(300)).current;
 
   const {
     query,
     results,
+    artistResults,
+    filters,
     isLoading,
     hasMore,
+    searchHistory,
     search,
     loadMore,
     clearResults,
+    setFilters,
+    clearFilters,
+    loadHistory,
+    removeFromHistory,
+    clearHistory,
   } = useSearchStore();
 
   const { addToCollection, addToWishlist } = useCollectionStore();
 
-  const handleSearch = useCallback(() => {
+  // Открытие модалки фильтров
+  const openFilters = useCallback(() => {
+    // Загружаем текущие фильтры во временный стейт
+    setTempFilters(filters);
+
+    // Восстанавливаем выбранную декаду на основе текущего года в фильтрах
+    if (filters.year) {
+      const decade = YEAR_OPTIONS.find((option) =>
+        option.value && 'min' in option && filters.year! >= option.min! && filters.year! <= option.max!
+      );
+      setSelectedDecade(decade?.value);
+    } else {
+      setSelectedDecade(undefined);
+    }
+
+    setShowFilters(true);
+    Animated.parallel([
+      Animated.timing(overlayOpacity, {
+        toValue: 1,
+        duration: 250,
+        useNativeDriver: true,
+      }),
+      Animated.timing(slideAnim, {
+        toValue: 0,
+        duration: 300,
+        useNativeDriver: true,
+      }),
+    ]).start();
+  }, [overlayOpacity, slideAnim, filters]);
+
+  // Закрытие модалки фильтров с применением фильтров
+  const closeFilters = useCallback(async () => {
+    // Применяем временные фильтры к основному стору
+    setFilters(tempFilters);
+
+    Animated.parallel([
+      Animated.timing(overlayOpacity, {
+        toValue: 0,
+        duration: 200,
+        useNativeDriver: true,
+      }),
+      Animated.timing(slideAnim, {
+        toValue: 300,
+        duration: 250,
+        useNativeDriver: true,
+      }),
+    ]).start(() => {
+      setShowFilters(false);
+    });
+
+    // Применяем фильтры к поиску
     if (searchInput.trim()) {
-      search(searchInput.trim());
+      await search(searchInput.trim());
+    }
+  }, [overlayOpacity, slideAnim, tempFilters, setFilters, searchInput, search]);
+
+  // Загружаем историю при монтировании
+  useEffect(() => {
+    loadHistory();
+  }, [loadHistory]);
+
+  const handleSearch = useCallback(async () => {
+    if (searchInput.trim()) {
+      try {
+        await search(searchInput.trim());
+      } catch (error: any) {
+        const message = error?.response?.status === 503
+          ? 'Сервис временно недоступен. Попробуйте позже.'
+          : error?.message || 'Ошибка при поиске';
+        Alert.alert('Ошибка', message);
+      }
     }
   }, [searchInput, search]);
 
   const handleClear = useCallback(() => {
     setSearchInput('');
     clearResults();
-  }, [clearResults]);
+    clearFilters();
+    setTempFilters({});
+    setSelectedDecade(undefined);
+  }, [clearResults, clearFilters]);
 
-  const handleRecordPress = (record: RecordSearchResult) => {
-    router.push(`/record/${record.discogs_id}`);
+  // Проверка активных фильтров
+  const hasActiveFilters = !!(filters.format || filters.country || filters.year);
+
+  // Проверка активных временных фильтров (для модалки)
+  const hasTempFilters = !!(tempFilters.format || tempFilters.country || tempFilters.year || selectedDecade);
+
+  // Автосброс фильтров при изменении поискового запроса
+  const handleSearchInputChange = useCallback((text: string) => {
+    // Если пользователь начинает вводить новый запрос и были активные фильтры - сбрасываем их
+    if (text !== searchInput && (filters.format || filters.country || filters.year)) {
+      clearFilters();
+    }
+    setSearchInput(text);
+  }, [searchInput, filters.format, filters.country, filters.year, clearFilters]);
+
+  const handleHistoryItemPress = useCallback(async (historyQuery: string) => {
+    setSearchInput(historyQuery);
+    try {
+      await search(historyQuery);
+    } catch (error: any) {
+      const message = error?.response?.status === 503
+        ? 'Сервис временно недоступен. Попробуйте позже.'
+        : error?.message || 'Ошибка при поиске';
+      Alert.alert('Ошибка', message);
+    }
+  }, [search]);
+
+  const handleRemoveHistoryItem = useCallback((historyQuery: string) => {
+    removeFromHistory(historyQuery);
+  }, [removeFromHistory]);
+
+  const handleClearHistory = useCallback(() => {
+    Alert.alert(
+      'Очистить историю',
+      'Вы уверены, что хотите удалить всю историю поиска?',
+      [
+        { text: 'Отмена', style: 'cancel' },
+        { text: 'Очистить', style: 'destructive', onPress: clearHistory },
+      ]
+    );
+  }, [clearHistory]);
+
+  const handleBlur = useCallback(() => {
+    setTimeout(() => setIsFocused(false), 150);
+  }, []);
+
+  const handleRecordPress = (record: MasterSearchResult | ReleaseSearchResult) => {
+    // Если это MasterSearchResult - переходим на страницу мастера
+    if ('master_id' in record) {
+      router.push(`/master/${record.master_id}`);
+    } else if ('release_id' in record) {
+      // Если это ReleaseSearchResult - переходим на страницу релиза
+      router.push(`/record/${record.release_id}`);
+    }
   };
 
-  const handleAddToCollection = async (record: RecordSearchResult) => {
+  const handleAddToCollection = async (record: MasterSearchResult | ReleaseSearchResult) => {
     try {
-      await addToCollection(record.discogs_id);
+      const discogsId = 'main_release_id' in record ? record.main_release_id : record.release_id;
+      await addToCollection(discogsId);
       Alert.alert('Готово!', `"${record.title}" добавлена в коллекцию`);
     } catch (error: any) {
       const message = error?.response?.data?.detail || error?.message || 'Не удалось добавить в коллекцию';
@@ -60,9 +264,10 @@ export default function SearchScreen() {
     }
   };
 
-  const handleAddToWishlist = async (record: RecordSearchResult) => {
+  const handleAddToWishlist = async (record: MasterSearchResult | ReleaseSearchResult) => {
     try {
-      await addToWishlist(record.discogs_id);
+      const discogsId = 'main_release_id' in record ? record.main_release_id : record.release_id;
+      await addToWishlist(discogsId);
       Alert.alert('Готово!', `"${record.title}" добавлена в список желаний`);
     } catch (error: any) {
       const message = error?.response?.data?.detail || error?.message || 'Не удалось добавить в список желаний';
@@ -70,49 +275,299 @@ export default function SearchScreen() {
     }
   };
 
+  const handleArtistPress = (artist: ArtistSearchResult) => {
+    router.push(`/artist/${artist.artist_id}`);
+  };
+
+  // Поиск артиста по имени и переход на его страницу
+  const handleArtistNamePress = useCallback(async (artistName: string) => {
+    try {
+      const response = await api.searchArtists(artistName, 1, 1);
+      if (response.results.length > 0) {
+        router.push(`/artist/${response.results[0].artist_id}`);
+      } else {
+        Alert.alert('Не найдено', `Артист "${artistName}" не найден`);
+      }
+    } catch (error) {
+      console.error('Error searching artist:', error);
+      Alert.alert('Ошибка', 'Не удалось найти артиста');
+    }
+  }, [router]);
+
+  // Обновление временных фильтров без закрытия модалки
+  const updateTempFilter = useCallback((key: 'format' | 'country' | 'year', value: string | number | undefined) => {
+    setTempFilters(prev => ({
+      ...prev,
+      [key]: value,
+    }));
+  }, []);
+
+  // Очистка всех временных фильтров (применится при закрытии модалки)
+  const handleClearAllFilters = useCallback(() => {
+    setTempFilters({});
+    setSelectedDecade(undefined);
+  }, []);
+
+  // Показываем историю только когда поле в фокусе, пустое и нет результатов
+  const shouldShowHistory = isFocused && searchInput === '' && results.length === 0 && artistResults.length === 0 && searchHistory.length > 0;
+
+  // Показываем только самого релевантного артиста (первого в списке)
+  const topArtist = artistResults.length > 0 ? artistResults[0] : null;
+
+  const SearchHistory = shouldShowHistory ? (
+    <View style={styles.historyContainer}>
+      <View style={styles.historyHeader}>
+        <Text style={styles.historyTitle}>Вы искали ранее</Text>
+        <TouchableOpacity onPress={handleClearHistory}>
+          <Text style={styles.clearHistoryButton}>Очистить</Text>
+        </TouchableOpacity>
+      </View>
+      {searchHistory.map((item, index) => (
+        <View key={`${item}-${index}`} style={styles.historyItem}>
+          <TouchableOpacity
+            style={styles.historyItemButton}
+            onPress={() => handleHistoryItemPress(item)}
+            activeOpacity={0.7}
+          >
+            <Ionicons name="time-outline" size={18} color={Colors.textMuted} />
+            <Text style={styles.historyItemText}>{item}</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            onPress={() => handleRemoveHistoryItem(item)}
+            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+            activeOpacity={0.7}
+          >
+            <Ionicons name="close" size={18} color={Colors.textMuted} />
+          </TouchableOpacity>
+        </View>
+      ))}
+    </View>
+  ) : null;
+
+  const FilterModal = showFilters ? (
+    <Modal
+      visible={showFilters}
+      transparent
+      animationType="none"
+      onRequestClose={closeFilters}
+    >
+      <View style={styles.modalContainer}>
+        <Animated.View
+          style={[styles.modalOverlay, { opacity: overlayOpacity }]}
+        >
+          <TouchableOpacity style={styles.modalOverlayPressable} onPress={closeFilters} activeOpacity={1} />
+        </Animated.View>
+        <Animated.View
+          style={[
+            styles.modalContent,
+            { transform: [{ translateY: slideAnim }] }
+          ]}
+        >
+          <View style={styles.modalHeader}>
+            <Text style={styles.modalTitle}>Фильтры</Text>
+            <TouchableOpacity onPress={closeFilters}>
+              <Ionicons name="close" size={24} color={Colors.text} />
+            </TouchableOpacity>
+          </View>
+
+          <ScrollView style={styles.modalBody}>
+            {/* Формат */}
+            <Text style={styles.filterLabel}>Формат</Text>
+            <View style={styles.filterOptions}>
+              {FORMAT_OPTIONS.map((option) => {
+                const isSelected = option.value === undefined ? !tempFilters.format : tempFilters.format === option.value;
+                return (
+                  <TouchableOpacity
+                    key={option.label}
+                    style={[styles.filterOption, isSelected && styles.filterOptionSelected]}
+                    onPress={() => updateTempFilter('format', option.value)}
+                  >
+                    <Text style={[styles.filterOptionText, isSelected && styles.filterOptionTextSelected]}>
+                      {option.label}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+
+            {/* Страна */}
+            <View style={styles.filterLabelRow}>
+              <Text style={styles.filterLabel}>Страна</Text>
+              <TouchableOpacity onPress={() => setShowAllCountries(!showAllCountries)}>
+                <Text style={styles.showAllButton}>
+                  {showAllCountries ? 'Скрыть' : 'Показать все'}
+                </Text>
+              </TouchableOpacity>
+            </View>
+            <View style={styles.filterOptions}>
+              {(showAllCountries ? ALL_COUNTRIES : MAIN_COUNTRIES).map((option) => {
+                const isSelected = option.value === undefined ? !tempFilters.country : tempFilters.country === option.value;
+                return (
+                  <TouchableOpacity
+                    key={option.label}
+                    style={[styles.filterOption, isSelected && styles.filterOptionSelected]}
+                    onPress={() => updateTempFilter('country', option.value)}
+                  >
+                    <Text style={[styles.filterOptionText, isSelected && styles.filterOptionTextSelected]}>
+                      {option.label}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+
+            {/* Год (декады) */}
+            <Text style={styles.filterLabel}>Год издания</Text>
+            <View style={styles.filterOptions}>
+              {YEAR_OPTIONS.map((option) => {
+                const isSelected = option.value === undefined ? !selectedDecade : selectedDecade === option.value;
+                return (
+                  <TouchableOpacity
+                    key={option.label}
+                    style={[styles.filterOption, isSelected && styles.filterOptionSelected]}
+                    onPress={() => {
+                      setSelectedDecade(option.value);
+                      // Для Discogs API отправляем конкретный год (середину декады) или undefined
+                      const yearValue = option.value && 'min' in option ? Math.floor((option.min! + option.max!) / 2) : undefined;
+                      updateTempFilter('year', yearValue);
+                    }}
+                  >
+                    <Text style={[styles.filterOptionText, isSelected && styles.filterOptionTextSelected]}>
+                      {option.label}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+
+            {/* Кнопка очистки */}
+            {hasTempFilters && (
+              <TouchableOpacity
+                style={styles.clearFiltersButton}
+                onPress={handleClearAllFilters}
+              >
+                <Text style={styles.clearFiltersText}>Очистить все фильтры</Text>
+              </TouchableOpacity>
+            )}
+          </ScrollView>
+        </Animated.View>
+      </View>
+    </Modal>
+  ) : null;
+
   const SearchHeader = (
     <View style={styles.searchContainer}>
-      <View style={styles.searchInputContainer}>
-        <Ionicons name="search" size={20} color={Colors.textMuted} />
-        <TextInput
-          style={styles.searchInput}
-          value={searchInput}
-          onChangeText={setSearchInput}
-          placeholder="Артист, альбом, лейбл..."
-          placeholderTextColor={Colors.textMuted}
-          returnKeyType="search"
-          onSubmitEditing={handleSearch}
-          autoCapitalize="none"
-          autoCorrect={false}
-        />
-        {searchInput.length > 0 && (
-          <TouchableOpacity onPress={handleClear}>
-            <Ionicons name="close-circle" size={20} color={Colors.textMuted} />
-          </TouchableOpacity>
-        )}
+      <View style={styles.searchRow}>
+        <View style={styles.searchInputContainer}>
+          <Ionicons name="search" size={20} color={Colors.textMuted} />
+          <TextInput
+            style={styles.searchInput}
+            value={searchInput}
+            onChangeText={handleSearchInputChange}
+            placeholder="Артист, альбом, лейбл..."
+            placeholderTextColor={Colors.textMuted}
+            returnKeyType="search"
+            onSubmitEditing={handleSearch}
+            onFocus={() => setIsFocused(true)}
+            onBlur={handleBlur}
+            autoCapitalize="none"
+            autoCorrect={false}
+          />
+          {searchInput.length > 0 && (
+            <TouchableOpacity onPress={handleClear}>
+              <Ionicons name="close-circle" size={20} color={Colors.textMuted} />
+            </TouchableOpacity>
+          )}
+        </View>
+        <TouchableOpacity
+          style={[styles.filterButton, hasActiveFilters && styles.filterButtonActive]}
+          onPress={openFilters}
+        >
+          <Ionicons name="options-outline" size={20} color={hasActiveFilters ? Colors.background : Colors.text} />
+        </TouchableOpacity>
       </View>
+
+      {SearchHistory}
+    </View>
+  );
+
+  const HeaderContent = (
+    <View>
+      {SearchHeader}
+
+      {topArtist && (
+        <TouchableOpacity
+          style={styles.topArtistCard}
+          onPress={() => handleArtistPress(topArtist)}
+          activeOpacity={0.8}
+        >
+          <View style={styles.topArtistImageContainer}>
+            {(topArtist.cover_image_url || topArtist.thumb_image_url) ? (
+              <Image
+                source={{ uri: topArtist.cover_image_url || topArtist.thumb_image_url }}
+                style={styles.topArtistImage}
+                resizeMode="cover"
+              />
+            ) : (
+              <View style={styles.topArtistPlaceholder}>
+                <Ionicons name="person-outline" size={32} color={Colors.textMuted} />
+              </View>
+            )}
+          </View>
+          <View style={styles.topArtistInfo}>
+            <Text style={styles.topArtistLabel}>Артист</Text>
+            <Text style={styles.topArtistName} numberOfLines={1}>{topArtist.name}</Text>
+          </View>
+          <Ionicons name="chevron-forward" size={24} color={Colors.textMuted} />
+        </TouchableOpacity>
+      )}
+
+      {results.length > 0 && (
+        <Text style={styles.sectionTitle}>Релизы</Text>
+      )}
+
+      {isLoading && results.length === 0 && artistResults.length === 0 && (
+        <View style={styles.loadingContainer}>
+          <Text style={styles.loadingText}>Загрузка...</Text>
+        </View>
+      )}
+
+      {!isLoading && results.length === 0 && artistResults.length === 0 && query && (
+        <View style={styles.emptyContainer}>
+          <Text style={styles.emptyText}>
+            Ничего не найдено. Попробуйте изменить запрос.
+          </Text>
+        </View>
+      )}
+
+      {!isLoading && results.length === 0 && artistResults.length === 0 && !query && (
+        <View style={styles.emptyContainer}>
+          <Text style={styles.emptyText}>
+            Введите название альбома, артиста или лейбла
+          </Text>
+        </View>
+      )}
     </View>
   );
 
   return (
     <View style={styles.container}>
       <Header title="Поиск" />
-      
+
       <RecordGrid
         data={results}
         onRecordPress={handleRecordPress}
+        onArtistPress={handleArtistNamePress}
         onAddToCollection={handleAddToCollection}
         onAddToWishlist={handleAddToWishlist}
         showActions
         isLoading={isLoading}
         onEndReached={hasMore ? loadMore : undefined}
-        emptyMessage={
-          query
-            ? 'Ничего не найдено. Попробуйте изменить запрос.'
-            : 'Введите название альбома, артиста или лейбла'
-        }
-        ListHeaderComponent={SearchHeader}
+        emptyMessage=""
+        ListHeaderComponent={HeaderContent}
       />
+
+      {FilterModal}
     </View>
   );
 }
@@ -125,18 +580,228 @@ const styles = StyleSheet.create({
   searchContainer: {
     paddingBottom: Spacing.md,
   },
+  searchRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.sm,
+  },
   searchInputContainer: {
+    flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: Colors.surface,
     borderRadius: BorderRadius.md,
-    paddingHorizontal: Spacing.md,
+    paddingHorizontal: Spacing.sm,
+    paddingLeft: Spacing.md,
     height: 48,
     gap: Spacing.sm,
   },
   searchInput: {
     flex: 1,
+    minWidth: 0,
+    fontSize: 16,
+    color: Colors.text,
+    padding: 0,
+    margin: 0,
+    textAlignVertical: 'center',
+  },
+  filterButton: {
+    width: 48,
+    height: 48,
+    borderRadius: BorderRadius.md,
+    backgroundColor: Colors.surface,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  filterButtonActive: {
+    backgroundColor: Colors.primary,
+  },
+  historyContainer: {
+    marginTop: Spacing.md,
+    backgroundColor: Colors.surface,
+    borderRadius: BorderRadius.md,
+    padding: Spacing.md,
+  },
+  historyHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: Spacing.sm,
+  },
+  historyTitle: {
+    ...Typography.bodyBold,
+    color: Colors.text,
+  },
+  clearHistoryButton: {
+    ...Typography.caption,
+    color: Colors.primary,
+  },
+  historyItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: Spacing.sm,
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.border,
+  },
+  historyItemButton: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.sm,
+  },
+  historyItemText: {
     ...Typography.body,
     color: Colors.text,
+    flex: 1,
+  },
+  modalContainer: {
+    flex: 1,
+    justifyContent: 'flex-end',
+  },
+  modalOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+  },
+  modalOverlayPressable: {
+    flex: 1,
+  },
+  modalContent: {
+    backgroundColor: Colors.background,
+    borderTopLeftRadius: BorderRadius.xl,
+    borderTopRightRadius: BorderRadius.xl,
+    maxHeight: '80%',
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: Spacing.lg,
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.border,
+  },
+  modalTitle: {
+    ...Typography.h3,
+    color: Colors.text,
+  },
+  modalBody: {
+    padding: Spacing.lg,
+  },
+  filterLabel: {
+    ...Typography.bodyBold,
+    color: Colors.text,
+    marginBottom: Spacing.sm,
+    marginTop: Spacing.md,
+  },
+  filterLabelRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginTop: Spacing.md,
+    marginBottom: Spacing.sm,
+  },
+  showAllButton: {
+    ...Typography.caption,
+    color: Colors.primary,
+  },
+  filterOptions: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: Spacing.sm,
+  },
+  filterOption: {
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.sm,
+    borderRadius: BorderRadius.md,
+    backgroundColor: Colors.surface,
+    borderWidth: 1,
+    borderColor: Colors.border,
+  },
+  filterOptionSelected: {
+    backgroundColor: Colors.primary,
+    borderColor: Colors.primary,
+  },
+  filterOptionText: {
+    ...Typography.body,
+    color: Colors.text,
+  },
+  filterOptionTextSelected: {
+    color: Colors.background,
+    fontWeight: '600',
+  },
+  clearFiltersButton: {
+    marginTop: Spacing.xl,
+    padding: Spacing.md,
+    backgroundColor: Colors.surface,
+    borderRadius: BorderRadius.md,
+    alignItems: 'center',
+  },
+  clearFiltersText: {
+    ...Typography.body,
+    color: Colors.error,
+    fontWeight: '600',
+  },
+  sectionTitle: {
+    ...Typography.h3,
+    color: Colors.text,
+    marginBottom: Spacing.md,
+  },
+  topArtistCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: Colors.surface,
+    borderRadius: BorderRadius.lg,
+    padding: Spacing.md,
+    marginBottom: Spacing.lg,
+  },
+  topArtistImageContainer: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: Colors.background,
+    overflow: 'hidden',
+  },
+  topArtistImage: {
+    width: '100%',
+    height: '100%',
+  },
+  topArtistPlaceholder: {
+    width: '100%',
+    height: '100%',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: Colors.background,
+  },
+  topArtistInfo: {
+    flex: 1,
+    marginLeft: Spacing.md,
+  },
+  topArtistLabel: {
+    ...Typography.caption,
+    color: Colors.textMuted,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  topArtistName: {
+    ...Typography.bodyBold,
+    color: Colors.text,
+    marginTop: 2,
+  },
+  loadingContainer: {
+    padding: Spacing.xl,
+    alignItems: 'center',
+  },
+  loadingText: {
+    ...Typography.body,
+    color: Colors.textSecondary,
+  },
+  emptyContainer: {
+    padding: Spacing.xl,
+    alignItems: 'center',
+  },
+  emptyText: {
+    ...Typography.body,
+    color: Colors.textMuted,
+    textAlign: 'center',
   },
 });

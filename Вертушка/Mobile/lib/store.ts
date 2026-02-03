@@ -2,6 +2,7 @@
  * Zustand Store для Вертушка
  */
 import { create } from 'zustand';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { api } from './api';
 import {
   User,
@@ -12,7 +13,13 @@ import {
   WishlistItem,
   CollectionTab,
   SearchFilters,
+  MasterSearchResult,
+  ReleaseSearchResult,
+  ArtistSearchResult,
 } from './types';
+
+const SEARCH_HISTORY_KEY = '@vertushka:search_history';
+const MAX_HISTORY_ITEMS = 20;
 
 // ==================== Auth Store ====================
 
@@ -88,49 +95,85 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 interface SearchState {
   query: string;
   filters: SearchFilters;
-  results: RecordSearchResult[];
+  results: (MasterSearchResult | ReleaseSearchResult)[];
+  artistResults: ArtistSearchResult[];
   isLoading: boolean;
   page: number;
+  artistPage: number;
   totalResults: number;
+  totalArtistResults: number;
   hasMore: boolean;
+  hasMoreArtists: boolean;
+  searchHistory: string[];
 
   // Actions
   setQuery: (query: string) => void;
   setFilters: (filters: SearchFilters) => void;
+  clearFilters: () => void;
   search: (query?: string) => Promise<void>;
   loadMore: () => Promise<void>;
+  loadMoreArtists: () => Promise<void>;
   clearResults: () => void;
+  loadHistory: () => Promise<void>;
+  addToHistory: (query: string) => Promise<void>;
+  removeFromHistory: (query: string) => Promise<void>;
+  clearHistory: () => Promise<void>;
 }
 
 export const useSearchStore = create<SearchState>((set, get) => ({
   query: '',
   filters: {},
   results: [],
+  artistResults: [],
   isLoading: false,
   page: 1,
+  artistPage: 1,
   totalResults: 0,
+  totalArtistResults: 0,
   hasMore: false,
+  hasMoreArtists: false,
+  searchHistory: [],
 
   setQuery: (query) => set({ query }),
-  
+
   setFilters: (filters) => set({ filters }),
+
+  clearFilters: () => set({ filters: {} }),
 
   search: async (newQuery) => {
     const query = newQuery ?? get().query;
     if (!query.trim()) {
-      set({ results: [], totalResults: 0, hasMore: false });
+      set({ results: [], artistResults: [], totalResults: 0, totalArtistResults: 0, hasMore: false, hasMoreArtists: false });
       return;
     }
 
-    set({ isLoading: true, query, page: 1 });
+    set({ isLoading: true, query, page: 1, artistPage: 1 });
     try {
-      const response = await api.searchRecords(query, get().filters, 1);
+      const { filters } = get();
+      const hasFilters = !!(filters.format || filters.country || filters.year);
+
+      // Универсальный поиск: делаем оба запроса параллельно
+      const [releasesResponse, artistsResponse] = await Promise.all([
+        // Если есть фильтры - ищем конкретные релизы, иначе - мастеры
+        hasFilters
+          ? api.searchReleases(query, filters, 1)
+          : api.searchMasters(query, 1),
+        // Всегда ищем артистов
+        api.searchArtists(query, 1, 10), // Ограничиваем 10 артистами для первой страницы
+      ]);
+
       set({
-        results: response.results,
-        totalResults: response.total,
-        hasMore: response.results.length < response.total,
+        results: releasesResponse.results,
+        totalResults: releasesResponse.total,
+        hasMore: releasesResponse.results.length < releasesResponse.total,
+        artistResults: artistsResponse.results,
+        totalArtistResults: artistsResponse.total,
+        hasMoreArtists: artistsResponse.results.length < artistsResponse.total,
         isLoading: false,
       });
+
+      // Добавляем в историю после успешного поиска
+      await get().addToHistory(query.trim());
     } catch (error) {
       set({ isLoading: false });
       throw error;
@@ -144,7 +187,13 @@ export const useSearchStore = create<SearchState>((set, get) => ({
     set({ isLoading: true });
     try {
       const nextPage = page + 1;
-      const response = await api.searchRecords(query, filters, nextPage);
+      const hasFilters = !!(filters.format || filters.country || filters.year);
+
+      // Используем тот же тип поиска, что и в основном search
+      const response = hasFilters
+        ? await api.searchReleases(query, filters, nextPage)
+        : await api.searchMasters(query, nextPage);
+
       set({
         results: [...results, ...response.results],
         page: nextPage,
@@ -157,7 +206,92 @@ export const useSearchStore = create<SearchState>((set, get) => ({
     }
   },
 
-  clearResults: () => set({ results: [], query: '', page: 1, totalResults: 0, hasMore: false }),
+
+  loadMoreArtists: async () => {
+    const { query, artistPage, hasMoreArtists, isLoading, artistResults } = get();
+    if (!hasMoreArtists || isLoading) return;
+
+    set({ isLoading: true });
+    try {
+      const nextPage = artistPage + 1;
+      const response = await api.searchArtists(query, nextPage);
+
+      set({
+        artistResults: [...artistResults, ...response.results],
+        artistPage: nextPage,
+        hasMoreArtists: artistResults.length + response.results.length < response.total,
+        isLoading: false,
+      });
+    } catch (error) {
+      set({ isLoading: false });
+      throw error;
+    }
+  },
+
+  clearResults: () => set({
+    results: [],
+    artistResults: [],
+    query: '',
+    page: 1,
+    artistPage: 1,
+    totalResults: 0,
+    totalArtistResults: 0,
+    hasMore: false,
+    hasMoreArtists: false,
+  }),
+
+  loadHistory: async () => {
+    try {
+      const stored = await AsyncStorage.getItem(SEARCH_HISTORY_KEY);
+      if (stored) {
+        const history = JSON.parse(stored) as string[];
+        set({ searchHistory: history });
+      }
+    } catch (error) {
+      console.error('Failed to load search history:', error);
+    }
+  },
+
+  addToHistory: async (query) => {
+    const { searchHistory } = get();
+
+    // Убираем дубликаты (если запрос уже есть)
+    const filtered = searchHistory.filter((item) => item !== query);
+
+    // Добавляем в начало списка
+    const newHistory = [query, ...filtered].slice(0, MAX_HISTORY_ITEMS);
+
+    set({ searchHistory: newHistory });
+
+    try {
+      await AsyncStorage.setItem(SEARCH_HISTORY_KEY, JSON.stringify(newHistory));
+    } catch (error) {
+      console.error('Failed to save search history:', error);
+    }
+  },
+
+  removeFromHistory: async (query) => {
+    const { searchHistory } = get();
+    const newHistory = searchHistory.filter((item) => item !== query);
+
+    set({ searchHistory: newHistory });
+
+    try {
+      await AsyncStorage.setItem(SEARCH_HISTORY_KEY, JSON.stringify(newHistory));
+    } catch (error) {
+      console.error('Failed to update search history:', error);
+    }
+  },
+
+  clearHistory: async () => {
+    set({ searchHistory: [] });
+
+    try {
+      await AsyncStorage.removeItem(SEARCH_HISTORY_KEY);
+    } catch (error) {
+      console.error('Failed to clear search history:', error);
+    }
+  },
 }));
 
 // ==================== Collection Store ====================

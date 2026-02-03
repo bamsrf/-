@@ -100,3 +100,102 @@ class RecordSearchResponse(BaseModel):
     page: int
     per_page: int
 
+
+class MasterSearchResult(BaseModel):
+    """Результат поиска мастер-релиза (от Discogs)"""
+    master_id: str
+    title: str
+    artist: str
+    year: int | None = None
+    main_release_id: str
+    cover_image_url: str | None = None
+    thumb_image_url: str | None = None
+
+
+class MasterVersion(BaseModel):
+    """Версия (издание) мастер-релиза"""
+    release_id: str
+    title: str
+    label: str | None = None
+    catalog_number: str | None = None
+    country: str | None = None
+    year: int | None = None
+    format: str | None = None
+    thumb_image_url: str | None = None
+
+
+class MasterRelease(BaseModel):
+    """Полная информация о мастер-релизе"""
+    master_id: str
+    title: str
+    artist: str
+    artist_id: str | None = None
+    artist_thumb_image_url: str | None = None
+    year: int | None = None
+    main_release_id: str
+    genres: list[str] = []
+    styles: list[str] = []
+    cover_image_url: str | None = None
+
+
+class MasterSearchResponse(BaseModel):
+    """Ответ на поиск мастер-релизов"""
+    results: list[MasterSearchResult]
+    total: int
+    page: int
+    per_page: int
+
+
+class MasterVersionsResponse(BaseModel):
+    """Ответ на запрос версий мастер-релиза"""
+    results: list[MasterVersion]
+    total: int
+    page: int
+    per_page: int
+
+
+class ReleaseSearchResult(BaseModel):
+    """Результат поиска конкретных релизов с фильтрами (от Discogs)"""
+    release_id: str
+    title: str
+    artist: str
+    label: str | None = None
+    catalog_number: str | None = None
+    country: str | None = None
+    year: int | None = None
+    format: str | None = None
+    cover_image_url: str | None = None
+    thumb_image_url: str | None = None
+
+
+class ReleaseSearchResponse(BaseModel):
+    """Ответ на поиск релизов с фильтрами"""
+    results: list[ReleaseSearchResult]
+    total: int
+    page: int
+    per_page: int
+
+
+class ArtistSearchResult(BaseModel):
+    """Результат поиска артиста (от Discogs)"""
+    artist_id: str
+    name: str
+    cover_image_url: str | None = None
+    thumb_image_url: str | None = None
+
+
+class Artist(BaseModel):
+    """Полная информация об артисте"""
+    artist_id: str
+    name: str
+    profile: str | None = None
+    images: list[str] = []
+
+
+class ArtistSearchResponse(BaseModel):
+    """Ответ на поиск артистов"""
+    results: list[ArtistSearchResult]
+    total: int
+    page: int
+    per_page: int
+

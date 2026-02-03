@@ -16,16 +16,28 @@ import {
   Wishlist,
   WishlistItem,
   SearchFilters,
+  MasterSearchResponse,
+  MasterRelease,
+  MasterVersionsResponse,
+  ReleaseSearchResponse,
+  ArtistSearchResponse,
+  Artist,
 } from './types';
 
 // API сервер
 // Для локальной разработки с бэкендом на localhost:
 const API_BASE_URL = __DEV__
-  ? 'http://192.168.0.180:8000/api'  // Локальный IP для разработки (работает на симуляторе и физическом устройстве)
+  ? 'http://192.168.1.66:8000/api'  // Локальный IP для разработки (работает на симуляторе и физическом устройстве)
   : 'https://api.vinyl-vertushka.ru/api'; // Продакшен сервер
 
 const TOKEN_KEY = 'auth_token';
 const REFRESH_TOKEN_KEY = 'refresh_token';
+
+// Retry конфигурация для 503 ошибок (Discogs rate limiting)
+const MAX_RETRIES = 3;
+const RETRY_DELAY = 1500; // 1.5 секунды между попытками
+
+const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
 class ApiClient {
   private client: AxiosInstance;
@@ -64,7 +76,22 @@ class ApiClient {
       (response) => response,
       async (error: AxiosError) => {
         const originalRequest = error.config as any;
-        
+
+        // Retry логика для 503 ошибок (Discogs rate limiting)
+        if (error.response?.status === 503) {
+          const retryCount = originalRequest._retryCount || 0;
+
+          if (retryCount < MAX_RETRIES) {
+            originalRequest._retryCount = retryCount + 1;
+            console.log(`🔄 Retry ${retryCount + 1}/${MAX_RETRIES} после 503...`);
+
+            await sleep(RETRY_DELAY * (retryCount + 1)); // Увеличиваем задержку с каждой попыткой
+            return this.client(originalRequest);
+          }
+
+          console.log('❌ Все попытки retry исчерпаны');
+        }
+
         // Если 401 и это не запрос на refresh — пробуем обновить токен
         if (error.response?.status === 401 && !originalRequest._retry) {
           if (this.isRefreshing) {
@@ -225,6 +252,121 @@ class ApiClient {
 
   async getRecordByDiscogsId(discogsId: string): Promise<VinylRecord> {
     const response = await this.client.get<VinylRecord>(`/records/discogs/${discogsId}`);
+    return response.data;
+  }
+
+  // ==================== Masters ====================
+
+  async searchMasters(
+    query: string,
+    page = 1,
+    perPage = 20
+  ): Promise<MasterSearchResponse> {
+    const params = {
+      q: query,
+      page,
+      per_page: perPage,
+    };
+
+    const response = await this.client.get<MasterSearchResponse>('/records/masters/search', { params });
+    return response.data;
+  }
+
+  async getMaster(masterId: string): Promise<MasterRelease> {
+    const response = await this.client.get<MasterRelease>(`/records/masters/${masterId}`);
+    return response.data;
+  }
+
+  async getMasterVersions(
+    masterId: string,
+    page = 1,
+    perPage = 50
+  ): Promise<MasterVersionsResponse> {
+    const params = {
+      page,
+      per_page: perPage,
+    };
+
+    const response = await this.client.get<MasterVersionsResponse>(
+      `/records/masters/${masterId}/versions`,
+      { params }
+    );
+    return response.data;
+  }
+
+  async searchReleases(
+    query: string,
+    filters?: SearchFilters,
+    page = 1,
+    perPage = 20
+  ): Promise<ReleaseSearchResponse> {
+    const params: { [key: string]: any } = {
+      q: query,
+      page,
+      per_page: perPage,
+    };
+
+    if (filters?.format) params.format = filters.format;
+    if (filters?.country) params.country = filters.country;
+    if (filters?.year) params.year = filters.year;
+
+    const response = await this.client.get<ReleaseSearchResponse>('/records/releases/search', { params });
+    return response.data;
+  }
+
+  // ==================== Artists ====================
+
+  async searchArtists(
+    query: string,
+    page = 1,
+    perPage = 20
+  ): Promise<ArtistSearchResponse> {
+    const params = {
+      q: query,
+      page,
+      per_page: perPage,
+    };
+
+    const response = await this.client.get<ArtistSearchResponse>('/records/artists/search', { params });
+    return response.data;
+  }
+
+  async getArtist(artistId: string): Promise<Artist> {
+    const response = await this.client.get<Artist>(`/records/artists/${artistId}`);
+    return response.data;
+  }
+
+  async getArtistReleases(
+    artistId: string,
+    page = 1,
+    perPage = 50
+  ): Promise<ReleaseSearchResponse> {
+    const params = {
+      page,
+      per_page: perPage,
+    };
+
+    const response = await this.client.get<ReleaseSearchResponse>(
+      `/records/artists/${artistId}/releases`,
+      { params }
+    );
+    return response.data;
+  }
+
+  async getArtistMasters(
+    artistId: string,
+    page = 1,
+    perPage = 50
+  ): Promise<MasterSearchResponse> {
+    const params = {
+      page,
+      per_page: perPage,
+    };
+
+    const response = await this.client.get<MasterSearchResponse>(
+      `/records/artists/${artistId}/masters`,
+      { params }
+    );
     return response.data;
   }
 

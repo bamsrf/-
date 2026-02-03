@@ -11,14 +11,15 @@ import {
   RefreshControl,
 } from 'react-native';
 import { RecordCard } from './RecordCard';
-import { RecordSearchResult, VinylRecord, CollectionItem, WishlistItem } from '../lib/types';
+import { RecordSearchResult, VinylRecord, CollectionItem, WishlistItem, MasterSearchResult, ReleaseSearchResult } from '../lib/types';
 import { Colors, Typography, Spacing } from '../constants/theme';
 
-type RecordItem = RecordSearchResult | VinylRecord | CollectionItem | WishlistItem;
+type RecordItem = RecordSearchResult | VinylRecord | CollectionItem | WishlistItem | MasterSearchResult | ReleaseSearchResult;
 
 interface RecordGridProps<T extends RecordItem = RecordItem> {
   data: T[];
   onRecordPress?: (record: T) => void;
+  onArtistPress?: (artistName: string) => void;
   onAddToCollection?: (record: T) => void;
   onAddToWishlist?: (record: T) => void;
   onRemove?: (record: T) => void;
@@ -37,6 +38,7 @@ interface RecordGridProps<T extends RecordItem = RecordItem> {
 export function RecordGrid<T extends RecordItem = RecordItem>({
   data,
   onRecordPress,
+  onArtistPress,
   onAddToCollection,
   onAddToWishlist,
   onRemove,
@@ -52,7 +54,7 @@ export function RecordGrid<T extends RecordItem = RecordItem>({
   onToggleItemSelection,
 }: RecordGridProps<T>) {
   // Извлекаем запись из разных типов
-  const getRecord = (item: RecordItem): RecordSearchResult | VinylRecord => {
+  const getRecord = (item: RecordItem): RecordSearchResult | VinylRecord | MasterSearchResult | ReleaseSearchResult => {
     if ('record' in item) {
       return item.record;
     }
@@ -68,6 +70,7 @@ export function RecordGrid<T extends RecordItem = RecordItem>({
       <RecordCard
         record={record}
         onPress={onRecordPress ? () => onRecordPress(item) : undefined}
+        onArtistPress={onArtistPress}
         onAddToCollection={
           onAddToCollection ? () => onAddToCollection(item) : undefined
         }
@@ -88,8 +91,8 @@ export function RecordGrid<T extends RecordItem = RecordItem>({
   };
 
   const renderEmpty = () => {
-    if (isLoading) return null;
-    
+    if (isLoading || !emptyMessage) return null;
+
     return (
       <View style={styles.emptyContainer}>
         <Text style={styles.emptyText}>{emptyMessage}</Text>
@@ -111,6 +114,8 @@ export function RecordGrid<T extends RecordItem = RecordItem>({
     if ('id' in item) return item.id;
     const record = getRecord(item);
     if ('discogs_id' in record && record.discogs_id) return record.discogs_id;
+    if ('master_id' in record && record.master_id) return record.master_id;
+    if ('release_id' in record && record.release_id) return record.release_id;
     return index.toString();
   };
 
@@ -123,6 +128,7 @@ export function RecordGrid<T extends RecordItem = RecordItem>({
       columnWrapperStyle={styles.row}
       contentContainerStyle={styles.container}
       showsVerticalScrollIndicator={false}
+      keyboardShouldPersistTaps="handled"
       ListHeaderComponent={ListHeaderComponent}
       ListEmptyComponent={renderEmpty}
       ListFooterComponent={renderFooter}

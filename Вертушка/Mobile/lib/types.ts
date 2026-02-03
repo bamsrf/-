@@ -87,6 +87,56 @@ export interface RecordSearchResponse {
   per_page: number;
 }
 
+// ==================== Master Releases ====================
+
+export interface MasterSearchResult {
+  master_id: string;
+  title: string;
+  artist: string;
+  year?: number;
+  main_release_id: string;
+  cover_image_url?: string;
+  thumb_image_url?: string;
+}
+
+export interface MasterRelease {
+  master_id: string;
+  title: string;
+  artist: string;
+  artist_id?: string;
+  artist_thumb_image_url?: string;
+  year?: number;
+  main_release_id: string;
+  genres?: string[];
+  styles?: string[];
+  cover_image_url?: string;
+}
+
+export interface MasterVersion {
+  release_id: string;
+  title: string;
+  label?: string;
+  catalog_number?: string;
+  country?: string;
+  year?: number;
+  format?: string;
+  thumb_image_url?: string;
+}
+
+export interface MasterSearchResponse {
+  results: MasterSearchResult[];
+  total: number;
+  page: number;
+  per_page: number;
+}
+
+export interface MasterVersionsResponse {
+  results: MasterVersion[];
+  total: number;
+  page: number;
+  per_page: number;
+}
+
 // ==================== Collection ====================
 
 export interface Collection {
@@ -167,4 +217,51 @@ export interface SearchFilters {
   year?: number;
   label?: string;
   genre?: string;
+  format?: string;
+  country?: string;
+}
+
+// ==================== Release Search (с фильтрами) ====================
+
+export interface ReleaseSearchResult {
+  release_id: string;
+  title: string;
+  artist: string;
+  label?: string;
+  catalog_number?: string;
+  country?: string;
+  year?: number;
+  format?: string;
+  cover_image_url?: string;
+  thumb_image_url?: string;
+}
+
+export interface ReleaseSearchResponse {
+  results: ReleaseSearchResult[];
+  total: number;
+  page: number;
+  per_page: number;
+}
+
+// ==================== Artists ====================
+
+export interface ArtistSearchResult {
+  artist_id: string;
+  name: string;
+  cover_image_url?: string;
+  thumb_image_url?: string;
+}
+
+export interface Artist {
+  artist_id: string;
+  name: string;
+  profile?: string;
+  images?: string[];
+}
+
+export interface ArtistSearchResponse {
+  results: ArtistSearchResult[];
+  total: number;
+  page: number;
+  per_page: number;
 }

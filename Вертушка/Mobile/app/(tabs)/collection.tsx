@@ -10,6 +10,7 @@ import { Header } from '../../components/Header';
 import { RecordGrid } from '../../components/RecordGrid';
 import { SegmentedControl } from '../../components/ui';
 import { useCollectionStore } from '../../lib/store';
+import { api } from '../../lib/api';
 import { CollectionItem, WishlistItem, CollectionTab } from '../../lib/types';
 import { Colors, Spacing, Typography, BorderRadius } from '../../constants/theme';
 
@@ -65,6 +66,24 @@ export default function CollectionScreen() {
     const recordId = item.record.discogs_id || item.record.id;
     router.push(`/record/${recordId}`);
   };
+
+  const handleArtistPress = useCallback(async (artistName: string) => {
+    try {
+      // Ищем артиста по имени
+      const response = await api.searchArtists(artistName, 1, 5);
+
+      if (response.results.length > 0) {
+        // Берем первый результат и переходим на страницу артиста
+        const artist = response.results[0];
+        router.push(`/artist/${artist.artist_id}`);
+      } else {
+        Alert.alert('Артист не найден', `Не удалось найти артиста "${artistName}"`);
+      }
+    } catch (error: any) {
+      console.error('Ошибка поиска артиста:', error);
+      Alert.alert('Ошибка', 'Не удалось найти артиста');
+    }
+  }, [router]);
 
   const handleRemoveFromCollection = async (item: CollectionItem) => {
     Alert.alert(
@@ -149,7 +168,7 @@ export default function CollectionScreen() {
   };
 
   const handleSelectAll = () => {
-    const data = activeTab === 'collection' ? collectionItems : wishlistItems;
+    const data = (activeTab === 'collection' ? collectionItems : wishlistItems) as (CollectionItem | WishlistItem)[];
     if (selectedItems.size === data.length && data.length > 0) {
       setSelectedItems(new Set());
     } else {
@@ -223,7 +242,7 @@ export default function CollectionScreen() {
   };
 
 
-  const data = activeTab === 'collection' ? collectionItems : wishlistItems;
+  const data = (activeTab === 'collection' ? collectionItems : wishlistItems) as (CollectionItem | WishlistItem)[];
 
   const SegmentHeader = (
     <View style={styles.segmentContainer}>
@@ -253,8 +272,9 @@ export default function CollectionScreen() {
       <RecordGrid
         data={data}
         onRecordPress={isSelectionMode ? undefined : handleRecordPress}
+        onArtistPress={isSelectionMode ? undefined : handleArtistPress}
         onRemove={
-          activeTab === 'collection' ? handleRemoveFromCollection : handleRemoveFromWishlist
+          (activeTab === 'collection' ? handleRemoveFromCollection : handleRemoveFromWishlist) as any
         }
         showActions={false}
         isLoading={isLoading}

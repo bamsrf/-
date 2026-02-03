@@ -12,14 +12,15 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { Colors, Typography, BorderRadius, Shadows, Spacing } from '../constants/theme';
-import { RecordSearchResult, VinylRecord } from '../lib/types';
+import { RecordSearchResult, VinylRecord, MasterSearchResult, ReleaseSearchResult } from '../lib/types';
 
 const { width } = Dimensions.get('window');
 const CARD_WIDTH = (width - Spacing.md * 3) / 2;
 
 interface RecordCardProps {
-  record: RecordSearchResult | VinylRecord;
+  record: RecordSearchResult | VinylRecord | MasterSearchResult | ReleaseSearchResult;
   onPress?: () => void;
+  onArtistPress?: (artistName: string) => void;
   onAddToCollection?: () => void;
   onAddToWishlist?: () => void;
   onRemove?: () => void;
@@ -30,9 +31,42 @@ interface RecordCardProps {
   onToggleSelection?: () => void;
 }
 
+// Извлекает краткий формат из полной строки (первый значимый элемент)
+function getShortFormat(format: string | undefined): string | undefined {
+  if (!format) return undefined;
+
+  // Разделяем по запятым и берём только первые 2-3 значимых элемента
+  const parts = format.split(',').map(s => s.trim()).filter(Boolean);
+  if (parts.length === 0) return undefined;
+
+  // Основные типы носителей
+  const mainFormats = ['Vinyl', 'CD', 'Cassette', 'DVD', 'Blu-ray', 'Box Set', 'LP', '7"', '12"', '10"'];
+  // Важные дополнения
+  const importantDetails = ['Album', 'Single', 'EP', 'Compilation', 'Limited Edition', 'Reissue', 'Remaster'];
+
+  const result: string[] = [];
+
+  // Добавляем основной формат (первый найденный)
+  const mainFormat = parts.find(p => mainFormats.some(mf => p.includes(mf)));
+  if (mainFormat) {
+    result.push(mainFormat);
+  } else if (parts[0]) {
+    result.push(parts[0]);
+  }
+
+  // Добавляем одну важную деталь если есть
+  const detail = parts.find(p => importantDetails.some(d => p.includes(d)) && !result.includes(p));
+  if (detail && result.length < 2) {
+    result.push(detail);
+  }
+
+  return result.join(', ') || parts[0];
+}
+
 export function RecordCard({
   record,
   onPress,
+  onArtistPress,
   onAddToCollection,
   onAddToWishlist,
   onRemove,
@@ -42,6 +76,7 @@ export function RecordCard({
   isSelected = false,
   onToggleSelection,
 }: RecordCardProps) {
+  // Приоритет: cover_image_url для высокого качества, fallback на thumb
   const imageUrl = record.cover_image_url || record.thumb_image_url;
   const cardWidth = size === 'large' ? width - Spacing.md * 2 : CARD_WIDTH;
   const imageHeight = size === 'large' ? cardWidth * 0.8 : CARD_WIDTH;
@@ -102,21 +137,43 @@ export function RecordCard({
 
       {/* Информация */}
       <View style={styles.info}>
-        <Text style={styles.artist} numberOfLines={1}>
-          {record.artist}
-        </Text>
+        {onArtistPress ? (
+          <TouchableOpacity
+            onPress={() => onArtistPress(record.artist)}
+            activeOpacity={0.7}
+          >
+            <Text style={[styles.artist, styles.artistClickable]} numberOfLines={1}>
+              {record.artist}
+            </Text>
+          </TouchableOpacity>
+        ) : (
+          <Text style={styles.artist} numberOfLines={1}>
+            {record.artist}
+          </Text>
+        )}
         <Text style={styles.title} numberOfLines={2}>
           {record.title}
         </Text>
-        
         <View style={styles.meta}>
           {record.year && (
             <Text style={styles.metaText}>{record.year}</Text>
           )}
-          {record.format_type && (
+          {'country' in record && record.country && (
             <>
               {record.year && <Text style={styles.metaDot}>•</Text>}
-              <Text style={styles.metaText}>{record.format_type}</Text>
+              <Text style={styles.metaText}>{record.country}</Text>
+            </>
+          )}
+          {'format_type' in record && record.format_type && (
+            <>
+              {(record.year || ('country' in record && record.country)) && <Text style={styles.metaDot}>•</Text>}
+              <Text style={styles.metaText} numberOfLines={1}>{getShortFormat(record.format_type)}</Text>
+            </>
+          )}
+          {'format' in record && record.format && !('format_type' in record) && (
+            <>
+              {(record.year || ('country' in record && record.country)) && <Text style={styles.metaDot}>•</Text>}
+              <Text style={styles.metaText} numberOfLines={1}>{getShortFormat(record.format)}</Text>
             </>
           )}
         </View>
@@ -162,6 +219,8 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
     marginBottom: Spacing.md,
     position: 'relative',
+    borderWidth: 1,
+    borderColor: Colors.border,
   },
   containerSelected: {
     borderWidth: 2,
@@ -219,6 +278,10 @@ const styles = StyleSheet.create({
     letterSpacing: 0.5,
     marginBottom: 2,
   },
+  artistClickable: {
+    color: Colors.primary,
+    textDecorationLine: 'underline',
+  },
   title: {
     ...Typography.bodySmall,
     fontWeight: '600',
@@ -228,10 +291,14 @@ const styles = StyleSheet.create({
   meta: {
     flexDirection: 'row',
     alignItems: 'center',
+    flexWrap: 'wrap',
+    maxHeight: 36, // Ограничиваем высоту мета-блока (примерно 2 строки)
+    overflow: 'hidden',
   },
   metaText: {
     ...Typography.caption,
     color: Colors.textMuted,
+    flexShrink: 1,
   },
   metaDot: {
     ...Typography.caption,

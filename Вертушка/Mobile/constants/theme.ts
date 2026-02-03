@@ -78,6 +78,11 @@ export const Typography = {
     fontWeight: '400' as const,
     lineHeight: 24,
   },
+  bodyBold: {
+    fontSize: 16,
+    fontWeight: '600' as const,
+    lineHeight: 24,
+  },
   bodySmall: {
     fontSize: 14,
     fontWeight: '400' as const,

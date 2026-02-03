@@ -66,6 +66,12 @@ export default function MasterScreen() {
     router.push(`/master/${id}/versions`);
   };
 
+  const handleArtistPress = () => {
+    if (master?.artist_id) {
+      router.push(`/artist/${master.artist_id}`);
+    }
+  };
+
   if (isLoading) {
     return (
       <View style={styles.loadingContainer}>
@@ -113,19 +119,38 @@ export default function MasterScreen() {
           )}
         </View>
 
-        {/* Информация о мастере */}
+        {/* Название альбома */}
         <View style={styles.info}>
-          <Text style={styles.artist}>{master.artist}</Text>
           <Text style={styles.title}>{master.title}</Text>
+        </View>
 
-          {/* First Released */}
-          {master.year && (
-            <View style={styles.firstReleasedSection}>
-              <Text style={styles.firstReleasedLabel}>First Released</Text>
-              <Text style={styles.firstReleasedYear}>{master.year}</Text>
+        {/* Блок артиста */}
+        <TouchableOpacity
+          style={styles.artistCard}
+          onPress={handleArtistPress}
+          activeOpacity={master.artist_id ? 0.7 : 1}
+          disabled={!master.artist_id}
+        >
+          {master.artist_thumb_image_url ? (
+            <Image
+              source={{ uri: master.artist_thumb_image_url }}
+              style={styles.artistAvatar}
+            />
+          ) : (
+            <View style={styles.artistAvatarPlaceholder}>
+              <Ionicons name="person" size={24} color={Colors.textMuted} />
             </View>
           )}
-        </View>
+          <Text style={styles.artistName}>{master.artist}</Text>
+        </TouchableOpacity>
+
+        {/* First Released */}
+        {master.year && (
+          <View style={styles.firstReleasedSection}>
+            <Text style={styles.firstReleasedLabel}>First Released</Text>
+            <Text style={styles.firstReleasedYear}>{master.year}</Text>
+          </View>
+        )}
 
         {/* Кнопка просмотра всех версий */}
         <TouchableOpacity
@@ -214,21 +239,43 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   info: {
-    gap: Spacing.xs,
     marginBottom: Spacing.md,
-  },
-  artist: {
-    ...Typography.caption,
-    color: Colors.textSecondary,
-    textTransform: 'uppercase',
-    letterSpacing: 1,
   },
   title: {
     ...Typography.h2,
     color: Colors.text,
   },
+  artistCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: Colors.background,
+    borderRadius: BorderRadius.lg,
+    padding: Spacing.sm,
+    marginBottom: Spacing.md,
+    gap: Spacing.sm,
+  },
+  artistAvatar: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: Colors.surface,
+  },
+  artistAvatarPlaceholder: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: Colors.surface,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  artistName: {
+    ...Typography.body,
+    color: Colors.text,
+    fontWeight: '500',
+    flex: 1,
+  },
   firstReleasedSection: {
-    marginTop: Spacing.sm,
+    marginBottom: Spacing.md,
   },
   firstReleasedLabel: {
     ...Typography.caption,
