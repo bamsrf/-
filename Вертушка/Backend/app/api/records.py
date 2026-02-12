@@ -28,6 +28,51 @@ from app.services.discogs import DiscogsService
 router = APIRouter()
 
 
+async def _ensure_record_artist_data(record: Record, db: AsyncSession) -> None:
+    """
+    Обогащает запись данными артиста (artist_id, artist_thumb_image_url),
+    если они отсутствуют в discogs_data. Обновляет запись в БД для кэширования.
+    """
+    discogs_data = record.discogs_data
+    if not discogs_data:
+        return
+
+    # Уже есть данные артиста — ничего не делаем
+    if discogs_data.get("artist_thumb_image_url"):
+        return
+
+    artist_id = discogs_data.get("artist_id")
+
+    # Если artist_id нет — достаём из Discogs по release ID
+    if not artist_id and record.discogs_id:
+        try:
+            discogs = DiscogsService()
+            release_raw = await discogs._get(
+                f"{discogs.BASE_URL}/releases/{record.discogs_id}"
+            )
+            artists = release_raw.get("artists", [])
+            if artists:
+                artist_id = str(artists[0].get("id"))
+        except Exception:
+            return
+
+    if not artist_id:
+        return
+
+    # Получаем миниатюру артиста
+    try:
+        discogs = DiscogsService()
+        artist_thumb = await discogs._get_artist_thumb(artist_id)
+        if artist_thumb:
+            # Обновляем discogs_data — переприсваиваем для корректного отслеживания SQLAlchemy
+            updated_data = {**discogs_data, "artist_id": artist_id, "artist_thumb_image_url": artist_thumb}
+            record.discogs_data = updated_data
+            await db.commit()
+            await db.refresh(record)
+    except Exception:
+        pass
+
+
 async def get_or_create_record_by_discogs_id(
     discogs_id: str,
     db: AsyncSession
@@ -172,13 +217,16 @@ async def get_record(
     """Получение информации о пластинке"""
     result = await db.execute(select(Record).where(Record.id == record_id))
     record = result.scalar_one_or_none()
-    
+
     if not record:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Пластинка не найдена"
         )
-    
+
+    # Обогащаем данные артиста, если отсутствуют
+    await _ensure_record_artist_data(record, db)
+
     return record
 
 
@@ -197,16 +245,23 @@ async def get_record_by_discogs_id(
         select(Record).where(Record.discogs_id == discogs_id)
     )
     record = result.scalar_one_or_none()
-    
+
     if record:
-        return record
-    
+        # Обогащаем данные артиста, если отсутствуют
+        await _ensure_record_artist_data(record, db)
+
+        discogs_data = record.discogs_data or {}
+        response = RecordResponse.model_validate(record)
+        response.artist_id = discogs_data.get("artist_id")
+        response.artist_thumb_image_url = discogs_data.get("artist_thumb_image_url")
+        return response
+
     # Запрос в Discogs
     discogs = DiscogsService()
-    
+
     try:
         record_data = await discogs.get_release(discogs_id)
-        
+
         # Создаём запись в БД
         record = Record(
             discogs_id=record_data.get("id"),
@@ -229,13 +284,16 @@ async def get_record_by_discogs_id(
             discogs_data=record_data,
             tracklist=record_data.get("tracklist"),
         )
-        
+
         db.add(record)
         await db.commit()
         await db.refresh(record)
-        
-        return record
-        
+
+        response = RecordResponse.model_validate(record)
+        response.artist_id = record_data.get("artist_id")
+        response.artist_thumb_image_url = record_data.get("artist_thumb_image_url")
+        return response
+
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
