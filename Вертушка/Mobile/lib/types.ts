@@ -57,6 +57,8 @@ export interface VinylRecord {
   price_currency: string;
   cover_image_url?: string;
   thumb_image_url?: string;
+  artist_id?: string;
+  artist_thumb_image_url?: string;
   tracklist?: Track[];
   created_at: string;
   updated_at: string;
@@ -97,6 +99,7 @@ export interface MasterSearchResult {
   main_release_id: string;
   cover_image_url?: string;
   thumb_image_url?: string;
+  release_type?: string;
 }
 
 export interface MasterRelease {

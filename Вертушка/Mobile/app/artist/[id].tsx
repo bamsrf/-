@@ -1,7 +1,7 @@
 /**
  * Экран детальной информации об артисте
  */
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import {
   View,
   Text,
@@ -10,6 +10,9 @@ import {
   Image,
   ActivityIndicator,
   Alert,
+  TouchableOpacity,
+  Animated,
+  Pressable,
 } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -19,6 +22,84 @@ import { RecordCard } from '../../components/RecordCard';
 import { api } from '../../lib/api';
 import { Artist, MasterSearchResult } from '../../lib/types';
 import { Colors, Typography, Spacing, BorderRadius } from '../../constants/theme';
+
+type ReleaseFilter = 'album' | 'ep' | 'single';
+
+const FILTERS: { key: ReleaseFilter; label: string }[] = [
+  { key: 'album', label: 'Альбомы' },
+  { key: 'ep', label: 'EP' },
+  { key: 'single', label: 'Синглы' },
+];
+
+const matchesFilter = (master: MasterSearchResult, filter: ReleaseFilter): boolean => {
+  return master.release_type === filter;
+};
+
+type FilterChipProps = {
+  label: string;
+  isActive: boolean;
+  onPress: () => void;
+};
+
+function FilterChip({ label, isActive, onPress }: FilterChipProps) {
+  const scaleAnim = useRef(new Animated.Value(1)).current;
+  const colorAnim = useRef(new Animated.Value(isActive ? 1 : 0)).current;
+
+  useEffect(() => {
+    Animated.spring(colorAnim, {
+      toValue: isActive ? 1 : 0,
+      tension: 80,
+      friction: 9,
+      useNativeDriver: false,
+    }).start();
+  }, [isActive]);
+
+  const backgroundColor = colorAnim.interpolate({
+    inputRange: [0, 1],
+    outputRange: [Colors.background, Colors.primary],
+  });
+
+  const textColor = colorAnim.interpolate({
+    inputRange: [0, 1],
+    outputRange: [Colors.primary, Colors.background],
+  });
+
+  const handlePressIn = () => {
+    Animated.spring(scaleAnim, {
+      toValue: 0.93,
+      tension: 300,
+      friction: 10,
+      useNativeDriver: false,
+    }).start();
+  };
+
+  const handlePressOut = () => {
+    Animated.spring(scaleAnim, {
+      toValue: 1,
+      tension: 200,
+      friction: 8,
+      useNativeDriver: false,
+    }).start();
+  };
+
+  return (
+    <Pressable onPress={onPress} onPressIn={handlePressIn} onPressOut={handlePressOut}>
+      <Animated.View
+        style={[
+          styles.filterChip,
+          { backgroundColor, transform: [{ scale: scaleAnim }] },
+        ]}
+      >
+        <Animated.Text style={[styles.filterChipText, { color: textColor }]}>
+          {label}
+        </Animated.Text>
+        {isActive && (
+          <Ionicons name="close" size={14} color={Colors.background} style={styles.filterCloseIcon} />
+        )}
+      </Animated.View>
+    </Pressable>
+  );
+}
 
 export default function ArtistDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -33,6 +114,7 @@ export default function ArtistDetailScreen() {
   const [page, setPage] = useState(1);
   const [totalMasters, setTotalMasters] = useState(0);
   const [hasMore, setHasMore] = useState(true);
+  const [activeFilter, setActiveFilter] = useState<ReleaseFilter | null>(null);
 
   useEffect(() => {
     if (id) {
@@ -92,6 +174,14 @@ export default function ArtistDetailScreen() {
   const handleMasterPress = (master: MasterSearchResult) => {
     router.push(`/master/${master.master_id}`);
   };
+
+  const handleFilterPress = (filter: ReleaseFilter) => {
+    setActiveFilter(activeFilter === filter ? null : filter);
+  };
+
+  const filteredMasters = activeFilter
+    ? masters.filter((m) => matchesFilter(m, activeFilter))
+    : masters;
 
   if (isLoading) {
     return (
@@ -162,10 +252,22 @@ export default function ArtistDetailScreen() {
 
         {/* Релизы артиста */}
         <View style={styles.releasesSection}>
-          <Text style={styles.sectionTitle}>Релизы ({masters.length})</Text>
+          <Text style={styles.sectionTitle}>Релизы</Text>
+
+          {/* Фильтры */}
+          <View style={styles.filtersRow}>
+            {FILTERS.map((f) => (
+              <FilterChip
+                key={f.key}
+                label={f.label}
+                isActive={activeFilter === f.key}
+                onPress={() => handleFilterPress(f.key)}
+              />
+            ))}
+          </View>
 
           <View style={styles.releasesGrid}>
-            {masters.map((master) => (
+            {filteredMasters.map((master) => (
               <RecordCard
                 key={master.master_id}
                 record={master}
@@ -181,14 +283,16 @@ export default function ArtistDetailScreen() {
             </View>
           )}
 
-          {!hasMore && masters.length > 0 && (
+          {!hasMore && filteredMasters.length > 0 && (
             <Text style={styles.endText}>Все релизы загружены</Text>
           )}
 
-          {masters.length === 0 && !isLoadingMasters && (
+          {filteredMasters.length === 0 && !isLoadingMasters && (
             <View style={styles.emptyContainer}>
               <Ionicons name="musical-notes-outline" size={48} color={Colors.textMuted} />
-              <Text style={styles.emptyText}>Релизы не найдены</Text>
+              <Text style={styles.emptyText}>
+                {activeFilter ? 'Нет релизов в этой категории' : 'Релизы не найдены'}
+              </Text>
             </View>
           )}
         </View>
@@ -260,29 +364,43 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     marginBottom: Spacing.md,
   },
-  profileContainer: {
-    width: '100%',
-    marginTop: Spacing.md,
-  },
   sectionTitle: {
     ...Typography.h3,
     color: Colors.text,
     marginBottom: Spacing.sm,
   },
-  profileText: {
-    ...Typography.body,
-    color: Colors.textSecondary,
-    lineHeight: 22,
-  },
   releasesSection: {
     paddingHorizontal: Spacing.md,
     paddingTop: Spacing.lg,
+  },
+  filtersRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: Spacing.sm,
+    marginTop: Spacing.sm,
+    marginBottom: Spacing.md,
+  },
+  filterChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 14,
+    paddingVertical: 7,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: Colors.primary,
+    gap: 4,
+  },
+  filterChipText: {
+    ...Typography.bodySmall,
+    fontWeight: '500',
+  },
+  filterCloseIcon: {
+    marginLeft: 2,
   },
   releasesGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
     justifyContent: 'space-between',
-    marginTop: Spacing.md,
     gap: Spacing.md,
   },
   loadMoreContainer: {

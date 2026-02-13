@@ -1,6 +1,7 @@
 /**
  * Экран профиля (модальный)
  */
+import { useCallback, useState } from 'react';
 import {
   View,
   Text,
@@ -9,7 +10,9 @@ import {
   Image,
   Alert,
   ScrollView,
+  Share,
 } from 'react-native';
+import * as Clipboard from 'expo-clipboard';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -51,6 +54,27 @@ export default function ProfileScreen() {
     router.dismiss();
     router.navigate('/(tabs)/collection');
   };
+
+  const [copied, setCopied] = useState(false);
+
+  const profileUrl = user ? `https://vinyl-vertushka.ru/@${user.username}` : '';
+
+  const handleCopyLink = useCallback(async () => {
+    await Clipboard.setStringAsync(profileUrl);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  }, [profileUrl]);
+
+  const handleShareProfile = useCallback(async () => {
+    try {
+      await Share.share({
+        message: `Моя коллекция винила: ${profileUrl}`,
+        url: profileUrl,
+      });
+    } catch {
+      // Пользователь отменил
+    }
+  }, [profileUrl]);
 
   const stats = [
     {
@@ -115,11 +139,30 @@ export default function ProfileScreen() {
           ))}
         </View>
 
+        {/* Ссылка на профиль */}
+        <View style={[styles.linkCard, Shadows.sm]}>
+          <Text style={styles.linkLabel}>Ваш профиль</Text>
+          <Text style={styles.linkUrl}>{profileUrl}</Text>
+          <View style={styles.linkActions}>
+            <TouchableOpacity style={styles.linkButton} onPress={handleCopyLink}>
+              <Ionicons name={copied ? "checkmark-outline" : "copy-outline"} size={18} color={Colors.primary} />
+              <Text style={styles.linkButtonText}>{copied ? 'Скопировано' : 'Копировать'}</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.linkButton} onPress={handleShareProfile}>
+              <Ionicons name="share-outline" size={18} color={Colors.primary} />
+              <Text style={styles.linkButtonText}>Поделиться</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+
         {/* Настройки */}
         <View style={styles.settingsSection}>
           <Text style={styles.sectionTitle}>Настройки</Text>
 
-          <TouchableOpacity style={styles.settingsItem}>
+          <TouchableOpacity
+            style={styles.settingsItem}
+            onPress={() => router.push('/settings/edit-profile')}
+          >
             <Ionicons name="person-outline" size={24} color={Colors.primary} />
             <Text style={styles.settingsItemText}>Редактировать профиль</Text>
             <Ionicons name="chevron-forward" size={20} color={Colors.textMuted} />
@@ -130,7 +173,7 @@ export default function ProfileScreen() {
             onPress={() => router.push('/settings/share-profile')}
           >
             <Ionicons name="globe-outline" size={24} color={Colors.primary} />
-            <Text style={styles.settingsItemText}>Публичный профиль</Text>
+            <Text style={styles.settingsItemText}>Настройки профиля</Text>
             <Ionicons name="chevron-forward" size={20} color={Colors.textMuted} />
           </TouchableOpacity>
 
@@ -237,6 +280,43 @@ const styles = StyleSheet.create({
     ...Typography.caption,
     color: Colors.textSecondary,
     textAlign: 'center',
+  },
+  linkCard: {
+    backgroundColor: Colors.background,
+    borderRadius: BorderRadius.lg,
+    padding: Spacing.lg,
+    marginBottom: Spacing.xl,
+    borderWidth: 1,
+    borderColor: Colors.border,
+  },
+  linkLabel: {
+    ...Typography.caption,
+    color: Colors.textSecondary,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+    marginBottom: Spacing.xs,
+  },
+  linkUrl: {
+    ...Typography.bodyBold,
+    color: Colors.primary,
+    marginBottom: Spacing.md,
+  },
+  linkActions: {
+    flexDirection: 'row',
+    gap: Spacing.md,
+  },
+  linkButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.xs,
+    paddingVertical: Spacing.sm,
+    paddingHorizontal: Spacing.md,
+    backgroundColor: Colors.surface,
+    borderRadius: BorderRadius.md,
+  },
+  linkButtonText: {
+    ...Typography.buttonSmall,
+    color: Colors.primary,
   },
   settingsSection: {
     marginBottom: Spacing.xl,

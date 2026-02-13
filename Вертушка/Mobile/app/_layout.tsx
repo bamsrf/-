@@ -44,6 +44,7 @@ export default function RootLayout() {
             headerShown: false,
             contentStyle: { backgroundColor: Colors.background },
             animation: 'slide_from_right',
+            gestureEnabled: true,
           }}
         >
           <Stack.Screen name="(auth)" />
@@ -56,6 +57,7 @@ export default function RootLayout() {
             }}
           />
           <Stack.Screen name="record/[id]" />
+          <Stack.Screen name="settings/edit-profile" />
           <Stack.Screen name="settings/share-profile" />
           <Stack.Screen name="user/[username]/index" />
         </Stack>

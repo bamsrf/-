@@ -157,6 +157,18 @@ class Record(Base):
         cascade="all, delete-orphan"
     )
     
+    @property
+    def artist_id(self) -> str | None:
+        if self.discogs_data:
+            return self.discogs_data.get("artist_id")
+        return None
+
+    @property
+    def artist_thumb_image_url(self) -> str | None:
+        if self.discogs_data:
+            return self.discogs_data.get("artist_thumb_image_url")
+        return None
+
     def __repr__(self) -> str:
         return f"<Record {self.artist} - {self.title}>"
 

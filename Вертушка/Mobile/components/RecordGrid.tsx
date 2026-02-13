@@ -131,6 +131,7 @@ export function RecordGrid<T extends RecordItem = RecordItem>({
       contentContainerStyle={styles.container}
       showsVerticalScrollIndicator={false}
       keyboardShouldPersistTaps="handled"
+      keyboardDismissMode="on-drag"
       ListHeaderComponent={ListHeaderComponent}
       ListEmptyComponent={renderEmpty}
       ListFooterComponent={renderFooter}

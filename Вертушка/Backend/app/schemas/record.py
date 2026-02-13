@@ -60,6 +60,8 @@ class RecordResponse(BaseModel):
     price_currency: str
     cover_image_url: str | None
     thumb_image_url: str | None
+    artist_id: str | None = None
+    artist_thumb_image_url: str | None = None
     tracklist: list | None
     created_at: datetime
     updated_at: datetime
@@ -68,11 +70,13 @@ class RecordResponse(BaseModel):
 class RecordBrief(BaseModel):
     """Краткая схема пластинки (для списков)"""
     model_config = ConfigDict(from_attributes=True)
-    
+
     id: UUID
     discogs_id: str | None
     title: str
     artist: str
+    artist_id: str | None = None
+    artist_thumb_image_url: str | None = None
     year: int | None
     cover_image_url: str | None
     thumb_image_url: str | None
@@ -110,6 +114,7 @@ class MasterSearchResult(BaseModel):
     main_release_id: str
     cover_image_url: str | None = None
     thumb_image_url: str | None = None
+    release_type: str | None = None
 
 
 class MasterVersion(BaseModel):

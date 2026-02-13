@@ -28,14 +28,30 @@ settings = get_settings()
 
 class DiscogsService:
     """Сервис для работы с Discogs API"""
-    
+
     BASE_URL = "https://api.discogs.com"
-    
+    _semaphore = asyncio.Semaphore(5)
+    _client: "httpx.AsyncClient | None" = None
+
     def __init__(self):
         self.api_key = settings.discogs_api_key
         self.api_secret = settings.discogs_api_secret
         self.user_agent = settings.discogs_user_agent
-    
+
+    @classmethod
+    def _get_shared_client(cls) -> httpx.AsyncClient:
+        """Переиспользуемый AsyncClient с connection pooling."""
+        if cls._client is None or cls._client.is_closed:
+            cls._client = httpx.AsyncClient(
+                timeout=30.0,
+                limits=httpx.Limits(
+                    max_connections=10,
+                    max_keepalive_connections=5,
+                    keepalive_expiry=30.0,
+                ),
+            )
+        return cls._client
+
     def _get_headers(self) -> dict:
         """Получение заголовков для запросов"""
         headers = {
@@ -47,23 +63,24 @@ class DiscogsService:
 
     async def _get(self, url: str, params: dict | None = None) -> dict:
         """GET с повторными попытками при 429/503 от Discogs."""
-        max_retries = 3
-        async with httpx.AsyncClient() as client:
-            for attempt in range(max_retries):
-                response = await client.get(
+        client = self._get_shared_client()
+        async with self._semaphore:
+            last_response = None
+            for attempt in range(3):
+                last_response = await client.get(
                     url,
                     params=params,
                     headers=self._get_headers(),
                     timeout=30.0,
                 )
-                if response.status_code in (429, 503) and attempt < max_retries - 1:
-                    retry_after = int(response.headers.get("Retry-After", "2"))
+                if last_response.status_code in (429, 503) and attempt < 2:
+                    retry_after = int(last_response.headers.get("Retry-After", "2"))
                     await asyncio.sleep(retry_after)
                     continue
-                response.raise_for_status()
-                return response.json()
-        response.raise_for_status()
-        return response.json()
+                last_response.raise_for_status()
+                return last_response.json()
+            last_response.raise_for_status()
+            return last_response.json()
 
     @staticmethod
     def _thumb_to_cover(thumb_url: str | None) -> str | None:
@@ -190,36 +207,46 @@ class DiscogsService:
     async def get_release(self, release_id: str) -> dict[str, Any]:
         """
         Получение детальной информации о релизе.
-        
+
         Args:
             release_id: ID релиза в Discogs
-        
+
         Returns:
             Словарь с данными релиза
         """
+        # Запускаем price_stats параллельно с основным запросом —
+        # price_stats нужен только release_id, который у нас уже есть.
+        stats_task = asyncio.create_task(self._get_price_stats(release_id))
+
         data = await self._get(f"{self.BASE_URL}/releases/{release_id}")
-        
+
         # Извлекаем артистов
         artists = data.get("artists", [])
         artist_name = ", ".join([a.get("name", "") for a in artists]) if artists else "Unknown"
-        
+        artist_id = str(artists[0].get("id")) if artists else None
+
+        # Получаем миниатюру артиста (price_stats уже идёт фоном)
+        artist_thumb = None
+        if artist_id:
+            artist_thumb = await self._get_artist_thumb(artist_id)
+
         # Извлекаем лейбл
         labels = data.get("labels", [])
         label = labels[0].get("name") if labels else None
         catalog_number = labels[0].get("catno") if labels else None
-        
+
         # Извлекаем жанры
         genres = data.get("genres", [])
         genre = ", ".join(genres) if genres else None
-        
+
         styles = data.get("styles", [])
         style = ", ".join(styles) if styles else None
-        
+
         # Извлекаем формат
         formats = data.get("formats", [])
         format_type = formats[0].get("name") if formats else None
         format_desc = ", ".join(formats[0].get("descriptions", [])) if formats else None
-        
+
         # Извлекаем штрихкоды
         identifiers = data.get("identifiers", [])
         barcode = None
@@ -227,7 +254,7 @@ class DiscogsService:
             if ident.get("type") == "Barcode":
                 barcode = ident.get("value")
                 break
-        
+
         # Извлекаем изображения
         images = data.get("images", [])
         cover_image = None
@@ -235,7 +262,7 @@ class DiscogsService:
         if images:
             cover_image = images[0].get("uri")
             thumb_image = images[0].get("uri150")
-        
+
         # Извлекаем треклист
         tracklist = []
         for track in data.get("tracklist", []):
@@ -244,15 +271,13 @@ class DiscogsService:
                 "title": track.get("title"),
                 "duration": track.get("duration")
             })
-        
-        # Получаем ценовую статистику (если доступно)
+
+        # Получаем ценовую статистику — к этому моменту уже должна быть готова
         price_min = None
         price_max = None
         price_median = None
-        
-        # Пробуем получить статистику цен
         try:
-            stats_response = await self._get_price_stats(release_id)
+            stats_response = await stats_task
             if stats_response:
                 price_min = stats_response.get("lowest_price", {}).get("value")
                 price_max = stats_response.get("highest_price", {}).get("value")
@@ -265,6 +290,8 @@ class DiscogsService:
             "master_id": str(data.get("master_id")) if data.get("master_id") else None,
             "title": data.get("title"),
             "artist": artist_name,
+            "artist_id": artist_id,
+            "artist_thumb_image_url": artist_thumb,
             "label": label,
             "catalog_number": catalog_number,
             "year": data.get("year"),
@@ -639,16 +666,33 @@ class DiscogsService:
             per_page=pagination.get("per_page", per_page)
         )
 
-    async def _get_master_cover(self, master_id: str) -> str | None:
-        """Получение обложки master release по ID."""
+    async def _get_master_info(self, master_id: str) -> dict:
+        """Получение обложки и типа релиза из master endpoint.
+        Тип определяется по количеству треков в треклисте:
+        1-3 → single, 4-6 → ep, 7+ → album.
+        """
         try:
             data = await self._get(f"{self.BASE_URL}/masters/{master_id}")
+            cover = None
             images = data.get("images", [])
             if images:
-                return images[0].get("uri")
+                cover = images[0].get("uri")
+
+            tracklist = data.get("tracklist", [])
+            track_count = sum(
+                1 for t in tracklist if t.get("type_", "track") == "track"
+            )
+
+            if track_count <= 3:
+                release_type = "single"
+            elif track_count <= 6:
+                release_type = "ep"
+            else:
+                release_type = "album"
+
+            return {"cover": cover, "release_type": release_type}
         except Exception:
-            pass
-        return None
+            return {"cover": None, "release_type": None}
 
     async def _get_artist_thumb(self, artist_id: str) -> str | None:
         """Получение миниатюры артиста по ID."""
@@ -702,18 +746,21 @@ class DiscogsService:
                     "year": item.get("year"),
                     "main_release_id": str(item.get("main_release", "")),
                     "thumb": item.get("thumb"),
+                    "release_type": item.get("format"),
                 })
 
-        # Параллельно загружаем обложки для всех masters
-        cover_tasks = [
-            self._get_master_cover(m["master_id"]) for m in masters_data
+        # Параллельно загружаем обложки и определяем типы для всех masters
+        info_tasks = [
+            self._get_master_info(m["master_id"]) for m in masters_data
         ]
-        covers = await asyncio.gather(*cover_tasks, return_exceptions=True)
+        infos = await asyncio.gather(*info_tasks, return_exceptions=True)
 
-        # Формируем результаты с обложками
+        # Формируем результаты с обложками и типами
         results = []
         for i, m in enumerate(masters_data):
-            cover_url = covers[i] if not isinstance(covers[i], Exception) else None
+            info = infos[i] if not isinstance(infos[i], Exception) else {}
+            cover_url = info.get("cover") if isinstance(info, dict) else None
+            release_type = info.get("release_type") if isinstance(info, dict) else None
             thumb = m["thumb"]
 
             results.append(MasterSearchResult(
@@ -724,6 +771,7 @@ class DiscogsService:
                 main_release_id=m["main_release_id"],
                 cover_image_url=cover_url or self._thumb_to_cover(thumb),
                 thumb_image_url=thumb if thumb else None,
+                release_type=release_type,
             ))
 
         pagination = data.get("pagination", {})
@@ -738,14 +786,14 @@ class DiscogsService:
     async def _get_price_stats(self, release_id: str) -> dict | None:
         """Получение статистики цен для релиза"""
         try:
-            async with httpx.AsyncClient() as client:
-                response = await client.get(
-                    f"{self.BASE_URL}/marketplace/stats/{release_id}",
-                    headers=self._get_headers(),
-                    timeout=10.0
-                )
-                if response.status_code == 200:
-                    return response.json()
+            client = self._get_shared_client()
+            response = await client.get(
+                f"{self.BASE_URL}/marketplace/stats/{release_id}",
+                headers=self._get_headers(),
+                timeout=10.0,
+            )
+            if response.status_code == 200:
+                return response.json()
         except Exception:
             pass
         return None

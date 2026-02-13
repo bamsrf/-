@@ -1,5 +1,5 @@
 /**
- * Настройки публичного профиля
+ * Настройки профиля (карточки, статистика, избранные)
  */
 import { useEffect, useState, useCallback, useRef } from 'react';
 import {
@@ -10,15 +10,14 @@ import {
   TouchableOpacity,
   Alert,
   ActivityIndicator,
-  Share,
   Animated,
   Pressable,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useProfileStore, useAuthStore, useCollectionStore } from '../../lib/store';
-import { Colors, Typography, Spacing, BorderRadius, Shadows } from '../../constants/theme';
+import { useProfileStore, useCollectionStore } from '../../lib/store';
+import { Colors, Typography, Spacing, BorderRadius } from '../../constants/theme';
 import { CollectionItem } from '../../lib/types';
 import { RecordCard } from '../../components/RecordCard';
 
@@ -151,7 +150,6 @@ function SettingRow({ label, description, value, settingKey, onToggle, disabled 
 export default function ShareProfileScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const { user } = useAuthStore();
   const { collectionItems } = useCollectionStore();
   const { settings, isLoading, isSaving, fetchSettings, updateSettings, updateHighlights } = useProfileStore();
   const [selectingHighlights, setSelectingHighlights] = useState(false);
@@ -167,8 +165,6 @@ export default function ShareProfileScreen() {
     }
   }, [settings?.highlight_record_ids]);
 
-  const profileUrl = user ? `https://vinyl-vertushka.ru/@${user.username}` : '';
-
   const handleToggle = useCallback(async (key: string, value: boolean) => {
     try {
       await updateSettings({ [key]: value });
@@ -176,25 +172,6 @@ export default function ShareProfileScreen() {
       Alert.alert('Ошибка', 'Не удалось сохранить настройку');
     }
   }, [updateSettings]);
-
-  const handleShare = useCallback(async () => {
-    try {
-      await Share.share({
-        message: `Моя коллекция винила: ${profileUrl}`,
-        url: profileUrl,
-      });
-    } catch {
-      // Пользователь отменил
-    }
-  }, [profileUrl]);
-
-  const handleCopyLink = useCallback(async () => {
-    try {
-      await Share.share({ message: profileUrl });
-    } catch {
-      // Пользователь отменил
-    }
-  }, [profileUrl]);
 
   const handleToggleHighlight = useCallback((itemId: string) => {
     setSelectedHighlights(prev => {
@@ -235,7 +212,7 @@ export default function ShareProfileScreen() {
         <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
           <Ionicons name="arrow-back" size={24} color={Colors.primary} />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Публичный профиль</Text>
+        <Text style={styles.headerTitle}>Настройки профиля</Text>
         <View style={styles.placeholder} />
       </View>
 
@@ -243,59 +220,6 @@ export default function ShareProfileScreen() {
         contentContainerStyle={styles.content}
         showsVerticalScrollIndicator={false}
       >
-        {/* Ссылка на профиль */}
-        {settings?.is_active && (
-          <View style={[styles.linkCard, Shadows.sm]}>
-            <Text style={styles.linkLabel}>Ваш профиль</Text>
-            <Text style={styles.linkUrl}>{profileUrl}</Text>
-            <View style={styles.linkActions}>
-              <TouchableOpacity style={styles.linkButton} onPress={handleCopyLink}>
-                <Ionicons name="copy-outline" size={18} color={Colors.primary} />
-                <Text style={styles.linkButtonText}>Копировать</Text>
-              </TouchableOpacity>
-              <TouchableOpacity style={styles.linkButton} onPress={handleShare}>
-                <Ionicons name="share-outline" size={18} color={Colors.primary} />
-                <Text style={styles.linkButtonText}>Поделиться</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-        )}
-
-        {/* Основные настройки */}
-        <Text style={styles.sectionTitle}>Видимость</Text>
-        <View style={styles.section}>
-          <SettingRow
-            label="Профиль активен"
-            description="Страница видна по ссылке"
-            value={settings?.is_active ?? false}
-            settingKey="is_active"
-            onToggle={handleToggle}
-            disabled={isSaving}
-          />
-          <SettingRow
-            label="Приватный профиль"
-            description="Только одобренные подписчики видят контент"
-            value={settings?.is_private_profile ?? false}
-            settingKey="is_private_profile"
-            onToggle={handleToggle}
-            disabled={isSaving}
-          />
-          <SettingRow
-            label="Показывать коллекцию"
-            value={settings?.show_collection ?? true}
-            settingKey="show_collection"
-            onToggle={handleToggle}
-            disabled={isSaving}
-          />
-          <SettingRow
-            label="Показывать вишлист"
-            value={settings?.show_wishlist ?? true}
-            settingKey="show_wishlist"
-            onToggle={handleToggle}
-            disabled={isSaving}
-          />
-        </View>
-
         {/* Настройки карточек */}
         <Text style={styles.sectionTitle}>Информация на карточках</Text>
         <View style={styles.section}>
@@ -447,43 +371,6 @@ const styles = StyleSheet.create({
   },
   content: {
     padding: Spacing.lg,
-  },
-  linkCard: {
-    backgroundColor: Colors.background,
-    borderRadius: BorderRadius.lg,
-    padding: Spacing.lg,
-    marginBottom: Spacing.xl,
-    borderWidth: 1,
-    borderColor: Colors.border,
-  },
-  linkLabel: {
-    ...Typography.caption,
-    color: Colors.textSecondary,
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
-    marginBottom: Spacing.xs,
-  },
-  linkUrl: {
-    ...Typography.bodyBold,
-    color: Colors.primary,
-    marginBottom: Spacing.md,
-  },
-  linkActions: {
-    flexDirection: 'row',
-    gap: Spacing.md,
-  },
-  linkButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: Spacing.xs,
-    paddingVertical: Spacing.sm,
-    paddingHorizontal: Spacing.md,
-    backgroundColor: Colors.surface,
-    borderRadius: BorderRadius.md,
-  },
-  linkButtonText: {
-    ...Typography.buttonSmall,
-    color: Colors.primary,
   },
   sectionTitle: {
     ...Typography.h4,

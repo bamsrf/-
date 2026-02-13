@@ -329,13 +329,28 @@ export default function RecordDetailScreen() {
 
         {/* Основная информация */}
         <View style={styles.infoSection}>
+          <Text style={styles.title}>{record.title}</Text>
+
           <TouchableOpacity
-            onPress={() => handleArtistNavigation(record.artist, router)}
+            style={styles.artistCard}
+            onPress={() => record.artist_id
+              ? router.push(`/artist/${record.artist_id}`)
+              : handleArtistNavigation(record.artist, router)
+            }
             activeOpacity={0.7}
           >
-            <Text style={styles.artist}>{record.artist}</Text>
+            {record.artist_thumb_image_url ? (
+              <Image
+                source={{ uri: record.artist_thumb_image_url }}
+                style={styles.artistAvatar}
+              />
+            ) : (
+              <View style={styles.artistAvatarPlaceholder}>
+                <Ionicons name="person" size={24} color={Colors.textMuted} />
+              </View>
+            )}
+            <Text style={styles.artistName}>{record.artist}</Text>
           </TouchableOpacity>
-          <Text style={styles.title}>{record.title}</Text>
 
           <View style={styles.metaRow}>
             {record.year ? (
@@ -552,12 +567,34 @@ const styles = StyleSheet.create({
   infoSection: {
     marginBottom: Spacing.lg,
   },
-  artist: {
-    ...Typography.bodySmall,
-    color: Colors.primary,
-    letterSpacing: 1,
-    textDecorationLine: 'underline',
-    marginBottom: Spacing.xs,
+  artistCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: Colors.surface,
+    borderRadius: BorderRadius.lg,
+    padding: Spacing.sm,
+    marginBottom: Spacing.md,
+    gap: Spacing.sm,
+  },
+  artistAvatar: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: Colors.surface,
+  },
+  artistAvatarPlaceholder: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: Colors.surface,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  artistName: {
+    ...Typography.body,
+    color: Colors.text,
+    fontWeight: '500',
+    flex: 1,
   },
   title: {
     ...Typography.h1,

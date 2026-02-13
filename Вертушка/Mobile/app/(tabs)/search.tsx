@@ -13,6 +13,8 @@ import {
   Modal,
   ScrollView,
   Animated,
+  KeyboardAvoidingView,
+  Platform,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -681,7 +683,10 @@ export default function SearchScreen() {
   );
 
   return (
-    <View style={styles.container}>
+    <KeyboardAvoidingView
+      style={styles.container}
+      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+    >
       <Header title="Поиск" />
 
       <RecordGrid
@@ -698,7 +703,7 @@ export default function SearchScreen() {
       />
 
       {FilterModal}
-    </View>
+    </KeyboardAvoidingView>
   );
 }
 

@@ -208,6 +208,11 @@ class ApiClient {
     return response.data;
   }
 
+  async updateMe(data: { display_name?: string; bio?: string }): Promise<User> {
+    const response = await this.client.put<User>('/users/me', data);
+    return response.data;
+  }
+
   // ==================== Records ====================
 
   async searchRecords(
