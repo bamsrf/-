@@ -15,6 +15,15 @@ from app.models.collection import Collection, CollectionItem
 from app.api.auth import get_current_user
 from app.config import get_settings
 from app.services.exchange import get_usd_rub_rate
+
+# Страны, для которых наценка импорта не применяется
+_LOCAL_COUNTRIES = {'Russia', 'USSR', 'Россия', 'СССР'}
+
+
+def _calc_price_rub(price_usd: float, usd_rub: float, markup: float, country: str | None) -> float:
+    """Рассчитывает цену в рублях. Для РФ/СССР-изданий наценка не применяется."""
+    effective_markup = 1.0 if country and country in _LOCAL_COUNTRIES else markup
+    return round(price_usd * usd_rub * effective_markup, 2)
 from app.schemas.collection import (
     CollectionCreate,
     CollectionUpdate,
@@ -31,14 +40,22 @@ router = APIRouter()
 
 @router.post("/recalculate-prices")
 async def recalculate_prices(
+    current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ):
-    """Пересчёт цен: перезапрашивает lowest_price из Discogs (в USD) и пересчитывает рубли."""
+    """Пересчёт цен: перезапрашивает lowest_price из Discogs (в USD) и пересчитывает рубли.
+    Ограничен до 50 уникальных записей за вызов. Для полного обновления используйте
+    фоновую задачу update_prices_batch (ежедневно в 4:00).
+    """
     from app.services.discogs import DiscogsService
 
-    # Все элементы всех коллекций с записями
+    MAX_RECORDS = 50
+
+    # Элементы коллекций ТЕКУЩЕГО пользователя
     items_result = await db.execute(
         select(CollectionItem)
+        .join(Collection, CollectionItem.collection_id == Collection.id)
+        .where(Collection.user_id == current_user.id)
         .options(selectinload(CollectionItem.record))
     )
     items = items_result.scalars().all()
@@ -50,13 +67,15 @@ async def recalculate_prices(
     usd_rub = await get_usd_rub_rate()
     discogs = DiscogsService()
 
-    # Группируем по discogs_id чтобы не запрашивать одну пластинку дважды
+    # Группируем по discogs_id, лимитируем до MAX_RECORDS
     records_map: dict[str, Record] = {}
     for item in items:
         if item.record and item.record.discogs_id:
             records_map[item.record.discogs_id] = item.record
+            if len(records_map) >= MAX_RECORDS:
+                break
 
-    # Перезапрашиваем цены из Discogs (теперь с curr_abbr=USD)
+    # Перезапрашиваем цены из Discogs (в USD)
     updated_records = 0
     for discogs_id, record in records_map.items():
         try:
@@ -75,8 +94,8 @@ async def recalculate_prices(
     for item in items:
         record = item.record
         if record and record.estimated_price_min:
-            item.estimated_price_rub = round(
-                float(record.estimated_price_min) * usd_rub * settings.ru_vinyl_markup, 2
+            item.estimated_price_rub = _calc_price_rub(
+                float(record.estimated_price_min), usd_rub, settings.ru_vinyl_markup, record.country
             )
             updated_items += 1
         else:
@@ -88,6 +107,7 @@ async def recalculate_prices(
         "updated_records": updated_records,
         "updated_items": updated_items,
         "total_items": len(items),
+        "max_records_per_call": MAX_RECORDS,
         "usd_rub_rate": usd_rub,
         "markup": settings.ru_vinyl_markup,
     }
@@ -405,8 +425,8 @@ async def add_record_to_collection(
     if record.estimated_price_min:
         settings = get_settings()
         usd_rub = await get_usd_rub_rate()
-        estimated_price_rub = round(
-            float(record.estimated_price_min) * usd_rub * settings.ru_vinyl_markup, 2
+        estimated_price_rub = _calc_price_rub(
+            float(record.estimated_price_min), usd_rub, settings.ru_vinyl_markup, record.country
         )
 
     # Добавляем в коллекцию (дубликаты разрешены - можно иметь несколько копий одной пластинки)

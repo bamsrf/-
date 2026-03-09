@@ -19,6 +19,8 @@ from sqlalchemy import text
 
 from app.config import get_settings
 from app.database import init_db, close_db, async_session_maker
+from app.services.cache import cache
+from app.services.rate_limiter import discogs_limiter
 
 # --- Structured logging (JSON) ---
 _log_handler = logging.StreamHandler(sys.stdout)
@@ -66,14 +68,25 @@ async def lifespan(app: FastAPI):
     await init_db()
     print("✅ База данных инициализирована")
 
+    await cache.connect()
+    print(f"{'✅' if cache.available else '⚠️'} Redis {'подключён' if cache.available else 'недоступен — работаем без кэша'}")
+
+    discogs_limiter.start()
+    print("✅ Discogs rate limiter запущен")
+
     # APScheduler
     try:
         from apscheduler.schedulers.asyncio import AsyncIOScheduler
         from app.tasks.booking_tasks import send_booking_reminders, auto_extend_expired_bookings
+        from app.tasks.discogs_tasks import cleanup_search_cache, enrich_records_artist_data, update_prices_batch
 
         scheduler = AsyncIOScheduler()
         scheduler.add_job(send_booking_reminders, 'cron', hour=10, minute=0, id='booking_reminders')
         scheduler.add_job(auto_extend_expired_bookings, 'interval', hours=1, id='booking_auto_extend')
+        # Discogs задачи
+        scheduler.add_job(cleanup_search_cache, 'interval', hours=1, id='search_cache_cleanup')
+        scheduler.add_job(enrich_records_artist_data, 'cron', hour=5, minute=0, id='enrich_artist_data')
+        scheduler.add_job(update_prices_batch, 'cron', hour=4, minute=0, id='update_prices_batch')
         scheduler.start()
         print("✅ Планировщик задач запущен")
     except ImportError:
@@ -87,6 +100,8 @@ async def lifespan(app: FastAPI):
     if scheduler:
         scheduler.shutdown()
         print("✅ Планировщик задач остановлен")
+    await cache.close()
+    print("✅ Redis отключён")
     print("👋 Остановка Вертушка API...")
     await close_db()
     print("✅ Подключение к БД закрыто")
@@ -157,7 +172,7 @@ async def root():
 
 @app.get("/health", tags=["Health"])
 async def health_check():
-    """Проверка здоровья API с проверкой БД"""
+    """Проверка здоровья API с проверкой БД и Redis"""
     try:
         async with async_session_maker() as session:
             await session.execute(text("SELECT 1"))
@@ -168,5 +183,12 @@ async def health_check():
             status_code=503,
             content={"status": "unhealthy", "db": "disconnected"},
         )
-    return {"status": "healthy", "db": db_status}
+
+    redis_health = await cache.health()
+
+    return {
+        "status": "healthy",
+        "db": db_status,
+        "redis": redis_health,
+    }
 

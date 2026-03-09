@@ -55,6 +55,9 @@ class Settings(BaseSettings):
     # Наценка на винил для РФ (доставка + таможня + маржа)
     ru_vinyl_markup: float = Field(default=2.5, alias="RU_VINYL_MARKUP")
 
+    # Redis
+    redis_url: str = Field(default="redis://localhost:6379/0", alias="REDIS_URL")
+
     # Sentry
     sentry_dsn: str = Field(default="", alias="SENTRY_DSN")
 
