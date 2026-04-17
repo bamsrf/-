@@ -20,6 +20,7 @@ import Animated, {
 } from 'react-native-reanimated';
 import { Colors, Typography, BorderRadius, Shadows, Spacing, Gradients } from '../constants/theme';
 import { RecordSearchResult, VinylRecord, MasterSearchResult, ReleaseSearchResult, PublicProfileRecord } from '../lib/types';
+import { getCoverUrl } from '../lib/api';
 
 const { width } = Dimensions.get('window');
 const CARD_WIDTH = (width - Spacing.md * 3) / 2;
@@ -105,7 +106,7 @@ function RecordCardComponent({
   onLongPress,
   isBooked = false,
 }: RecordCardProps) {
-  const imageUrl = record.cover_image_url || record.thumb_image_url;
+  const imageUrl = getCoverUrl(record);
   const cardWidth = size === 'large' ? width - Spacing.md * 2 : CARD_WIDTH;
   const imageHeight = size === 'large' ? cardWidth * 0.8 : CARD_WIDTH;
 

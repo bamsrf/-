@@ -134,6 +134,12 @@ class CollectionItem(Base):
     # Отношения
     collection = relationship("Collection", back_populates="items")
     record = relationship("Record", back_populates="collection_items")
+    user_photos = relationship(
+        "UserRecordPhoto",
+        back_populates="collection_item",
+        cascade="all, delete-orphan",
+        order_by="UserRecordPhoto.created_at.asc()",
+    )
     
     def __repr__(self) -> str:
         return f"<CollectionItem {self.id}>"

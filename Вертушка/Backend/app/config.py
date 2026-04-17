@@ -64,6 +64,11 @@ class Settings(BaseSettings):
     # URL приложения
     app_url: str = Field(default="http://localhost:8000", alias="APP_URL")
     frontend_url: str = Field(default="https://recordscanner.app", alias="FRONTEND_URL")
+
+    # Хранение обложек
+    covers_dir: str = Field(default="uploads/covers", alias="COVERS_DIR")
+    covers_max_cache_mb: int = Field(default=5000, alias="COVERS_MAX_CACHE_MB")
+    internal_api_token: str = Field(default="", alias="INTERNAL_API_TOKEN")
     
     class Config:
         env_file = ".env"

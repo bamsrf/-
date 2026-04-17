@@ -61,7 +61,7 @@ if _settings_early.sentry_dsn:
     logger.info("Sentry initialised")
 
 # API роутеры
-from app.api import auth, records, collections, wishlists, users, gifts, profile, export
+from app.api import auth, records, collections, wishlists, users, gifts, profile, export, covers, user_photos
 
 # Web роутеры (HTML страницы)
 from app.web import routes as web_routes
@@ -95,6 +95,14 @@ async def lifespan(app: FastAPI):
             from apscheduler.schedulers.asyncio import AsyncIOScheduler
             from app.tasks.booking_tasks import send_booking_reminders, auto_extend_expired_bookings
             from app.tasks.discogs_tasks import cleanup_search_cache, enrich_records_artist_data, update_prices_batch
+            from app.services.cover_storage import CoverStorageService
+
+            async def cleanup_covers():
+                async with async_session_maker() as db:
+                    service = CoverStorageService()
+                    deleted = await service.cleanup_lru(settings.covers_max_cache_mb, db)
+                    if deleted:
+                        logger.info("LRU cleanup: deleted %d covers", deleted)
 
             scheduler = AsyncIOScheduler()
             scheduler.add_job(send_booking_reminders, 'cron', hour=10, minute=0, id='booking_reminders')
@@ -102,6 +110,7 @@ async def lifespan(app: FastAPI):
             scheduler.add_job(cleanup_search_cache, 'interval', hours=1, id='search_cache_cleanup')
             scheduler.add_job(enrich_records_artist_data, 'cron', hour=5, minute=0, id='enrich_artist_data')
             scheduler.add_job(update_prices_batch, 'cron', hour=4, minute=0, id='update_prices_batch')
+            scheduler.add_job(cleanup_covers, 'cron', hour=3, minute=0, id='covers_lru_cleanup')
             scheduler.start()
             print("✅ Планировщик задач запущен")
         except ImportError:
@@ -195,6 +204,8 @@ app.include_router(users.router, prefix="/api/users", tags=["Пользоват�
 app.include_router(gifts.router, prefix="/api/gifts", tags=["Подарки"])
 app.include_router(profile.router, prefix="/api/profile", tags=["Профиль"])
 app.include_router(export.router, prefix="/api/export", tags=["Экспорт"])
+app.include_router(covers.router, prefix="/covers", tags=["Обложки"])  # НЕ /api/covers — nginx location /covers/
+app.include_router(user_photos.router, prefix="/api/collections", tags=["Фото пластинок"])
 
 # Web страницы (публичный профиль, OG-изображения)
 app.include_router(web_routes.router, tags=["Web"])

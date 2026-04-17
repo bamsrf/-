@@ -119,6 +119,16 @@ class Record(Base):
         Text,
         nullable=True
     )
+
+    # Локальный кэш обложки
+    cover_local_path: Mapped[str | None] = mapped_column(
+        String(500),
+        nullable=True
+    )
+    cover_cached_at: Mapped[datetime | None] = mapped_column(
+        DateTime,
+        nullable=True
+    )
     
     # Полные данные от Discogs (JSON)
     discogs_data: Mapped[dict | None] = mapped_column(

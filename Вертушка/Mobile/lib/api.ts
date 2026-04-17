@@ -54,6 +54,18 @@ export function resolveMediaUrl(path: string | undefined | null): string | undef
   return `${SERVER_BASE_URL}${path}`;
 }
 
+/**
+ * Возвращает лучший доступный URL обложки для отображения.
+ * Приоритет: cover_url (локальный кэш бэкенда) → cover_image_url → thumb_image_url
+ */
+export function getCoverUrl(
+  record: { cover_url?: string; cover_image_url?: string; thumb_image_url?: string } | null | undefined
+): string | undefined {
+  if (!record) return undefined;
+  if (record.cover_url) return resolveMediaUrl(record.cover_url);
+  return record.cover_image_url || record.thumb_image_url || undefined;
+}
+
 const TOKEN_KEY = 'auth_token';
 const REFRESH_TOKEN_KEY = 'refresh_token';
 

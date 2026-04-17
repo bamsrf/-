@@ -65,6 +65,7 @@ class RecordResponse(BaseModel):
     ru_markup: float | None = None
     cover_image_url: str | None
     thumb_image_url: str | None
+    cover_url: str | None = None  # локальный URL или fallback на Discogs; заполняется в endpoint'е
     artist_id: str | None = None
     artist_thumb_image_url: str | None = None
     tracklist: list | None
@@ -85,6 +86,7 @@ class RecordBrief(BaseModel):
     year: int | None
     cover_image_url: str | None
     thumb_image_url: str | None
+    cover_url: str | None = None  # локальный URL или fallback на Discogs; заполняется в endpoint'е
     format_type: str | None = None
     estimated_price_median: float | None
     price_currency: str

@@ -52,7 +52,7 @@ docker compose -f docker-compose.prod.yml up -d
 
 # Применение миграций
 echo "📊 Применяю миграции базы данных..."
-docker compose -f docker-compose.prod.yml exec -T api alembic upgrade head
+docker compose -f docker-compose.prod.yml exec -T -e PYTHONPATH=/app api alembic upgrade head
 
 # Очистка старых образов
 echo "🧹 Очищаю старые Docker образы..."

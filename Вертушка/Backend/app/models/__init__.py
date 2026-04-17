@@ -9,6 +9,7 @@ from app.models.gift_booking import GiftBooking
 from app.models.follow import Follow
 from app.models.profile_share import ProfileShare
 from app.models.search_cache import SearchCache
+from app.models.user_photo import UserRecordPhoto
 
 __all__ = [
     "User",
@@ -21,5 +22,6 @@ __all__ = [
     "Follow",
     "ProfileShare",
     "SearchCache",
+    "UserRecordPhoto",
 ]
 

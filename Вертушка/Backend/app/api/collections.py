@@ -15,6 +15,7 @@ from app.models.collection import Collection, CollectionItem
 from app.api.auth import get_current_user
 from app.config import get_settings
 from app.services.exchange import get_usd_rub_rate
+from app.services.cover_storage import ensure_cover_cached
 
 # Страны, для которых наценка импорта не применяется
 _LOCAL_COUNTRIES = {'Russia', 'USSR', 'Россия', 'СССР'}
@@ -441,6 +442,10 @@ async def add_record_to_collection(
     db.add(item)
     await db.commit()
     await db.refresh(item)
+
+    # Запускаем фоновое скачивание обложки (если ещё не скачана)
+    if record.discogs_id:
+        await ensure_cover_cached(record.discogs_id, record.cover_image_url, db)
 
     return CollectionItemResponse(
         id=item.id,

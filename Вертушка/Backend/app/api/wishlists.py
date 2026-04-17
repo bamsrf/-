@@ -15,6 +15,7 @@ from app.models.record import Record
 from app.models.wishlist import Wishlist, WishlistItem
 from app.models.gift_booking import GiftBooking, GiftStatus
 from app.api.auth import get_current_user, get_current_user_optional
+from app.services.cover_storage import ensure_cover_cached
 from app.schemas.wishlist import (
     WishlistResponse,
     WishlistItemCreate,
@@ -165,6 +166,10 @@ async def add_to_wishlist(
     db.add(item)
     await db.commit()
     await db.refresh(item)
+
+    # Запускаем фоновое скачивание обложки (если ещё не скачана)
+    if record.discogs_id:
+        await ensure_cover_cached(record.discogs_id, record.cover_image_url, db)
 
     return WishlistItemResponse(
         id=item.id,

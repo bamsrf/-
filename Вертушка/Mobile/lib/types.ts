@@ -62,6 +62,7 @@ export interface VinylRecord {
   ru_markup?: number;
   cover_image_url?: string;
   thumb_image_url?: string;
+  cover_url?: string;
   artist_id?: string;
   artist_thumb_image_url?: string;
   tracklist?: Track[];
@@ -84,6 +85,7 @@ export interface RecordSearchResult {
   country?: string;
   cover_image_url?: string;
   thumb_image_url?: string;
+  cover_url?: string;
   format_type?: string;
 }
 
@@ -135,6 +137,7 @@ export interface MasterSearchResult {
   main_release_id: string;
   cover_image_url?: string;
   thumb_image_url?: string;
+  cover_url?: string;
   release_type?: string;
 }
 
@@ -163,6 +166,7 @@ export interface MasterVersion {
   major_formats?: string[];
   thumb_image_url?: string;
   cover_image_url?: string;
+  cover_url?: string;
 }
 
 export interface MasterSearchResponse {
@@ -361,6 +365,7 @@ export interface PublicProfileRecord {
   format_type?: string;
   cover_image_url?: string;
   thumb_image_url?: string;
+  cover_url?: string;
   estimated_price_median?: number;
   price_currency: string;
 }
