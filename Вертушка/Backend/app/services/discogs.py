@@ -896,7 +896,7 @@ class DiscogsService:
         2. Search API — обложки и format[] в полном качестве (логика обложек не меняется)
 
         Результат кэшируется в Redis на 1 день."""
-        ck = f"{artist_id}:v4:p{page}"
+        ck = f"{artist_id}:v5:p{page}"
         cached = await cache.get("artist_masters", ck)
         if cached is not None:
             return MasterSearchResponse(**cached)
@@ -917,22 +917,34 @@ class DiscogsService:
             return MasterSearchResponse(results=[], total=0, page=page, per_page=per_page)
 
         # --- Шаг 1: получаем точный список master ID для этого артиста ---
-        # /artists/{id}/releases возвращает ТОЛЬКО релизы конкретного артиста,
-        # без смешения с другими (по artist_id, не по тексту имени).
-        # Первая страница (100 релизов) покрывает большинство коллекций.
-        try:
-            ar_data = await self._get(
-                f"{self.BASE_URL}/artists/{artist_id}/releases",
-                params={"page": 1, "per_page": 100},
-                priority=Priority.BATCH,
-            )
-            valid_master_ids: set[str] = {
-                str(item["id"])
-                for item in ar_data.get("releases", [])
-                if item.get("type") == "master" and item.get("id")
-            }
-        except Exception:
+        # Пагинируем все страницы /artists/{id}/releases чтобы не пропустить
+        # мастера у плодовитых артистов (KGLW, Guided By Voices и т.д.).
+        # Результат кэшируется отдельно на 1 день.
+        ids_ck = f"{artist_id}:master_ids:v1"
+        cached_ids = await cache.get("artist_master_ids", ids_ck)
+        if cached_ids is not None:
+            valid_master_ids: set[str] = set(cached_ids)
+        else:
             valid_master_ids = set()
+            try:
+                ar_page = 1
+                while True:
+                    ar_data = await self._get(
+                        f"{self.BASE_URL}/artists/{artist_id}/releases",
+                        params={"page": ar_page, "per_page": 100},
+                        priority=Priority.BATCH,
+                    )
+                    for item in ar_data.get("releases", []):
+                        if item.get("type") == "master" and item.get("id"):
+                            valid_master_ids.add(str(item["id"]))
+                    total_pages = ar_data.get("pagination", {}).get("pages", 1)
+                    if ar_page >= total_pages or ar_page >= 15:
+                        break
+                    ar_page += 1
+                if valid_master_ids:
+                    await cache.set("artist_master_ids", ids_ck, list(valid_master_ids), 86400)
+            except Exception:
+                valid_master_ids = set()
 
         # --- Шаг 2: Search API — обложки и format[] (логика из оригинала не меняется) ---
         clean_name = re.sub(r'\s*\(\d+\)\s*$', '', artist_name).strip()

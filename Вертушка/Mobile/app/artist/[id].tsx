@@ -137,6 +137,7 @@ export default function ArtistDetailScreen() {
   const [showSortMenu, setShowSortMenu] = useState(false);
   const [hasMore, setHasMore] = useState(false);
   const [nextCursor, setNextCursor] = useState<number | null>(null);
+  const [hasLoadError, setHasLoadError] = useState(false);
   const autoLoadAttemptsRef = useRef(0);
   const loadIdRef = useRef(0);
 
@@ -182,6 +183,7 @@ export default function ArtistDetailScreen() {
 
     const currentLoadId = ++loadIdRef.current;
     setIsLoadingMasters(true);
+    if (reset) setHasLoadError(false);
 
     try {
       setError(null);
@@ -206,6 +208,7 @@ export default function ArtistDetailScreen() {
       if (loadIdRef.current !== currentLoadId) return;
       console.error('Ошибка загрузки релизов:', err);
       setError('Не удалось загрузить релизы артиста');
+      if (!reset) setHasLoadError(true);
     } finally {
       if (loadIdRef.current === currentLoadId) {
         setIsLoadingMasters(false);
@@ -220,10 +223,10 @@ export default function ArtistDetailScreen() {
   };
 
   const handleLoadMore = useCallback(() => {
-    if (hasMore && !isLoadingMasters) {
+    if (hasMore && !isLoadingMasters && !hasLoadError) {
       loadMasters();
     }
-  }, [hasMore, isLoadingMasters]);
+  }, [hasMore, isLoadingMasters, hasLoadError]);
 
   const handleMasterPress = useCallback((master: MasterSearchResult) => {
     router.push({
@@ -279,9 +282,10 @@ export default function ArtistDetailScreen() {
     }
   }, [activeFilter, filteredMasters.length, hasMore, isLoadingMasters]);
 
-  // Сброс счётчика авто-подгрузки при смене фильтра
+  // Сброс счётчика авто-подгрузки и ошибки при смене фильтра
   useEffect(() => {
     autoLoadAttemptsRef.current = 0;
+    setHasLoadError(false);
   }, [activeFilter]);
 
   // Используем первое изображение в полном разрешении
@@ -374,13 +378,17 @@ export default function ArtistDetailScreen() {
             <Text style={styles.loadMoreText}>Загрузка релизов...</Text>
           </>
         ) : (
-          <TouchableOpacity style={styles.loadMoreButton} onPress={handleLoadMore} activeOpacity={0.7}>
+          <TouchableOpacity
+            style={styles.loadMoreButton}
+            onPress={() => { setHasLoadError(false); loadMasters(); }}
+            activeOpacity={0.7}
+          >
             <Text style={styles.loadMoreButtonText}>Загрузить ещё</Text>
           </TouchableOpacity>
         )}
       </View>
     );
-  }, [isLoadingMasters, hasMore, handleLoadMore]);
+  }, [isLoadingMasters, hasMore]);
 
   const listEmpty = useMemo(() => {
     if (isLoadingMasters) return null;
