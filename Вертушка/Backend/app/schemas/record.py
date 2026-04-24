@@ -4,7 +4,7 @@
 from datetime import datetime
 from decimal import Decimal
 from uuid import UUID
-from pydantic import BaseModel, Field, ConfigDict
+from pydantic import BaseModel, Field, ConfigDict, model_validator
 
 
 class RecordBase(BaseModel):
@@ -65,12 +65,20 @@ class RecordResponse(BaseModel):
     ru_markup: float | None = None
     cover_image_url: str | None
     thumb_image_url: str | None
-    cover_url: str | None = None  # локальный URL или fallback на Discogs; заполняется в endpoint'е
+    cover_url: str | None = None  # локальный URL (/uploads/covers/...) или fallback на Discogs
+    cover_local_path: str | None = Field(default=None, exclude=True)
     artist_id: str | None = None
     artist_thumb_image_url: str | None = None
     tracklist: list | None
     created_at: datetime
     updated_at: datetime
+
+    @model_validator(mode="after")
+    def _populate_cover_url(self) -> "RecordResponse":
+        if self.cover_local_path and not self.cover_url:
+            lp = self.cover_local_path
+            self.cover_url = lp if lp.startswith("/") else f"/uploads/{lp}"
+        return self
 
 
 class RecordBrief(BaseModel):
@@ -86,10 +94,18 @@ class RecordBrief(BaseModel):
     year: int | None
     cover_image_url: str | None
     thumb_image_url: str | None
-    cover_url: str | None = None  # локальный URL или fallback на Discogs; заполняется в endpoint'е
+    cover_url: str | None = None  # локальный URL (/uploads/covers/...) или fallback на Discogs
+    cover_local_path: str | None = Field(default=None, exclude=True)
     format_type: str | None = None
     estimated_price_median: float | None
     price_currency: str
+
+    @model_validator(mode="after")
+    def _populate_cover_url(self) -> "RecordBrief":
+        if self.cover_local_path and not self.cover_url:
+            lp = self.cover_local_path
+            self.cover_url = lp if lp.startswith("/") else f"/uploads/{lp}"
+        return self
 
 
 class RecordSearchResult(BaseModel):
