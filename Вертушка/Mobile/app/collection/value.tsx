@@ -111,11 +111,25 @@ export default function CollectionValueScreen() {
 
 
   // Сортируем items по цене для списка
+  // Если item.estimated_price_rub не заполнен — считаем из record.estimated_price_min
   const sortedByPrice = React.useMemo(() => {
+    const LOCAL_COUNTRIES = new Set(['Russia', 'USSR', 'Россия', 'СССР']);
+    const usdRub = stats?.usd_rub_rate || 90;
+    const markup = stats?.ru_markup || 1.7;
+
     return [...collectionItems]
+      .map(item => {
+        if (item.estimated_price_rub) return item;
+        const record = item.record;
+        if (record.estimated_price_min) {
+          const effectiveMarkup = record.country && LOCAL_COUNTRIES.has(record.country) ? 1.0 : markup;
+          return { ...item, estimated_price_rub: Math.round(record.estimated_price_min * usdRub * effectiveMarkup * 100) / 100 };
+        }
+        return item;
+      })
       .filter(item => item.estimated_price_rub)
       .sort((a, b) => (b.estimated_price_rub || 0) - (a.estimated_price_rub || 0));
-  }, [collectionItems]);
+  }, [collectionItems, stats]);
 
   const renderItem = useCallback(({ item, index }: { item: CollectionItem; index: number }) => {
     const record = item.record;

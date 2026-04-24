@@ -169,5 +169,29 @@ async def update_prices_batch():
                 await session.commit()
                 logger.info("Updated prices for %d records", updated)
 
+            # Backfill: CollectionItems с NULL estimated_price_rub где Record уже имеет цену
+            backfill_result = await session.execute(
+                select(CollectionItem)
+                .options(selectinload(CollectionItem.record))
+                .join(Record, CollectionItem.record_id == Record.id)
+                .where(
+                    CollectionItem.estimated_price_rub.is_(None),
+                    Record.estimated_price_min.isnot(None)
+                )
+                .limit(BATCH_SIZE)
+            )
+            backfill_items = backfill_result.scalars().all()
+            if backfill_items:
+                for item in backfill_items:
+                    rec = item.record
+                    if rec and rec.estimated_price_min:
+                        is_local = rec.country and rec.country in _LOCAL_COUNTRIES
+                        effective_markup = 1.0 if is_local else settings.ru_vinyl_markup
+                        item.estimated_price_rub = round(
+                            float(rec.estimated_price_min) * usd_rub * effective_markup, 2
+                        )
+                await session.commit()
+                logger.info("Backfilled estimated_price_rub for %d collection items", len(backfill_items))
+
     except Exception:
         logger.exception("update_prices_batch failed")
