@@ -968,8 +968,11 @@
             var pos = 0;
             var paused = false;
             var last = null;
-            rail.addEventListener('mouseenter', function() { paused = true; });
-            rail.addEventListener('mouseleave', function() { paused = false; });
+            var canHover = window.matchMedia('(hover: hover)').matches;
+            if (canHover) {
+                rail.addEventListener('mouseenter', function() { paused = true; });
+                rail.addEventListener('mouseleave', function() { paused = false; });
+            }
             function tick(ts) {
                 if (last !== null && !paused) {
                     pos += speed * (ts - last) / 1000;
@@ -1014,21 +1017,9 @@
             document.getElementById('rpArtist').textContent = d.artist || '';
             document.getElementById('rpTitle').textContent  = d.title  || '';
 
-            // Инфо-карточки: ГОД / ФОРМАТ / ЦЕНА
-            var cards = [];
-            if (d.year)   cards.push(['ГОД',    d.year,        '']);
-            if (d.format) cards.push(['ФОРМАТ',  d.format,      '']);
-            if (d.price)  cards.push(['ЦЕНА',    '~$' + d.price, 'cobalt']);
-            document.getElementById('rpInfoRow').innerHTML = cards.map(function(c) {
-                return '<div class="rp-info-card"><div class="rp-info-lbl">' + c[0] + '</div>' +
-                       '<div class="rp-info-val ' + c[2] + '">' + esc(c[1]) + '</div></div>';
-            }).join('');
-
             var discogsEl = document.getElementById('rpDiscogs');
             if (d.discogs) { discogsEl.href = 'https://www.discogs.com/release/' + d.discogs; discogsEl.style.display = ''; }
             else { discogsEl.style.display = 'none'; }
-
-            document.getElementById('rpFooter').textContent = 'В коллекции @{{ user.username }}';
             document.getElementById('recordPreviewModal').classList.add('active');
         }
         function closeRecordPreview() {
