@@ -369,6 +369,10 @@ export interface PublicProfileRecord {
   estimated_price_median?: number;
   price_currency: string;
   is_booked?: boolean;
+  discogs_id?: string | null;
+  discogs_master_id?: string | null;
+  discogs_want?: number | null;
+  discogs_have?: number | null;
 }
 
 export interface PublicProfile {

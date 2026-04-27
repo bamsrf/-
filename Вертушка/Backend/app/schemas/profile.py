@@ -57,6 +57,10 @@ class PublicProfileRecord(BaseModel):
     estimated_price_median: float | None = None
     price_currency: str = "USD"
     is_booked: bool = False
+    discogs_id: str | None = None
+    discogs_master_id: str | None = None
+    discogs_want: int | None = None
+    discogs_have: int | None = None
 
 
 class PublicProfileResponse(BaseModel):

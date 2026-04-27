@@ -1048,3 +1048,84 @@ class DiscogsService:
         except Exception:
             logger.exception("Failed to get price stats for release %s", release_id)
         return None
+
+    # ------------------------------------------------------------------
+    # Новинки — глобальный пул свежих релизов с Discogs
+    # ------------------------------------------------------------------
+
+    async def search_new_releases(
+        self,
+        year: int | None = None,
+        per_page: int = 60,
+    ) -> list[dict]:
+        """Свежие релизы с Discogs, отсортированные по community.want.
+
+        Возвращает упрощённые dict для апсерта в локальный Record.
+        Кэшируется в Redis namespace `new_releases` на 12 часов.
+        """
+        from datetime import datetime as _dt
+        if year is None:
+            year = _dt.utcnow().year
+
+        cache_key = f"y{year}_p{per_page}"
+        cached = await cache.get("new_releases", cache_key)
+        if cached is not None:
+            return cached
+
+        params = {
+            "type": "release",
+            "year": str(year),
+            "format": "Vinyl",
+            "sort": "want",
+            "sort_order": "desc",
+            "per_page": per_page,
+            "page": 1,
+        }
+        try:
+            data = await self._get(
+                f"{self.BASE_URL}/database/search",
+                params=params,
+                headers=self._get_token_headers(),
+                priority=Priority.SEARCH,
+            )
+        except Exception:
+            logger.exception("Failed to fetch new releases from Discogs")
+            return []
+
+        out: list[dict] = []
+        for item in data.get("results", []):
+            full_title = item.get("title", "") or ""
+            artist_name, album_title = "Unknown", full_title
+            if " - " in full_title:
+                parts = full_title.split(" - ", 1)
+                artist_name, album_title = parts[0].strip(), parts[1].strip()
+
+            community = item.get("community") or {}
+            cover = item.get("cover_image") or item.get("thumb")
+
+            release_id = item.get("id")
+            master_id = item.get("master_id")
+            if not release_id:
+                continue
+
+            label_list = item.get("label") or []
+            format_list = item.get("format") or []
+
+            out.append({
+                "discogs_id": str(release_id),
+                "discogs_master_id": str(master_id) if master_id else None,
+                "title": album_title or full_title or "Unknown",
+                "artist": artist_name or "Unknown",
+                "year": int(item["year"]) if item.get("year") else year,
+                "label": label_list[0] if label_list else None,
+                "format_type": format_list[0] if format_list else None,
+                "country": item.get("country"),
+                "cover_image_url": cover,
+                "thumb_image_url": item.get("thumb"),
+                "want": int(community.get("want") or 0),
+                "have": int(community.get("have") or 0),
+            })
+
+        # 12 часов — рейл общий для всех viewers
+        await cache.set("new_releases", cache_key, out, 12 * 3600)
+        return out

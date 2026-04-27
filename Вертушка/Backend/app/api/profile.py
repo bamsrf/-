@@ -1,8 +1,7 @@
 """
 API для управления публичным профилем
 """
-import time
-from datetime import datetime
+import logging
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -29,15 +28,17 @@ from app.schemas.profile import (
 from app.services.exchange import get_usd_rub_rate
 from app.services.valuation import get_monthly_delta
 
+logger = logging.getLogger(__name__)
+
 router = APIRouter()
 
 
-# In-memory кэш Новинок (общий для всех юзеров) на 1 час
-_new_releases_cache: dict = {"data": None, "ts": 0.0}
-_NEW_RELEASES_TTL = 3600
-
-
-def _record_to_public(record: Record, is_booked: bool = False) -> PublicProfileRecord:
+def _record_to_public(
+    record: Record,
+    is_booked: bool = False,
+    discogs_want: int | None = None,
+    discogs_have: int | None = None,
+) -> PublicProfileRecord:
     return PublicProfileRecord(
         id=record.id,
         title=record.title,
@@ -50,6 +51,10 @@ def _record_to_public(record: Record, is_booked: bool = False) -> PublicProfileR
         estimated_price_median=float(record.estimated_price_median or record.estimated_price_min) if (record.estimated_price_median or record.estimated_price_min) else None,
         price_currency=record.price_currency,
         is_booked=is_booked,
+        discogs_id=record.discogs_id,
+        discogs_master_id=record.discogs_master_id,
+        discogs_want=discogs_want,
+        discogs_have=discogs_have,
     )
 
 
@@ -98,29 +103,111 @@ async def _get_full_collection(user_id: UUID, db: AsyncSession, limit: int = 200
     return out
 
 
-async def _get_new_releases(db: AsyncSession, limit: int = 12) -> list[PublicProfileRecord]:
-    """Глобальный рейл свежих релизов: year >= current_year - 1, отсортирован по спросу в вишлистах."""
-    now = time.time()
-    if _new_releases_cache["data"] is not None and (now - _new_releases_cache["ts"]) < _NEW_RELEASES_TTL:
-        return _new_releases_cache["data"][:limit]
+async def _upsert_discogs_release(db: AsyncSession, payload: dict) -> Record | None:
+    """Возвращает существующий Record по discogs_id или создаёт новый.
+    Не коммитит — коммит ждёт общую транзакцию вызывающего."""
+    discogs_id = payload.get("discogs_id")
+    if not discogs_id:
+        return None
 
-    current_year = datetime.utcnow().year
-    demand = func.count(WishlistItem.id).label("demand")
-    stmt = (
-        select(Record, demand)
-        .outerjoin(WishlistItem, WishlistItem.record_id == Record.id)
-        .where(Record.year >= current_year - 1)
-        .group_by(Record.id)
-        .order_by(demand.desc(), Record.year.desc())
-        .limit(limit)
+    existing = await db.scalar(select(Record).where(Record.discogs_id == discogs_id))
+    if existing:
+        if not existing.discogs_master_id and payload.get("discogs_master_id"):
+            existing.discogs_master_id = payload["discogs_master_id"]
+        if not existing.cover_image_url and payload.get("cover_image_url"):
+            existing.cover_image_url = payload["cover_image_url"]
+        if not existing.thumb_image_url and payload.get("thumb_image_url"):
+            existing.thumb_image_url = payload["thumb_image_url"]
+        return existing
+
+    record = Record(
+        discogs_id=discogs_id,
+        discogs_master_id=payload.get("discogs_master_id"),
+        title=payload.get("title") or "Unknown",
+        artist=payload.get("artist") or "Unknown",
+        year=payload.get("year"),
+        label=payload.get("label"),
+        format_type=payload.get("format_type"),
+        country=payload.get("country"),
+        cover_image_url=payload.get("cover_image_url"),
+        thumb_image_url=payload.get("thumb_image_url"),
     )
-    result = await db.execute(stmt)
-    rows = result.all()
-    data = [_record_to_public(row[0]) for row in rows]
+    db.add(record)
+    try:
+        await db.flush()
+    except Exception:
+        await db.rollback()
+        return await db.scalar(select(Record).where(Record.discogs_id == discogs_id))
+    return record
 
-    _new_releases_cache["data"] = data
-    _new_releases_cache["ts"] = now
-    return data
+
+async def _get_new_releases(
+    db: AsyncSession,
+    limit: int = 12,
+    user_id: UUID | None = None,
+) -> list[PublicProfileRecord]:
+    """Глобальный пул новинок с Discogs (`/database/search`, sort=want).
+
+    Кэш — на стороне DiscogsService (Redis, 12ч). Здесь — апсерт в локальный Record
+    (чтоб карточка имела стабильный UUID для модалки/экрана детали) и фильтрация
+    по master_id из коллекции конкретного юзера.
+    """
+    from app.services.discogs import DiscogsService
+
+    discogs = DiscogsService()
+    pool = await discogs.search_new_releases(per_page=60)
+    if not pool:
+        return []
+
+    excluded_master_ids: set[str] = set()
+    excluded_discogs_ids: set[str] = set()
+    if user_id is not None:
+        rows = await db.execute(
+            select(Record.discogs_id, Record.discogs_master_id)
+            .join(CollectionItem, CollectionItem.record_id == Record.id)
+            .join(Collection)
+            .where(Collection.user_id == user_id)
+        )
+        for did, mid in rows.all():
+            if mid:
+                excluded_master_ids.add(str(mid))
+            if did:
+                excluded_discogs_ids.add(str(did))
+
+    out: list[PublicProfileRecord] = []
+    seen_master: set[str] = set()
+    for item in pool:
+        if len(out) >= limit:
+            break
+        mid = item.get("discogs_master_id")
+        did = item.get("discogs_id")
+        if mid and mid in excluded_master_ids:
+            continue
+        if did and did in excluded_discogs_ids:
+            continue
+        # Дедуп внутри пула по master_id (один альбом, разные прессы)
+        if mid:
+            if mid in seen_master:
+                continue
+            seen_master.add(mid)
+
+        record = await _upsert_discogs_release(db, item)
+        if record is None:
+            continue
+        out.append(_record_to_public(
+            record,
+            discogs_want=item.get("want"),
+            discogs_have=item.get("have"),
+        ))
+
+    if out:
+        try:
+            await db.commit()
+        except Exception:
+            logger.exception("Failed to commit new_releases upserts")
+            await db.rollback()
+
+    return out
 
 
 async def get_public_profile_payload(user: User, profile: ProfileShare, db: AsyncSession) -> PublicProfileResponse:
@@ -167,7 +254,7 @@ async def get_public_profile_payload(user: User, profile: ProfileShare, db: Asyn
 
     top_expensive = await _get_top_expensive(user.id, db, limit=12) if profile.show_collection else []
     collection_full = await _get_full_collection(user.id, db, limit=200) if profile.show_collection else []
-    new_releases = await _get_new_releases(db, limit=12)
+    new_releases = await _get_new_releases(db, limit=12, user_id=user.id)
 
     return PublicProfileResponse(
         username=user.username,
@@ -324,7 +411,7 @@ async def get_new_releases(
     limit: int = 12,
     db: AsyncSession = Depends(get_db)
 ):
-    """Глобальный рейл новинок по спросу в вишлистах."""
+    """Глобальный рейл свежих релизов с Discogs (sort=want)."""
     return await _get_new_releases(db, limit=min(limit, 24))
 
 

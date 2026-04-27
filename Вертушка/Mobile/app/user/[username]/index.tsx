@@ -408,6 +408,7 @@ function AutoRail({
               <Text style={styles.railYear}>
                 {r.year}
                 {r.format_type ? ` · ${r.format_type}` : ''}
+                {r.discogs_want ? ` · ♥ ${r.discogs_want}` : ''}
               </Text>
             ) : null}
           </TouchableOpacity>
@@ -953,16 +954,28 @@ export default function UserProfileScreen() {
               subtitle="Свежее в коллекции"
               titleColor={PP.cobalt}
               items={pubProfile.recent_additions}
-              onPick={(r) => router.push(`/record/${r.id}`)}
+              onPick={(r) => {
+                if (!currentUser) {
+                  router.push('/(auth)/register');
+                  return;
+                }
+                router.push(`/record/${r.id}`);
+              }}
             />
           ) : (
             <AutoRail
               title="Новинки"
-              subtitle="Свежие релизы"
+              subtitle="Свежие релизы · Discogs"
               titleColor={PP.slate}
               items={pubProfile.new_releases}
               showYear
-              onPick={(r) => router.push(`/record/${r.id}`)}
+              onPick={(r) => {
+                if (!currentUser) {
+                  router.push('/(auth)/register');
+                  return;
+                }
+                router.push(`/record/${r.id}`);
+              }}
             />
           )}
         </View>

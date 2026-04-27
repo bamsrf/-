@@ -679,7 +679,15 @@
                 <div class="rail rail-infinite" id="rail-expensive">
                     <div class="rail-track">
                         {% for r in top_expensive %}
-                        <div class="rail-card" data-record-id="{{ r.id }}">
+                        <div class="rail-card"
+                             data-record-id="{{ r.id }}"
+                             data-artist="{{ r.artist|e }}"
+                             data-title="{{ r.title|e }}"
+                             data-year="{{ r.year or '' }}"
+                             data-format="{{ (r.format_type or '')|e }}"
+                             data-cover="{{ r.cover_image_url or '' }}"
+                             data-discogs="{{ r.discogs_id or '' }}"
+                             onclick="openRecordPreview(this)">
                             <div class="rail-cover">
                                 {% if r.cover_image_url %}<img src="{{ r.cover_image_url }}" alt="{{ r.title }}" loading="lazy">{% endif %}
                             </div>
@@ -696,19 +704,31 @@
                 {% if new_releases %}
                 <div class="rail-head">
                     <span class="rail-title slate">Новинки</span>
-                    <span class="rail-sub">Свежие релизы</span>
+                    <span class="rail-sub">Свежие релизы · Discogs</span>
                 </div>
-                <div class="rail">
-                    {% for r in new_releases %}
-                    <div class="rail-card muted">
-                        <div class="rail-cover">
-                            {% if r.cover_image_url %}<img src="{{ r.cover_image_url }}" alt="{{ r.title }}" loading="lazy">{% endif %}
+                <div class="rail rail-infinite" id="rail-new-releases">
+                    <div class="rail-track">
+                        {% for r in new_releases %}
+                        <div class="rail-card muted"
+                             data-record-id="{{ r.id }}"
+                             data-artist="{{ r.artist|e }}"
+                             data-title="{{ r.title|e }}"
+                             data-year="{{ r.year or '' }}"
+                             data-format="{{ (r.format_type or '')|e }}"
+                             data-cover="{{ r.cover_image_url or '' }}"
+                             data-discogs="{{ r.discogs_id or '' }}"
+                             data-want="{{ r.discogs_want or '' }}"
+                             data-have="{{ r.discogs_have or '' }}"
+                             onclick="openRecordPreview(this)">
+                            <div class="rail-cover">
+                                {% if r.cover_image_url %}<img src="{{ r.cover_image_url }}" alt="{{ r.title }}" loading="lazy">{% endif %}
+                            </div>
+                            <div class="rail-meta-artist">{{ r.artist }}</div>
+                            <div class="rail-meta-title">{{ r.title }}</div>
+                            <div class="rail-meta-year tnum">{{ r.year or '' }}{% if r.format_type %} · {{ r.format_type }}{% endif %}{% if r.discogs_want %} · ♥ {{ r.discogs_want }}{% endif %}</div>
                         </div>
-                        <div class="rail-meta-artist">{{ r.artist }}</div>
-                        <div class="rail-meta-title">{{ r.title }}</div>
-                        <div class="rail-meta-year tnum">{{ r.year or '' }}{% if r.format_type %} · {{ r.format_type }}{% endif %}</div>
+                        {% endfor %}
                     </div>
-                    {% endfor %}
                 </div>
                 {% endif %}
             </div>
@@ -1036,40 +1056,44 @@
             }
         })();
 
-        // Infinite auto-scroll для витрины дорогих пластинок (rAF — работает в Safari)
+        // Infinite auto-scroll для всех rail-infinite (rAF — работает в Safari)
         (function() {
-            var rail = document.getElementById('rail-expensive');
-            if (!rail) return;
-            var track = rail.querySelector('.rail-track');
-            if (!track) return;
-            var cards = Array.from(track.querySelectorAll('.rail-card'));
-            if (cards.length < 2) return;
-            cards.forEach(function(card) {
-                var clone = card.cloneNode(true);
-                clone.setAttribute('aria-hidden', 'true');
-                track.appendChild(clone);
-            });
-            var cardStep = 116 + 14;
-            var loopWidth = cards.length * cardStep;
-            var speed = 45; // px/s
-            var pos = 0;
-            var paused = false;
-            var last = null;
-            var canHover = window.matchMedia('(hover: hover)').matches;
-            if (canHover) {
-                rail.addEventListener('mouseenter', function() { paused = true; });
-                rail.addEventListener('mouseleave', function() { paused = false; });
-            }
-            function tick(ts) {
-                if (last !== null && !paused) {
-                    pos += speed * (ts - last) / 1000;
-                    if (pos >= loopWidth) pos -= loopWidth;
-                    track.style.transform = 'translateX(-' + pos + 'px)';
+            function startInfiniteRail(rail) {
+                if (!rail || rail.dataset.infiniteInit === '1') return;
+                var track = rail.querySelector('.rail-track');
+                if (!track) return;
+                var cards = Array.from(track.querySelectorAll('.rail-card'));
+                if (cards.length < 2) return;
+                rail.dataset.infiniteInit = '1';
+                cards.forEach(function(card) {
+                    var clone = card.cloneNode(true);
+                    clone.setAttribute('aria-hidden', 'true');
+                    // Клик-обработчик inline-onclick переносится с cloneNode, оставляем как есть
+                    track.appendChild(clone);
+                });
+                var cardStep = 116 + 14;
+                var loopWidth = cards.length * cardStep;
+                var speed = 45; // px/s
+                var pos = 0;
+                var paused = false;
+                var last = null;
+                var canHover = window.matchMedia('(hover: hover)').matches;
+                if (canHover) {
+                    rail.addEventListener('mouseenter', function() { paused = true; });
+                    rail.addEventListener('mouseleave', function() { paused = false; });
                 }
-                last = ts;
+                function tick(ts) {
+                    if (last !== null && !paused) {
+                        pos += speed * (ts - last) / 1000;
+                        if (pos >= loopWidth) pos -= loopWidth;
+                        track.style.transform = 'translateX(-' + pos + 'px)';
+                    }
+                    last = ts;
+                    requestAnimationFrame(tick);
+                }
                 requestAnimationFrame(tick);
             }
-            requestAnimationFrame(tick);
+            document.querySelectorAll('.rail-infinite').forEach(startInfiniteRail);
         })();
 
         // Share
