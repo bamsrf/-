@@ -445,7 +445,7 @@
             font-size: 22px; font-weight: 600; letter-spacing: -0.025em;
             color: var(--ink); line-height: 1.2; margin-bottom: 18px;
         }
-        .rp-info-row { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-bottom: 20px; }
+        .rp-info-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(70px, 1fr)); gap: 8px; margin-bottom: 20px; }
         .rp-info-card {
             background: rgba(255,255,255,0.75); border: 1px solid var(--hairline);
             border-radius: 14px; padding: 11px 14px;
@@ -503,12 +503,13 @@
         /* MODAL */
         .modal-overlay {
             position: fixed; inset: 0; z-index: 80;
-            background: linear-gradient(180deg, rgba(239, 236, 230, 0.45), rgba(239, 236, 230, 0.7));
-            backdrop-filter: blur(16px) saturate(130%);
-            -webkit-backdrop-filter: blur(16px) saturate(130%);
+            background: rgba(239,236,230,0.55);
+            backdrop-filter: blur(18px) saturate(140%);
+            -webkit-backdrop-filter: blur(18px) saturate(140%);
             display: none; align-items: flex-end; justify-content: center;
             animation: fadeIn 260ms ease-out;
         }
+        .booking-sheet { overflow-y: auto; max-height: 92vh; }
         .modal-overlay.active { display: flex; }
         @media (min-width: 640px) { .modal-overlay { align-items: center; } }
         .modal {
@@ -756,7 +757,18 @@
             <div class="grid">
                 {% for item in wishlist_items %}
                 {% set is_booked = item.gift_booking is not none and item.gift_booking.status.value in ['booked', 'completed'] %}
-                <div class="card" {% if not is_booked %}onclick="openBookingModal('{{ item.id }}', '{{ item.record.title|e }}', '{{ item.record.artist|e }}')"{% endif %}>
+                <div class="card" {% if not is_booked %}
+                    data-wishlist-id="{{ item.id }}"
+                    data-artist="{{ item.record.artist|e }}"
+                    data-title="{{ item.record.title|e }}"
+                    data-year="{{ item.record.year or '' }}"
+                    data-format="{{ (item.record.format_type or '')|e }}"
+                    data-cover="{{ item.record.cover_image_url or '' }}"
+                    data-price="{{ item.record.estimated_price_median|int if item.record.estimated_price_median else '' }}"
+                    data-catalog="{{ (item.record.catalog_number or '')|e }}"
+                    data-discogs="{{ item.record.discogs_id or '' }}"
+                    onclick="openBookingModal(this)"
+                {% endif %}>
                     <div class="card-cover">
                         {% if item.record.cover_image_url %}<img src="{{ item.record.cover_image_url }}" alt="{{ item.record.title }}" loading="lazy">{% endif %}
                     </div>
@@ -811,6 +823,7 @@
             <div class="rp-body">
                 <div class="rp-artist" id="rpArtist"></div>
                 <div class="rp-title" id="rpTitle"></div>
+                <div id="rpInfoRow" class="rp-info-row" style="display:none"></div>
                 <a id="rpDiscogs" class="rp-discogs" target="_blank" rel="noopener" style="display:none">Открыть на Discogs ↗</a>
             </div>
         </div>
@@ -818,32 +831,40 @@
 
     <!-- BOOKING MODAL -->
     <div class="modal-overlay" id="bookingModal">
-        <div class="modal" role="dialog" aria-modal="true">
-            <h2>Забронировать как подарок</h2>
-            <div class="modal-rec" id="modalRec"></div>
-            <p class="modal-info">
-                Бронь анонимная — владелец увидит только метку «Забронировано». Срок действия — 60 дней.
-                За 7 дней до истечения мы пришлём напоминание на email. Если подарок не вручён — бронь освободится автоматически.
-            </p>
-            <form id="bookingForm">
-                <input type="hidden" id="itemId" name="wishlist_item_id">
-                <div class="form-row">
-                    <label>Ваше имя</label>
-                    <input type="text" name="gifter_name" required minlength="2">
-                </div>
-                <div class="form-row">
-                    <label>Email для подтверждения</label>
-                    <input type="email" name="gifter_email" required>
-                </div>
-                <div class="form-row">
-                    <label>Сообщение (необязательно)</label>
-                    <textarea name="gifter_message" placeholder="Например: с днём рождения!"></textarea>
-                </div>
-                <div class="modal-actions">
-                    <button type="button" class="btn-ghost" onclick="closeBookingModal()">Отмена</button>
-                    <button type="submit" class="btn-primary">Подтвердить · бронь на 60 дней</button>
-                </div>
-            </form>
+        <div class="record-preview-sheet booking-sheet" role="dialog" aria-modal="true">
+            <div class="rp-handle"></div>
+            <div class="rp-header">
+                <span class="rp-header-label" id="bmHeaderLabel"></span>
+                <button class="rp-close" onclick="closeBookingModal()" aria-label="Закрыть">
+                    <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
+                        <path d="M1 1l10 10M11 1L1 11" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+                    </svg>
+                </button>
+            </div>
+            <div class="rp-cover-wrap">
+                <img id="bmCover" class="rp-cover-img" src="" alt="">
+            </div>
+            <div class="rp-body">
+                <div class="rp-artist" id="bmArtist"></div>
+                <div class="rp-title" id="bmTitle"></div>
+                <div id="bmInfoRow" class="rp-info-row" style="display:none"></div>
+                <a id="bmDiscogs" class="rp-discogs" target="_blank" rel="noopener" style="display:none">Открыть на Discogs ↗</a>
+                <form id="bookingForm">
+                    <input type="hidden" id="itemId" name="wishlist_item_id">
+                    <div class="form-row">
+                        <label>Ваше имя</label>
+                        <input type="text" name="gifter_name" required minlength="2">
+                    </div>
+                    <div class="form-row" style="margin-bottom:0">
+                        <label>Email для подтверждения</label>
+                        <input type="email" name="gifter_email" required>
+                    </div>
+                    <div class="modal-actions">
+                        <button type="button" class="btn-ghost" onclick="closeBookingModal()">Отмена</button>
+                        <button type="submit" class="btn-primary">Забронировать подарок</button>
+                    </div>
+                </form>
+            </div>
         </div>
     </div>
 
@@ -1017,6 +1038,17 @@
             document.getElementById('rpArtist').textContent = d.artist || '';
             document.getElementById('rpTitle').textContent  = d.title  || '';
 
+            var rpInfoCards = [];
+            if (d.year)   rpInfoCards.push(['ГОД',   d.year,         '']);
+            if (d.format) rpInfoCards.push(['ФОРМАТ', d.format,       '']);
+            if (d.price)  rpInfoCards.push(['ЦЕНА',   '~$' + d.price, 'cobalt']);
+            var rpInfoRow = document.getElementById('rpInfoRow');
+            rpInfoRow.innerHTML = rpInfoCards.map(function(c) {
+                return '<div class="rp-info-card"><div class="rp-info-lbl">' + c[0] + '</div>' +
+                       '<div class="rp-info-val ' + c[2] + '">' + esc(String(c[1])) + '</div></div>';
+            }).join('');
+            rpInfoRow.style.display = rpInfoCards.length ? '' : 'none';
+
             var discogsEl = document.getElementById('rpDiscogs');
             if (d.discogs) { discogsEl.href = 'https://www.discogs.com/release/' + d.discogs; discogsEl.style.display = ''; }
             else { discogsEl.style.display = 'none'; }
@@ -1033,28 +1065,47 @@
         });
 
         // Booking modal
-        var modal = document.getElementById('bookingModal');
-        var modalRec = document.getElementById('modalRec');
-        var itemInput = document.getElementById('itemId');
-        var form = document.getElementById('bookingForm');
+        var bookingModal = document.getElementById('bookingModal');
+        var bookingForm  = document.getElementById('bookingForm');
 
-        function openBookingModal(id, title, artist) {
-            itemInput.value = id;
-            modalRec.textContent = artist + ' — ' + title;
-            modal.classList.add('active');
+        function openBookingModal(card) {
+            var d = card.dataset;
+            var BLANK = 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
+            document.getElementById('bmCover').src = d.cover || BLANK;
+            var hparts = [];
+            if (d.catalog) hparts.push(d.catalog);
+            if (d.format)  hparts.push(d.format);
+            document.getElementById('bmHeaderLabel').textContent = hparts.join(' · ');
+            document.getElementById('bmArtist').textContent = d.artist || '';
+            document.getElementById('bmTitle').textContent  = d.title  || '';
+            var bmCards = [];
+            if (d.year)   bmCards.push(['ГОД',   d.year,         '']);
+            if (d.format) bmCards.push(['ФОРМАТ', d.format,       '']);
+            if (d.price)  bmCards.push(['ЦЕНА',   '~$' + d.price, 'cobalt']);
+            var bmInfoRow = document.getElementById('bmInfoRow');
+            bmInfoRow.innerHTML = bmCards.map(function(c) {
+                return '<div class="rp-info-card"><div class="rp-info-lbl">' + c[0] + '</div>' +
+                       '<div class="rp-info-val ' + c[2] + '">' + esc(String(c[1])) + '</div></div>';
+            }).join('');
+            bmInfoRow.style.display = bmCards.length ? '' : 'none';
+            var bmDiscogs = document.getElementById('bmDiscogs');
+            if (d.discogs) { bmDiscogs.href = 'https://www.discogs.com/release/' + d.discogs; bmDiscogs.style.display = ''; }
+            else { bmDiscogs.style.display = 'none'; }
+            document.getElementById('itemId').value = d.wishlistId || '';
+            bookingModal.classList.add('active');
         }
         function closeBookingModal() {
-            modal.classList.remove('active');
-            form.reset();
+            bookingModal.classList.remove('active');
+            bookingForm.reset();
         }
-        modal && modal.addEventListener('click', function(e) {
-            if (e.target === modal) closeBookingModal();
+        bookingModal && bookingModal.addEventListener('click', function(e) {
+            if (e.target === bookingModal) closeBookingModal();
         });
 
-        form && form.addEventListener('submit', async function(e) {
+        bookingForm && bookingForm.addEventListener('submit', async function(e) {
             e.preventDefault();
-            var data = Object.fromEntries(new FormData(form).entries());
-            var btn = form.querySelector('button[type=submit]');
+            var data = Object.fromEntries(new FormData(bookingForm).entries());
+            var btn = bookingForm.querySelector('button[type=submit]');
             btn.disabled = true;
             try {
                 var res = await fetch('/api/gifts/book', {
