@@ -463,6 +463,12 @@
             font-size: 12px; color: var(--cobalt); text-decoration: none; font-weight: 500;
         }
         .rp-discogs:hover { text-decoration: underline; }
+        .bm-note {
+            font-size: 12px; color: var(--slate); line-height: 1.55;
+            margin-bottom: 16px; padding: 12px 14px;
+            background: rgba(255,255,255,0.55); border: 1px solid var(--hairline);
+            border-radius: 12px;
+        }
         .rp-footer {
             text-align: center; font-family: 'JetBrains Mono', monospace;
             font-size: 9.5px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--mute);
@@ -851,6 +857,7 @@
                 <a id="bmDiscogs" class="rp-discogs" target="_blank" rel="noopener" style="display:none">Открыть на Discogs ↗</a>
                 <form id="bookingForm">
                     <input type="hidden" id="itemId" name="wishlist_item_id">
+                    <p class="bm-note">Бронь анонимная — владелец увидит только метку «Забронировано». Срок действия — 60 дней. За 7 дней до истечения мы пришлём напоминание на email. Если подарок не вручён — бронь освободится автоматически.</p>
                     <div class="form-row">
                         <label>Ваше имя</label>
                         <input type="text" name="gifter_name" required minlength="2">
@@ -1079,9 +1086,9 @@
             document.getElementById('bmArtist').textContent = d.artist || '';
             document.getElementById('bmTitle').textContent  = d.title  || '';
             var bmCards = [];
-            if (d.year)   bmCards.push(['ГОД',   d.year,         '']);
-            if (d.format) bmCards.push(['ФОРМАТ', d.format,       '']);
-            if (d.price)  bmCards.push(['ЦЕНА',   '~$' + d.price, 'cobalt']);
+            if (d.year)   bmCards.push(['ГОД',         d.year,                        '']);
+            if (d.format) bmCards.push(['ФОРМАТ',       d.format,                      '']);
+            bmCards.push(['ПРИМ. ЦЕНА', d.price ? '~$' + d.price : '—', d.price ? 'cobalt' : '']);
             var bmInfoRow = document.getElementById('bmInfoRow');
             bmInfoRow.innerHTML = bmCards.map(function(c) {
                 return '<div class="rp-info-card"><div class="rp-info-lbl">' + c[0] + '</div>' +
