@@ -55,12 +55,12 @@
         .tnum { font-variant-numeric: tabular-nums; }
 
         .bg-base {
-            position: fixed; inset: 0; z-index: -2;
+            position: fixed; inset: 0; z-index: 0;
             background: linear-gradient(180deg, #F4EEE6 0%, #F0EBE2 60%, #ECE6DC 100%);
         }
         .bg-layer-collection,
         .bg-layer-wishlist {
-            position: fixed; inset: 0; z-index: -1; pointer-events: none;
+            position: fixed; inset: 0; z-index: 1; pointer-events: none;
             transition: opacity 2600ms cubic-bezier(.4, 0, .2, 1);
         }
         .bg-layer-collection {
@@ -81,6 +81,7 @@
         body.tab-wishlist   .bg-layer-wishlist   { opacity: 1; }
 
         .container {
+            position: relative; z-index: 2;
             max-width: 1080px;
             margin: 0 auto;
             padding: 18px 24px 120px;
