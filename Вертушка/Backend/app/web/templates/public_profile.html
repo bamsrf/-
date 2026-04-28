@@ -901,7 +901,33 @@
             </div>
 
             {% if wishlist_items %}
-            <div class="grid">
+            <div class="toolbar" id="wishlistToolbar">
+                <div class="format-chips" role="tablist" aria-label="Фильтр по форматам">
+                    <button type="button" class="format-chip active" data-fmt="all">Все форматы</button>
+                    <button type="button" class="format-chip" data-fmt="vinyl">Винил</button>
+                    <button type="button" class="format-chip" data-fmt="cd">CD</button>
+                    <button type="button" class="format-chip" data-fmt="tape">Кассета</button>
+                    <button type="button" class="format-chip" data-fmt="box">Бокс-сет</button>
+                </div>
+                <div class="view-row">
+                    <button type="button" class="icon-btn active" data-view="grid" title="Сетка" aria-label="Сетка">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                            <rect x="4" y="4" width="7" height="7" rx="1.2"/>
+                            <rect x="13" y="4" width="7" height="7" rx="1.2"/>
+                            <rect x="4" y="13" width="7" height="7" rx="1.2"/>
+                            <rect x="13" y="13" width="7" height="7" rx="1.2"/>
+                        </svg>
+                    </button>
+                    <button type="button" class="icon-btn" data-view="list" title="Список" aria-label="Список">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                            <line x1="4" y1="6" x2="20" y2="6"/>
+                            <line x1="4" y1="12" x2="20" y2="12"/>
+                            <line x1="4" y1="18" x2="20" y2="18"/>
+                        </svg>
+                    </button>
+                </div>
+            </div>
+            <div class="grid" id="wishlistGrid">
                 {% for item in wishlist_items %}
                 {% set is_booked = item.gift_booking is not none and item.gift_booking.status.value in ['booked', 'completed'] %}
                 <div class="card" {% if not is_booked %}
@@ -1396,12 +1422,8 @@
             }
         });
 
-        // Format filter + view toggle (только над коллекцией)
+        // Format filter + view toggle — общий код для коллекции и вишлиста
         (function() {
-            var grid = document.getElementById('collectionGrid');
-            var toolbar = document.getElementById('collectionToolbar');
-            if (!grid || !toolbar) return;
-
             // Маппинг человекочитаемого формата Discogs → группу чипа
             function classifyFormat(raw) {
                 var s = (raw || '').toLowerCase();
@@ -1417,64 +1439,75 @@
                 return 'other';
             }
 
-            var cards = Array.from(grid.querySelectorAll('.card'));
-            // Заранее проставляем data-fmt-group, чтобы фильтрация была дешёвая
-            cards.forEach(function(c) {
-                c.dataset.fmtGroup = classifyFormat(c.dataset.format);
-            });
+            function initToolbar(toolbarId, gridId) {
+                var grid = document.getElementById(gridId);
+                var toolbar = document.getElementById(toolbarId);
+                if (!grid || !toolbar) return;
 
-            var emptyEl = null;
-            function ensureEmpty() {
-                if (emptyEl) return emptyEl;
-                emptyEl = document.createElement('div');
-                emptyEl.className = 'empty empty-filter';
-                emptyEl.textContent = 'Нет пластинок этого формата';
-                emptyEl.style.display = 'none';
-                grid.parentNode.insertBefore(emptyEl, grid.nextSibling);
-                return emptyEl;
-            }
-
-            var currentFmt = 'all';
-
-            function applyFilter() {
-                var visible = 0;
+                var cards = Array.from(grid.querySelectorAll('.card'));
                 cards.forEach(function(c) {
-                    var match = (currentFmt === 'all') || (c.dataset.fmtGroup === currentFmt);
-                    c.classList.toggle('hidden-by-filter', !match);
-                    if (match) visible++;
+                    c.dataset.fmtGroup = classifyFormat(c.dataset.format);
                 });
-                var ee = ensureEmpty();
-                ee.style.display = visible === 0 ? '' : 'none';
-                grid.style.display = visible === 0 ? 'none' : '';
+
+                var emptyEl = null;
+                function ensureEmpty() {
+                    if (emptyEl) return emptyEl;
+                    emptyEl = document.createElement('div');
+                    emptyEl.className = 'empty empty-filter';
+                    emptyEl.textContent = 'Нет данного формата';
+                    emptyEl.style.display = 'none';
+                    grid.parentNode.insertBefore(emptyEl, grid.nextSibling);
+                    return emptyEl;
+                }
+
+                var currentFmt = 'all';
+
+                function applyFilter() {
+                    var visible = 0;
+                    cards.forEach(function(c) {
+                        var match = (currentFmt === 'all') || (c.dataset.fmtGroup === currentFmt);
+                        c.classList.toggle('hidden-by-filter', !match);
+                        if (match) visible++;
+                    });
+                    var ee = ensureEmpty();
+                    ee.style.display = visible === 0 ? '' : 'none';
+                    grid.style.display = visible === 0 ? 'none' : '';
+                }
+
+                toolbar.querySelectorAll('.format-chip').forEach(function(chip) {
+                    chip.addEventListener('click', function() {
+                        toolbar.querySelectorAll('.format-chip').forEach(function(c) { c.classList.remove('active'); });
+                        chip.classList.add('active');
+                        currentFmt = chip.dataset.fmt || 'all';
+                        applyFilter();
+                    });
+                });
+
+                // View toggle применяется к этому гриду + сохраняется глобально для всего профиля
+                toolbar.querySelectorAll('.icon-btn[data-view]').forEach(function(btn) {
+                    btn.addEventListener('click', function() {
+                        var mode = btn.dataset.view;
+                        // Синхронизируем оба тулбара (если есть)
+                        document.querySelectorAll('.toolbar .icon-btn[data-view]').forEach(function(b) {
+                            b.classList.toggle('active', b.dataset.view === mode);
+                        });
+                        document.querySelectorAll('.grid#collectionGrid, .grid#wishlistGrid').forEach(function(g) {
+                            g.classList.toggle('list-mode', mode === 'list');
+                        });
+                        try { localStorage.setItem('vert.profileView', mode); } catch (e) {}
+                    });
+                });
             }
 
-            // Чипы
-            toolbar.querySelectorAll('.format-chip').forEach(function(chip) {
-                chip.addEventListener('click', function() {
-                    toolbar.querySelectorAll('.format-chip').forEach(function(c) { c.classList.remove('active'); });
-                    chip.classList.add('active');
-                    currentFmt = chip.dataset.fmt || 'all';
-                    applyFilter();
-                });
-            });
+            initToolbar('collectionToolbar', 'collectionGrid');
+            initToolbar('wishlistToolbar', 'wishlistGrid');
 
-            // View toggle
-            toolbar.querySelectorAll('.icon-btn[data-view]').forEach(function(btn) {
-                btn.addEventListener('click', function() {
-                    toolbar.querySelectorAll('.icon-btn[data-view]').forEach(function(b) { b.classList.remove('active'); });
-                    btn.classList.add('active');
-                    var mode = btn.dataset.view;
-                    grid.classList.toggle('list-mode', mode === 'list');
-                    try { localStorage.setItem('vert.profileView', mode); } catch (e) {}
-                });
-            });
-
-            // Восстановим вью из localStorage
+            // Восстановим вью из localStorage один раз — после инициализации обоих тулбаров
             try {
                 var saved = localStorage.getItem('vert.profileView');
                 if (saved === 'list') {
-                    var listBtn = toolbar.querySelector('.icon-btn[data-view="list"]');
-                    if (listBtn) listBtn.click();
+                    var anyListBtn = document.querySelector('.toolbar .icon-btn[data-view="list"]');
+                    if (anyListBtn) anyListBtn.click();
                 }
             } catch (e) {}
         })();
