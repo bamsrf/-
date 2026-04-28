@@ -14,6 +14,7 @@ import {
   Animated,
   KeyboardAvoidingView,
   Platform,
+  LayoutAnimation,
 } from 'react-native';
 import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -224,6 +225,7 @@ export default function SearchScreen() {
 
   // Новинки (свежие релизы Discogs) для домашнего экрана Поиска
   const [newReleases, setNewReleases] = useState<PublicProfileRecord[]>([]);
+  const [historyExpanded, setHistoryExpanded] = useState(false);
   useEffect(() => {
     let cancelled = false;
     api.getNewReleases(12)
@@ -505,6 +507,12 @@ export default function SearchScreen() {
 
   const visibleArtists = showAllArtists ? dedupedArtists : dedupedArtists.slice(0, 3);
 
+  const HISTORY_PREVIEW_LIMIT = 5;
+  const visibleHistory = historyExpanded
+    ? searchHistory
+    : searchHistory.slice(0, HISTORY_PREVIEW_LIMIT);
+  const historyOverflow = searchHistory.length - HISTORY_PREVIEW_LIMIT;
+
   const HomeSections = isHomeView ? (
     <View style={{ marginTop: 16 }}>
       {shouldShowHistory && (
@@ -519,7 +527,7 @@ export default function SearchScreen() {
           }
         >
           <View style={styles.historyContainer}>
-            {searchHistory.map((item, index) => (
+            {visibleHistory.map((item, index) => (
               <View key={`${item}-${index}`} style={styles.historyItem}>
                 <TouchableOpacity
                   style={styles.historyItemButton}
@@ -538,6 +546,25 @@ export default function SearchScreen() {
                 </TouchableOpacity>
               </View>
             ))}
+            {historyOverflow > 0 && (
+              <TouchableOpacity
+                onPress={() => {
+                  LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+                  setHistoryExpanded((v) => !v);
+                }}
+                activeOpacity={0.7}
+                style={styles.historyExpandButton}
+              >
+                <Text style={styles.historyExpandText}>
+                  {historyExpanded ? 'Свернуть' : `Показать ещё (${historyOverflow})`}
+                </Text>
+                <Ionicons
+                  name={historyExpanded ? 'chevron-up' : 'chevron-down'}
+                  size={16}
+                  color={Colors.royalBlue}
+                />
+              </TouchableOpacity>
+            )}
           </View>
         </Section>
       )}
@@ -1136,6 +1163,19 @@ const styles = StyleSheet.create({
     ...Typography.body,
     color: Colors.text,
     flex: 1,
+  },
+  historyExpandButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 4,
+    paddingVertical: Spacing.sm + 2,
+    marginTop: 2,
+  },
+  historyExpandText: {
+    ...Typography.caption,
+    color: Colors.royalBlue,
+    fontWeight: '600',
   },
   modalContainer: {
     flex: 1,

@@ -49,6 +49,9 @@ export function AutoRail({
   const scrollRef = useRef<ScrollView>(null);
   const scrollX = useRef(new Animated.Value(0)).current;
   const [contentW, setContentW] = useState(0);
+  const pausedRef = useRef(false);
+  const currentOffset = useRef(0);
+  const resumeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const halfWidth = contentW / 2;
 
   useEffect(() => {
@@ -69,9 +72,11 @@ export function AutoRail({
     );
     anim.start();
     const tick = () => {
-      // @ts-ignore
-      const v = scrollX.__getValue?.() ?? 0;
-      scrollRef.current?.scrollTo({ x: v, animated: false });
+      if (!pausedRef.current) {
+        // @ts-ignore
+        const v = scrollX.__getValue?.() ?? 0;
+        scrollRef.current?.scrollTo({ x: v, animated: false });
+      }
       raf = requestAnimationFrame(tick);
     };
     raf = requestAnimationFrame(tick);
@@ -79,8 +84,20 @@ export function AutoRail({
       anim.stop();
       scrollX.removeListener(id);
       if (raf != null) cancelAnimationFrame(raf);
+      if (resumeTimer.current) clearTimeout(resumeTimer.current);
     };
   }, [halfWidth, scrollX]);
+
+  const pauseAndScheduleResume = () => {
+    pausedRef.current = true;
+    if (resumeTimer.current) clearTimeout(resumeTimer.current);
+    resumeTimer.current = setTimeout(() => {
+      // Перед резюмом синхронизируем Animated.Value с реальной позицией скролла,
+      // чтобы рейл не «прыгнул» на тот участок, куда ушла анимация за время паузы.
+      scrollX.setValue(currentOffset.current);
+      pausedRef.current = false;
+    }, 2500);
+  };
 
   if (!items.length) return null;
   const doubled = [...items, ...items];
@@ -98,6 +115,10 @@ export function AutoRail({
         scrollEnabled
         contentContainerStyle={{ paddingHorizontal: HORIZONTAL_PADDING, gap: 12 }}
         onContentSizeChange={(w) => setContentW(w)}
+        onTouchStart={pauseAndScheduleResume}
+        onScrollBeginDrag={pauseAndScheduleResume}
+        onScroll={(e) => { currentOffset.current = e.nativeEvent.contentOffset.x; }}
+        scrollEventThrottle={16}
       >
         {doubled.map((r, i) => (
           <TouchableOpacity
