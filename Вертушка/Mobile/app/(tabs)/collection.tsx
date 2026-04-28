@@ -498,7 +498,7 @@ export default function CollectionScreen() {
       <View style={styles.stickyToolbar}>
         {/* Title row: Коллекция + avatar */}
         <View style={styles.avatarRow}>
-          <AnimatedGradientText style={Typography.heroTitle}>Коллекция</AnimatedGradientText>
+          <AnimatedGradientText style={[Typography.heroTitle, { fontFamily: 'RubikMonoOne' }]}>Коллекция</AnimatedGradientText>
           <TouchableOpacity style={styles.profileButton} onPress={handleProfilePress}>
             {user?.avatar_url ? (
               <Image source={resolveMediaUrl(user.avatar_url)} style={styles.avatar} cachePolicy="disk" />

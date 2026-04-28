@@ -635,7 +635,7 @@ export default function SearchScreen() {
     <View style={styles.searchContainer}>
       {/* Title row + avatar */}
       <View style={styles.topRow}>
-        <AnimatedGradientText style={Typography.heroTitle}>Поиск</AnimatedGradientText>
+        <AnimatedGradientText style={[Typography.heroTitle, { fontFamily: 'RubikMonoOne' }]}>Поиск</AnimatedGradientText>
         <TouchableOpacity style={styles.profileButton} onPress={handleProfilePress}>
           {user?.avatar_url ? (
             <Image source={resolveMediaUrl(user.avatar_url)} style={styles.avatar} cachePolicy="disk" />
