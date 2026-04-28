@@ -114,7 +114,7 @@ export function VinylColorTag({ vinylColorRaw }: VinylColorTagProps) {
       ]}
     >
       <View style={[styles.dot, { backgroundColor: primaryColor }]} />
-      <Text style={[styles.label, { color: primaryColor }]}>{label}</Text>
+      <Text style={styles.label}>{label}</Text>
     </Animated.View>
   );
 }
@@ -137,5 +137,6 @@ const styles = StyleSheet.create({
   label: {
     ...Typography.caption,
     fontFamily: 'Inter_500Medium',
+    color: '#0A0B3B',
   },
 });
