@@ -1111,6 +1111,37 @@
             });
         })();
 
+        // Body scroll lock — фиксирует фон, когда открыта любая модалка.
+        // Использует position:fixed (надёжно работает на iOS Safari).
+        // Счётчик допускает переходы между модалками без потери позиции скролла.
+        var _scrollLockCount = 0;
+        var _lockedScrollY = 0;
+        function lockBodyScroll() {
+            if (_scrollLockCount === 0) {
+                _lockedScrollY = window.scrollY || document.documentElement.scrollTop || 0;
+                var body = document.body;
+                body.style.position = 'fixed';
+                body.style.top = '-' + _lockedScrollY + 'px';
+                body.style.left = '0';
+                body.style.right = '0';
+                body.style.width = '100%';
+            }
+            _scrollLockCount++;
+        }
+        function unlockBodyScroll() {
+            if (_scrollLockCount <= 0) { _scrollLockCount = 0; return; }
+            _scrollLockCount--;
+            if (_scrollLockCount === 0) {
+                var body = document.body;
+                body.style.position = '';
+                body.style.top = '';
+                body.style.left = '';
+                body.style.right = '';
+                body.style.width = '';
+                window.scrollTo(0, _lockedScrollY);
+            }
+        }
+
         // Record preview modal
         function esc(s) { return s.replace(/&/g,'&amp;').replace(/</g,'&lt;'); }
         function openRecordPreview(card) {
@@ -1142,10 +1173,17 @@
             var discogsEl = document.getElementById('rpDiscogs');
             if (d.discogs) { discogsEl.href = 'https://www.discogs.com/release/' + d.discogs; discogsEl.style.display = ''; }
             else { discogsEl.style.display = 'none'; }
-            document.getElementById('recordPreviewModal').classList.add('active');
+            var rpModal = document.getElementById('recordPreviewModal');
+            if (!rpModal.classList.contains('active')) {
+                rpModal.classList.add('active');
+                lockBodyScroll();
+            }
         }
         function closeRecordPreview() {
-            document.getElementById('recordPreviewModal').classList.remove('active');
+            var rpModal = document.getElementById('recordPreviewModal');
+            if (!rpModal.classList.contains('active')) return;
+            rpModal.classList.remove('active');
+            unlockBodyScroll();
         }
         document.getElementById('recordPreviewModal').addEventListener('click', function(e) {
             if (e.target === this) closeRecordPreview();
@@ -1182,10 +1220,15 @@
             if (d.discogs) { bmDiscogs.href = 'https://www.discogs.com/release/' + d.discogs; bmDiscogs.style.display = ''; }
             else { bmDiscogs.style.display = 'none'; }
             document.getElementById('itemId').value = d.wishlistId || '';
-            bookingModal.classList.add('active');
+            if (!bookingModal.classList.contains('active')) {
+                bookingModal.classList.add('active');
+                lockBodyScroll();
+            }
         }
         function closeBookingModal() {
+            if (!bookingModal.classList.contains('active')) return;
             bookingModal.classList.remove('active');
+            unlockBodyScroll();
             bookingForm.reset();
         }
         bookingModal && bookingModal.addEventListener('click', function(e) {
@@ -1206,10 +1249,15 @@
             linkEl.href = cancelUrl;
             linkEl.textContent = cancelUrl;
             _bsReloadOnClose = true;
-            bookingSuccessModal.classList.add('active');
+            if (!bookingSuccessModal.classList.contains('active')) {
+                bookingSuccessModal.classList.add('active');
+                lockBodyScroll();
+            }
         }
         function closeBookingSuccess() {
+            if (!bookingSuccessModal.classList.contains('active')) return;
             bookingSuccessModal.classList.remove('active');
+            unlockBodyScroll();
             if (_bsReloadOnClose) { _bsReloadOnClose = false; location.reload(); }
         }
         function copyCancel() {
