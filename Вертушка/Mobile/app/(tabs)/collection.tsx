@@ -17,6 +17,7 @@ import { RecordGrid } from '../../components/RecordGrid';
 import { FolderPickerModal } from '../../components/FolderPickerModal';
 import { SegmentedControl } from '../../components/ui';
 import { useCollectionStore, useAuthStore } from '../../lib/store';
+import { useTourTarget } from '../../lib/useTourTarget';
 import { api, resolveMediaUrl } from '../../lib/api';
 import { CollectionItem, WishlistItem, CollectionTab } from '../../lib/types';
 import { Colors, Spacing, Typography, BorderRadius, Gradients, Shadows } from '../../constants/theme';
@@ -56,6 +57,10 @@ const FORMAT_OPTIONS: { key: FormatFilter; label: string; match: string[] }[] = 
 export default function CollectionScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
+  const viewToggleTarget = useTourTarget('collection-view-toggle');
+  const valueTarget = useTourTarget('collection-value');
+  const foldersTarget = useTourTarget('collection-folders');
+  const recordCardTarget = useTourTarget('collection-record-card');
   const [isSelectionMode, setIsSelectionMode] = useState(false);
   const [selectedItems, setSelectedItems] = useState<Set<string>>(new Set());
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -458,7 +463,12 @@ export default function CollectionScreen() {
       {/* Folders section (scrolls away) */}
       <Animated.View style={{ opacity: menuOpacity, maxHeight: menuAnim.interpolate({ inputRange: [0, 1], outputRange: [0, 500] }), overflow: 'hidden' }}>
         {activeTab === 'collection' && folders.length > 0 && (
-          <View style={styles.foldersSection}>
+          <View
+            ref={foldersTarget.ref}
+            onLayout={foldersTarget.onLayout}
+            collapsable={false}
+            style={styles.foldersSection}
+          >
             <Text style={styles.foldersSectionTitle}>Папки</Text>
             <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.foldersScroll}>
               <TouchableOpacity style={styles.newFolderCard} onPress={handleCreateFolder}>
@@ -483,10 +493,12 @@ export default function CollectionScreen() {
         )}
 
         {activeTab === 'collection' && folders.length === 0 && (
-          <TouchableOpacity style={styles.createFirstFolder} onPress={handleCreateFolder}>
-            <Ionicons name="folder-outline" size={20} color={Colors.textMuted} />
-            <Text style={styles.createFirstFolderText}>Создать папку</Text>
-          </TouchableOpacity>
+          <View ref={foldersTarget.ref} onLayout={foldersTarget.onLayout} collapsable={false}>
+            <TouchableOpacity style={styles.createFirstFolder} onPress={handleCreateFolder}>
+              <Ionicons name="folder-outline" size={20} color={Colors.textMuted} />
+              <Text style={styles.createFirstFolderText}>Создать папку</Text>
+            </TouchableOpacity>
+          </View>
         )}
       </Animated.View>
     </View>
@@ -559,31 +571,35 @@ export default function CollectionScreen() {
 
           {/* Grid / List toggle */}
           {!isSelectionMode && (
-            <TouchableOpacity
-              style={styles.viewToggleButton}
-              onPress={handleToggleViewMode}
-              activeOpacity={0.7}
-            >
-              <View style={styles.viewToggleIconContainer}>
-                <Animated.View style={[styles.viewToggleIcon, { opacity: gridIconOpacity, transform: [{ scale: gridIconScale }] }]}>
-                  <Ionicons name="grid-outline" size={18} color={Colors.royalBlue} />
-                </Animated.View>
-                <Animated.View style={[styles.viewToggleIcon, styles.viewToggleIconAbsolute, { opacity: listIconOpacity, transform: [{ scale: listIconScale }] }]}>
-                  <Ionicons name="list-outline" size={18} color={Colors.royalBlue} />
-                </Animated.View>
-              </View>
-            </TouchableOpacity>
+            <View ref={viewToggleTarget.ref} onLayout={viewToggleTarget.onLayout} collapsable={false}>
+              <TouchableOpacity
+                style={styles.viewToggleButton}
+                onPress={handleToggleViewMode}
+                activeOpacity={0.7}
+              >
+                <View style={styles.viewToggleIconContainer}>
+                  <Animated.View style={[styles.viewToggleIcon, { opacity: gridIconOpacity, transform: [{ scale: gridIconScale }] }]}>
+                    <Ionicons name="grid-outline" size={18} color={Colors.royalBlue} />
+                  </Animated.View>
+                  <Animated.View style={[styles.viewToggleIcon, styles.viewToggleIconAbsolute, { opacity: listIconOpacity, transform: [{ scale: listIconScale }] }]}>
+                    <Ionicons name="list-outline" size={18} color={Colors.royalBlue} />
+                  </Animated.View>
+                </View>
+              </TouchableOpacity>
+            </View>
           )}
 
           {/* Value button */}
           {!isSelectionMode && activeTab === 'collection' && (
-            <TouchableOpacity
-              style={styles.valueButton}
-              onPress={() => router.push('/collection/value')}
-              activeOpacity={0.7}
-            >
-              <Ionicons name="cash-outline" size={18} color={Colors.royalBlue} />
-            </TouchableOpacity>
+            <View ref={valueTarget.ref} onLayout={valueTarget.onLayout} collapsable={false}>
+              <TouchableOpacity
+                style={styles.valueButton}
+                onPress={() => router.push('/collection/value')}
+                activeOpacity={0.7}
+              >
+                <Ionicons name="cash-outline" size={18} color={Colors.royalBlue} />
+              </TouchableOpacity>
+            </View>
           )}
 
           {/* Filter button */}
@@ -635,6 +651,12 @@ export default function CollectionScreen() {
         </Animated.View>
       </View>
 
+      <View
+        ref={recordCardTarget.ref}
+        onLayout={recordCardTarget.onLayout}
+        collapsable={false}
+        style={styles.recordGridContainer}
+      >
       <RecordGrid
         key={viewMode}
         data={data}
@@ -661,6 +683,7 @@ export default function CollectionScreen() {
         onToggleItemSelection={handleToggleItemSelection}
         onLongPressItem={handleLongPressItem}
       />
+      </View>
 
       {/* Нижний подвал в режиме выбора */}
       {isSelectionMode && (
@@ -747,6 +770,9 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: Colors.background,
+  },
+  recordGridContainer: {
+    flex: 1,
   },
   stickyToolbar: {
     paddingHorizontal: Spacing.md,

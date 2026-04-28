@@ -38,23 +38,49 @@ const ONBOARDING_KEY = '@vertushka:onboarding_complete';
 
 // ==================== Onboarding Store ====================
 
+export const TOUR_STEP_COUNT = 10;
+
+export type TourTargetKey =
+  | 'tab-search'
+  | 'tab-index'
+  | 'tab-collection'
+  | 'scan-segments'
+  | 'search-filters'
+  | 'collection-view-toggle'
+  | 'collection-record-card'
+  | 'collection-folders'
+  | 'collection-value'
+  | 'profile-share';
+
+export interface TargetLayout {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
+
 interface OnboardingState {
   hasSeenWelcome: boolean;
   tourStep: number | null;
   isReady: boolean;
+  tourTargets: Partial<Record<TourTargetKey, TargetLayout>>;
 
   checkOnboarding: () => Promise<void>;
   completeWelcome: () => Promise<void>;
   startTour: () => void;
   nextStep: () => void;
+  setTourStep: (step: number) => void;
   skipTour: () => Promise<void>;
   completeTour: () => Promise<void>;
+  setTourTarget: (key: TourTargetKey, layout: TargetLayout) => void;
+  resetOnboarding: () => Promise<void>;
 }
 
 export const useOnboardingStore = create<OnboardingState>((set, get) => ({
   hasSeenWelcome: true,
   tourStep: null,
   isReady: false,
+  tourTargets: {},
 
   checkOnboarding: async () => {
     try {
@@ -76,15 +102,17 @@ export const useOnboardingStore = create<OnboardingState>((set, get) => ({
 
   startTour: () => set({ tourStep: 0 }),
 
+  setTourStep: (step) => set({ tourStep: step }),
+
   nextStep: () => {
     const { tourStep } = get();
-    if (tourStep !== null && tourStep < 2) {
+    if (tourStep !== null && tourStep < TOUR_STEP_COUNT - 1) {
       set({ tourStep: tourStep + 1 });
     }
   },
 
   skipTour: async () => {
-    set({ tourStep: null });
+    set({ tourStep: null, hasSeenWelcome: true });
     try {
       await AsyncStorage.setItem(ONBOARDING_KEY, 'true');
     } catch (error) {
@@ -93,11 +121,24 @@ export const useOnboardingStore = create<OnboardingState>((set, get) => ({
   },
 
   completeTour: async () => {
-    set({ tourStep: null });
+    set({ tourStep: null, hasSeenWelcome: true });
     try {
       await AsyncStorage.setItem(ONBOARDING_KEY, 'true');
     } catch (error) {
       console.error('Failed to save onboarding state:', error);
+    }
+  },
+
+  setTourTarget: (key, layout) => set((state) => ({
+    tourTargets: { ...state.tourTargets, [key]: layout },
+  })),
+
+  resetOnboarding: async () => {
+    set({ hasSeenWelcome: false, tourStep: null, tourTargets: {} });
+    try {
+      await AsyncStorage.removeItem(ONBOARDING_KEY);
+    } catch (error) {
+      console.error('Failed to reset onboarding state:', error);
     }
   },
 }));

@@ -25,6 +25,7 @@ import { RecordGrid } from '../../components/RecordGrid';
 import { AutoRail } from '../../components/AutoRail';
 import { Section } from '../../components/Section';
 import { useSearchStore, useCollectionStore, useUserSearchStore, useAuthStore, useSuggestStore } from '../../lib/store';
+import { useTourTarget } from '../../lib/useTourTarget';
 import { analytics } from '../../lib/analytics';
 import { api, resolveMediaUrl } from '../../lib/api';
 import { MasterSearchResult, ReleaseSearchResult, ArtistSearchResult, UserWithStats, PublicProfileRecord } from '../../lib/types';
@@ -101,6 +102,7 @@ export default function SearchScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { user } = useAuthStore();
+  const filtersTarget = useTourTarget('search-filters');
   const [searchInput, setSearchInput] = useState('');
   const [inputFocused, setInputFocused] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
@@ -713,12 +715,14 @@ export default function SearchScreen() {
           )}
         </View>
         {!isUserSearch && (
-          <TouchableOpacity
-            style={[styles.filterButton, hasActiveFilters && styles.filterButtonActive]}
-            onPress={openFilters}
-          >
-            <Ionicons name="options-outline" size={20} color={hasActiveFilters ? Colors.background : Colors.text} />
-          </TouchableOpacity>
+          <View ref={filtersTarget.ref} onLayout={filtersTarget.onLayout} collapsable={false}>
+            <TouchableOpacity
+              style={[styles.filterButton, hasActiveFilters && styles.filterButtonActive]}
+              onPress={openFilters}
+            >
+              <Ionicons name="options-outline" size={20} color={hasActiveFilters ? Colors.background : Colors.text} />
+            </TouchableOpacity>
+          </View>
         )}
       </View>
 

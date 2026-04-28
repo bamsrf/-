@@ -18,7 +18,7 @@ import {
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useAuthStore, useProfileStore } from '../../lib/store';
+import { useAuthStore, useOnboardingStore, useProfileStore } from '../../lib/store';
 import api from '../../lib/api';
 import { toast } from '../../lib/toast';
 import { Colors, Typography, Spacing, BorderRadius } from '../../constants/theme';
@@ -132,6 +132,7 @@ export default function EditProfileScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { user, setUser } = useAuthStore();
+  const resetOnboarding = useOnboardingStore((s) => s.resetOnboarding);
   const { settings, fetchSettings, updateSettings, isSaving: isToggleSaving } = useProfileStore();
   const [displayName, setDisplayName] = useState(user?.display_name ?? '');
   const [username, setUsername] = useState(user?.username ?? '');
@@ -219,6 +220,11 @@ export default function EditProfileScreen() {
       toast.error('Не удалось сохранить настройку');
     }
   }, [updateSettings]);
+
+  const handleReplayOnboarding = useCallback(async () => {
+    await resetOnboarding();
+    router.replace('/onboarding');
+  }, [resetOnboarding, router]);
 
   return (
     <View style={[styles.container, { paddingTop: insets.top }]}>
@@ -362,6 +368,24 @@ export default function EditProfileScreen() {
                 disabled={isToggleSaving}
               />
             </View>
+          </View>
+
+          {/* Онбординг */}
+          <Text style={[styles.sectionTitle, { marginTop: Spacing.xl }]}>Онбординг</Text>
+          <View style={styles.section}>
+            <TouchableOpacity
+              style={[styles.settingRow, styles.settingRowLast]}
+              onPress={handleReplayOnboarding}
+              activeOpacity={0.7}
+            >
+              <View style={styles.settingInfo}>
+                <Text style={styles.settingLabel}>Пройти заново</Text>
+                <Text style={styles.settingDescription}>
+                  Снова показать welcome и подсказки по приложению
+                </Text>
+              </View>
+              <Ionicons name="refresh-outline" size={22} color={Colors.royalBlue} />
+            </TouchableOpacity>
           </View>
 
           <View style={{ height: insets.bottom + Spacing.xl }} />

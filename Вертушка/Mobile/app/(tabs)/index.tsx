@@ -21,6 +21,7 @@ import * as ImageManipulator from 'expo-image-manipulator';
 import { Button, SegmentedControl } from '../../components/ui';
 import { RecordCard } from '../../components/RecordCard';
 import { useScannerStore, useCollectionStore } from '../../lib/store';
+import { useTourTarget } from '../../lib/useTourTarget';
 import { analytics } from '../../lib/analytics';
 import { RecordSearchResult, ScanMode } from '../../lib/types';
 import { Colors, Typography, Spacing, BorderRadius, Shadows } from '../../constants/theme';
@@ -38,6 +39,7 @@ export default function ScannerScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const cameraRef = useRef<CameraView>(null);
+  const segmentsTarget = useTourTarget('scan-segments');
   const [permission, requestPermission] = useCameraPermissions();
   const [isScanning, setIsScanning] = useState(true);
   const [showResults, setShowResults] = useState(false);
@@ -234,16 +236,22 @@ export default function ScannerScreen() {
         {/* Заголовок + переключатель режимов */}
         <View style={styles.header}>
           <Text style={styles.headerTitle}>Сканирование</Text>
-          <SegmentedControl<ScanMode>
-            segments={[
-              { key: 'barcode', label: 'Штрихкод' },
-              { key: 'cover', label: 'Обложка' },
-            ]}
-            selectedKey={scanMode}
-            onSelect={handleModeChange}
+          <View
+            ref={segmentsTarget.ref}
+            onLayout={segmentsTarget.onLayout}
+            collapsable={false}
             style={styles.modeSwitch}
-            disabled={isLoading}
-          />
+          >
+            <SegmentedControl<ScanMode>
+              segments={[
+                { key: 'barcode', label: 'Штрихкод' },
+                { key: 'cover', label: 'Обложка' },
+              ]}
+              selectedKey={scanMode}
+              onSelect={handleModeChange}
+              disabled={isLoading}
+            />
+          </View>
           <Text style={styles.headerSubtitle}>
             {scanMode === 'barcode'
               ? 'Наведите камеру на штрихкод пластинки'

@@ -29,6 +29,7 @@ try {
 }
 import { Colors } from '../constants/theme';
 import { OfflineBanner } from '../components/OfflineBanner';
+import { OnboardingOverlay } from '../components/OnboardingOverlay';
 import Toast from 'react-native-toast-message';
 
 Notifications.setNotificationHandler({
@@ -138,6 +139,7 @@ function RootLayout() {
           <Stack.Screen name="settings/notifications" />
           <Stack.Screen name="social/list" />
         </Stack>
+        <OnboardingOverlay />
         <Toast />
       </SafeAreaProvider>
     </GestureHandlerRootView>

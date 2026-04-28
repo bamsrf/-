@@ -26,6 +26,8 @@ import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuthStore, useCollectionStore, useOnboardingStore, useFollowStore } from '../lib/store';
+import { useTourTarget } from '../lib/useTourTarget';
+import { OnboardingOverlay } from '../components/OnboardingOverlay';
 import { CollectionTab, GiftGivenItem } from '../lib/types';
 import { Button } from '../components/ui';
 import { AnimatedGradientText } from '../components/AnimatedGradientText';
@@ -52,6 +54,7 @@ function SwipeDeleteAction({ drag, onPress }: { drag: SharedValue<number>; onPre
 export default function ProfileScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
+  const shareTarget = useTourTarget('profile-share');
   const { user, logout, setUser } = useAuthStore();
   const { collectionItems, wishlistItems, setActiveTab } = useCollectionStore();
   const onboarding = useOnboardingStore();
@@ -375,7 +378,12 @@ export default function ProfileScreen() {
         </View>
 
         {/* Ссылка на профиль */}
-        <View style={[styles.linkCard, Shadows.sm]}>
+        <View
+          ref={shareTarget.ref}
+          onLayout={shareTarget.onLayout}
+          collapsable={false}
+          style={[styles.linkCard, Shadows.sm]}
+        >
           <Text style={styles.linkLabel}>Ваш профиль</Text>
           <Text style={styles.linkUrl}>{profileUrl}</Text>
           <View style={styles.linkActions}>
@@ -598,6 +606,7 @@ export default function ProfileScreen() {
         <Text style={styles.version}>Вертушка v1.0.0</Text>
       </ScrollView>
 
+      <OnboardingOverlay />
     </View>
   );
 }

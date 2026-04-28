@@ -17,6 +17,14 @@ import Animated, {
 } from 'react-native-reanimated';
 import type { BottomTabBarProps } from '@react-navigation/bottom-tabs';
 import { Colors, Shadows, Gradients } from '../constants/theme';
+import { useTourTarget } from '../lib/useTourTarget';
+import type { TourTargetKey } from '../lib/store';
+
+const TAB_TARGET_KEYS: Record<string, TourTargetKey> = {
+  search: 'tab-search',
+  index: 'tab-index',
+  collection: 'tab-collection',
+};
 
 const TAB_ICONS: Record<string, { outline: keyof typeof Ionicons.glyphMap; filled: keyof typeof Ionicons.glyphMap }> = {
   search: { outline: 'search-outline', filled: 'search' },
@@ -41,6 +49,8 @@ function TabIcon({
   onLongPress: () => void;
 }) {
   const icons = TAB_ICONS[routeName] || TAB_ICONS.search;
+  const targetKey = TAB_TARGET_KEYS[routeName];
+  const tourTarget = useTourTarget(targetKey ?? 'tab-index');
 
   const animatedIcon = useAnimatedStyle(() => {
     const scale = withSpring(isFocused ? 1.25 : 1.0, {
@@ -56,20 +66,27 @@ function TabIcon({
   }, [isFocused]);
 
   return (
-    <TouchableOpacity
+    <View
+      ref={targetKey ? tourTarget.ref : undefined}
+      onLayout={targetKey ? tourTarget.onLayout : undefined}
       style={styles.tabItem}
-      onPress={onPress}
-      onLongPress={onLongPress}
-      activeOpacity={0.7}
+      collapsable={false}
     >
-      <Animated.View style={[animatedIcon, animatedOpacity]}>
-        <Ionicons
-          name={isFocused ? icons.filled : icons.outline}
-          size={ICON_SIZE}
-          color={isFocused ? Colors.royalBlue : Colors.textMuted}
-        />
-      </Animated.View>
-    </TouchableOpacity>
+      <TouchableOpacity
+        style={styles.tabItemInner}
+        onPress={onPress}
+        onLongPress={onLongPress}
+        activeOpacity={0.7}
+      >
+        <Animated.View style={[animatedIcon, animatedOpacity]}>
+          <Ionicons
+            name={isFocused ? icons.filled : icons.outline}
+            size={ICON_SIZE}
+            color={isFocused ? Colors.royalBlue : Colors.textMuted}
+          />
+        </Animated.View>
+      </TouchableOpacity>
+    </View>
   );
 }
 
@@ -186,6 +203,10 @@ const styles = StyleSheet.create({
     justifyContent: 'space-around',
   },
   tabItem: {
+    flex: 1,
+    height: '100%',
+  },
+  tabItemInner: {
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
