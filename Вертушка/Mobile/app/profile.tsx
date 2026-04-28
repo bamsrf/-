@@ -505,6 +505,15 @@ export default function ProfileScreen() {
 
           <TouchableOpacity
             style={styles.settingsItem}
+            onPress={() => router.push('/collection/value')}
+          >
+            <Ionicons name="cash-outline" size={24} color={Colors.royalBlue} />
+            <Text style={styles.settingsItemText}>Стоимость коллекции</Text>
+            <Ionicons name="chevron-forward" size={20} color={Colors.textMuted} />
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={styles.settingsItem}
             onPress={() => router.push('/settings/edit-profile')}
           >
             <Ionicons name="person-outline" size={24} color={Colors.royalBlue} />
