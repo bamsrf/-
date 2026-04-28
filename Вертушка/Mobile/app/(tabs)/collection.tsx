@@ -571,35 +571,37 @@ export default function CollectionScreen() {
 
           {/* Grid / List toggle */}
           {!isSelectionMode && (
-            <View ref={viewToggleTarget.ref} onLayout={viewToggleTarget.onLayout} collapsable={false}>
-              <TouchableOpacity
-                style={styles.viewToggleButton}
-                onPress={handleToggleViewMode}
-                activeOpacity={0.7}
-              >
-                <View style={styles.viewToggleIconContainer}>
-                  <Animated.View style={[styles.viewToggleIcon, { opacity: gridIconOpacity, transform: [{ scale: gridIconScale }] }]}>
-                    <Ionicons name="grid-outline" size={18} color={Colors.royalBlue} />
-                  </Animated.View>
-                  <Animated.View style={[styles.viewToggleIcon, styles.viewToggleIconAbsolute, { opacity: listIconOpacity, transform: [{ scale: listIconScale }] }]}>
-                    <Ionicons name="list-outline" size={18} color={Colors.royalBlue} />
-                  </Animated.View>
-                </View>
-              </TouchableOpacity>
-            </View>
+            <TouchableOpacity
+              ref={viewToggleTarget.ref}
+              onLayout={viewToggleTarget.onLayout}
+              collapsable={false}
+              style={styles.viewToggleButton}
+              onPress={handleToggleViewMode}
+              activeOpacity={0.7}
+            >
+              <View style={styles.viewToggleIconContainer}>
+                <Animated.View style={[styles.viewToggleIcon, { opacity: gridIconOpacity, transform: [{ scale: gridIconScale }] }]}>
+                  <Ionicons name="grid-outline" size={18} color={Colors.royalBlue} />
+                </Animated.View>
+                <Animated.View style={[styles.viewToggleIcon, styles.viewToggleIconAbsolute, { opacity: listIconOpacity, transform: [{ scale: listIconScale }] }]}>
+                  <Ionicons name="list-outline" size={18} color={Colors.royalBlue} />
+                </Animated.View>
+              </View>
+            </TouchableOpacity>
           )}
 
           {/* Value button */}
           {!isSelectionMode && activeTab === 'collection' && (
-            <View ref={valueTarget.ref} onLayout={valueTarget.onLayout} collapsable={false}>
-              <TouchableOpacity
-                style={styles.valueButton}
-                onPress={() => router.push('/collection/value')}
-                activeOpacity={0.7}
-              >
-                <Ionicons name="cash-outline" size={18} color={Colors.royalBlue} />
-              </TouchableOpacity>
-            </View>
+            <TouchableOpacity
+              ref={valueTarget.ref}
+              onLayout={valueTarget.onLayout}
+              collapsable={false}
+              style={styles.valueButton}
+              onPress={() => router.push('/collection/value')}
+              activeOpacity={0.7}
+            >
+              <Ionicons name="cash-outline" size={18} color={Colors.royalBlue} />
+            </TouchableOpacity>
           )}
 
           {/* Filter button */}
@@ -673,10 +675,26 @@ export default function CollectionScreen() {
         isRefreshing={isRefreshing}
         onRefresh={handleRefresh}
         onEndReached={activeTab === 'collection' && collectionHasMore && !isLoadingMore ? loadMoreCollectionItems : undefined}
+        emptyTitle={
+          activeTab === 'collection'
+            ? 'Здесь будут твои пластинки'
+            : 'Здесь будет вишлист'
+        }
+        emptyIcon={activeTab === 'collection' ? 'disc-outline' : 'heart-outline'}
         emptyMessage={
           activeTab === 'collection'
-            ? 'Ваша коллекция пуста.\nОтсканируйте или найдите пластинку, чтобы добавить.'
-            : 'Список желаний пуст.\nДобавьте пластинки, которые хотите приобрести.'
+            ? 'Сканируй штрихкод или находи через поиск — пластинки приземлятся сюда'
+            : 'Добавляй пластинки, которые хочешь приобрести — друзья смогут забронировать их в подарок'
+        }
+        emptyActions={
+          activeTab === 'collection'
+            ? [
+                { label: 'Сканировать', icon: 'scan-outline', onPress: () => router.push('/(tabs)') },
+                { label: 'Найти', icon: 'search-outline', onPress: () => router.push('/(tabs)/search') },
+              ]
+            : [
+                { label: 'Найти пластинку', icon: 'search-outline', onPress: () => router.push('/(tabs)/search') },
+              ]
         }
         ListHeaderComponent={ScrollableHeader}
         isSelectionMode={isSelectionMode}

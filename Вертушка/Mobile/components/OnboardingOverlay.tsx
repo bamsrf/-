@@ -25,7 +25,7 @@ import Animated, {
   Easing,
   interpolate,
 } from 'react-native-reanimated';
-import { useOnboardingStore, TourTargetKey } from '../lib/store';
+import { useOnboardingStore, useCollectionStore, TourTargetKey } from '../lib/store';
 import { Colors } from '../constants/theme';
 
 const SCREEN = Dimensions.get('window');
@@ -91,8 +91,8 @@ const TOUR_STEPS: TourStepConfig[] = [
   {
     target: 'collection-record-card',
     route: '/(tabs)/collection',
-    title: 'Long-press = выбор',
-    body: 'Удерживай карточку, чтобы выбрать сразу несколько — для папок, удаления, подарков',
+    title: 'Удерживай — выбираешь несколько',
+    body: 'Long-press по карточке включит режим выбора — для папок, удаления и подарков сразу пачкой',
     radius: 18,
     pad: 6,
   },
@@ -108,7 +108,7 @@ const TOUR_STEPS: TourStepConfig[] = [
     target: 'collection-value',
     route: '/(tabs)/collection',
     title: 'Сколько стоит твоя коллекция',
-    body: 'Считаем по Discogs marketplace, конвертируем USD → RUB по курсу ЦБ',
+    body: 'Тапни по иконке — посчитаем сумму по Discogs marketplace и конвертируем USD → RUB по курсу ЦБ',
     radius: 16,
     pad: 6,
   },
@@ -129,11 +129,16 @@ export function OnboardingOverlay() {
   const completeTour = useOnboardingStore((s) => s.completeTour);
   const skipTour = useOnboardingStore((s) => s.skipTour);
 
-  // Drive route from current step
+  // Drive route from current step. Also force collection segment to "В наличии"
+  // for steps that highlight folders/value-button — those only render when the
+  // collection segment is active.
   useEffect(() => {
     if (tourStep === null) return;
     const step = TOUR_STEPS[tourStep];
     if (!step) return;
+    if (step.route.includes('/collection')) {
+      useCollectionStore.getState().setActiveTab('collection');
+    }
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     router.navigate(step.route as any);
   }, [tourStep]);
