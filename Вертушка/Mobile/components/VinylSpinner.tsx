@@ -312,7 +312,7 @@ export function VinylSpinner({ colorConfig, size = 220, labelName }: VinylSpinne
 
           {/* «Вертушка» — Rubik Mono One */}
           <SvgText
-            x={cx} y={cy - 8 * scale}
+            x={cx} y={cy - 12 * scale}
             textAnchor="middle"
             dominantBaseline="middle"
             fontSize={8 * scale}
@@ -324,9 +324,12 @@ export function VinylSpinner({ colorConfig, size = 220, labelName }: VinylSpinne
             Вертушка
           </SvgText>
 
+          {/* Отверстие — строго по центру */}
+          <Circle cx={cx} cy={cy} r={labelInnerR} fill="#000" />
+
           {/* 33⅓ RPM — Inter */}
           <SvgText
-            x={cx} y={cy + 14 * scale}
+            x={cx} y={cy + 12 * scale}
             textAnchor="middle"
             dominantBaseline="middle"
             fontSize={5 * scale}
@@ -337,9 +340,6 @@ export function VinylSpinner({ colorConfig, size = 220, labelName }: VinylSpinne
           >
             {'33⅓ RPM'}
           </SvgText>
-
-          {/* Отверстие */}
-          <Circle cx={cx} cy={cy} r={labelInnerR} fill="#000" />
         </Svg>
 
       </Animated.View>
