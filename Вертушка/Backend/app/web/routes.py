@@ -23,6 +23,7 @@ from app.models.profile_share import ProfileShare
 from app.models.gift_booking import GiftBooking, GiftStatus
 from app.api.profile import get_public_profile_payload, _get_top_expensive, _get_new_releases
 from app.services.exchange import get_usd_rub_rate
+from app.services.pricing import PricingParams, estimate_rub
 from app.services.valuation import get_monthly_delta
 
 logger = logging.getLogger(__name__)
@@ -92,6 +93,7 @@ async def public_profile_page(
 
     # Курс USD→RUB (кэшируется, дёшево)
     usd_rub_rate = await get_usd_rub_rate()
+    pricing_params = PricingParams.from_settings(settings)
 
     # Стоимость коллекции
     collection_value = None
@@ -105,7 +107,13 @@ async def public_profile_page(
             .where(Collection.user_id == user.id)
         )
         collection_value = round(float(value_result), 2) if value_result else 0.0
-        collection_value_rub = round(collection_value * usd_rub_rate, 2)
+        # Рубли — из закэшированного estimated_price_rub (рассчитанного по новой формуле)
+        value_rub_result = await db.scalar(
+            select(func.sum(CollectionItem.estimated_price_rub))
+            .join(Collection)
+            .where(Collection.user_id == user.id)
+        )
+        collection_value_rub = round(float(value_rub_result), 2) if value_rub_result else 0.0
         delta = await get_monthly_delta(user.id, db)
         monthly_delta = float(delta) if delta is not None else None
 
@@ -170,6 +178,23 @@ async def public_profile_page(
         og_parts.append(f"{wishlist_count} в вишлисте")
     og_description = " \u00b7 ".join(og_parts)
 
+    def compute_rub(record) -> int:
+        """\u0421\u0447\u0438\u0442\u0430\u0435\u0442 \u0440\u0443\u0431\u043b\u0451\u0432\u0443\u044e \u0446\u0435\u043d\u0443 \u0437\u0430\u043f\u0438\u0441\u0438 \u0447\u0435\u0440\u0435\u0437 \u043a\u043e\u043c\u043f\u043e\u043d\u0435\u043d\u0442\u043d\u0443\u044e \u0444\u043e\u0440\u043c\u0443\u043b\u0443 (\u0434\u043b\u044f \u0448\u0430\u0431\u043b\u043e\u043d\u0430)."""
+        if not record:
+            return 0
+        base = record.estimated_price_median or record.estimated_price_min
+        if not base:
+            return 0
+        return int(estimate_rub(
+            float(base),
+            record.country,
+            usd_rub_rate,
+            pricing_params,
+            format_type=record.format_type,
+            format_description=record.format_description,
+            discogs_data=record.discogs_data,
+        ))
+
     return templates.TemplateResponse("public_profile.html", {
         "request": request,
         "user": user,
@@ -189,8 +214,7 @@ async def public_profile_page(
         "og_description": og_description,
         "base_url": BASE_URL,
         "usd_rub_rate": float(usd_rub_rate),
-        "ru_vinyl_markup": float(settings.ru_vinyl_markup),
-        "local_countries": {'Russia', 'USSR', 'Россия', 'СССР'},
+        "compute_rub": compute_rub,
     })
 
 

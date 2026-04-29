@@ -52,8 +52,12 @@ class Settings(BaseSettings):
     smtp_password: str = Field(default="", alias="SMTP_PASSWORD")
     email_from: str = Field(default="", alias="EMAIL_FROM")
     
-    # Наценка на винил для РФ (доставка + таможня + маржа)
-    ru_vinyl_markup: float = Field(default=2.5, alias="RU_VINYL_MARKUP")
+    # Pricing формула — расчёт рублёвой цены из USD Discogs
+    pricing_base_shipping_usd: float = Field(default=20.0, alias="PRICING_BASE_SHIPPING_USD")
+    pricing_import_overhead_pct: float = Field(default=0.20, alias="PRICING_IMPORT_OVERHEAD_PCT")
+    pricing_local_overhead_pct: float = Field(default=0.30, alias="PRICING_LOCAL_OVERHEAD_PCT")
+    pricing_customs_threshold_usd: float = Field(default=220.0, alias="PRICING_CUSTOMS_THRESHOLD_USD")
+    pricing_customs_rate: float = Field(default=0.15, alias="PRICING_CUSTOMS_RATE")
 
     # Redis
     redis_url: str = Field(default="redis://localhost:6379/0", alias="REDIS_URL")

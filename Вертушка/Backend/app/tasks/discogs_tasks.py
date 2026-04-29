@@ -97,12 +97,12 @@ async def update_prices_batch():
     """
     from app.services.discogs import DiscogsService
     from app.services.exchange import get_usd_rub_rate
+    from app.services.pricing import PricingParams, estimate_rub
 
     discogs = DiscogsService()
     settings = get_settings()
+    params = PricingParams.from_settings(settings)
     updated = 0
-
-    _LOCAL_COUNTRIES = {'Russia', 'USSR', 'Россия', 'СССР'}
 
     try:
         usd_rub = await get_usd_rub_rate()
@@ -160,10 +160,14 @@ async def update_prices_batch():
                     for item in items:
                         rec = item.record
                         if rec and rec.estimated_price_min:
-                            is_local = rec.country and rec.country in _LOCAL_COUNTRIES
-                            effective_markup = 1.0 if is_local else settings.ru_vinyl_markup
-                            item.estimated_price_rub = round(
-                                float(rec.estimated_price_min) * usd_rub * effective_markup, 2
+                            item.estimated_price_rub = estimate_rub(
+                                float(rec.estimated_price_min),
+                                rec.country,
+                                usd_rub,
+                                params,
+                                format_type=rec.format_type,
+                                format_description=rec.format_description,
+                                discogs_data=rec.discogs_data,
                             )
 
                 await session.commit()
@@ -185,10 +189,14 @@ async def update_prices_batch():
                 for item in backfill_items:
                     rec = item.record
                     if rec and rec.estimated_price_min:
-                        is_local = rec.country and rec.country in _LOCAL_COUNTRIES
-                        effective_markup = 1.0 if is_local else settings.ru_vinyl_markup
-                        item.estimated_price_rub = round(
-                            float(rec.estimated_price_min) * usd_rub * effective_markup, 2
+                        item.estimated_price_rub = estimate_rub(
+                            float(rec.estimated_price_min),
+                            rec.country,
+                            usd_rub,
+                            params,
+                            format_type=rec.format_type,
+                            format_description=rec.format_description,
+                            discogs_data=rec.discogs_data,
                         )
                 await session.commit()
                 logger.info("Backfilled estimated_price_rub for %d collection items", len(backfill_items))

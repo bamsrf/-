@@ -110,20 +110,28 @@ export default function CollectionValueScreen() {
   }));
 
 
-  // Сортируем items по цене для списка
-  // Если item.estimated_price_rub не заполнен — считаем из record.estimated_price_min
+  // Сортируем items по цене для списка.
+  // Если item.estimated_price_rub не заполнен — считаем фолбэк по компонентной формуле
+  // (упрощённый аналог Backend/app/services/pricing.py).
   const sortedByPrice = React.useMemo(() => {
     const LOCAL_COUNTRIES = new Set(['Russia', 'USSR', 'Россия', 'СССР']);
     const usdRub = stats?.usd_rub_rate || 90;
-    const markup = stats?.ru_markup || 1.7;
+
+    const estimateRub = (usd: number, country?: string | null): number => {
+      if (!usd || usd <= 0) return 0;
+      const isLocal = !!country && LOCAL_COUNTRIES.has(country);
+      if (isLocal) return Math.round(usd * usdRub * 1.3);
+      let totalUsd = (usd + 20) * 1.2;
+      if (totalUsd > 220) totalUsd += (totalUsd - 220) * 0.15;
+      return Math.round(totalUsd * usdRub);
+    };
 
     return [...collectionItems]
       .map(item => {
         if (item.estimated_price_rub) return item;
         const record = item.record;
         if (record.estimated_price_min) {
-          const effectiveMarkup = record.country && LOCAL_COUNTRIES.has(record.country) ? 1.0 : markup;
-          return { ...item, estimated_price_rub: Math.round(record.estimated_price_min * usdRub * effectiveMarkup * 100) / 100 };
+          return { ...item, estimated_price_rub: estimateRub(record.estimated_price_min, record.country) };
         }
         return item;
       })
@@ -231,7 +239,7 @@ export default function CollectionValueScreen() {
               </View>
               <View style={styles.detailItem}>
                 <Text style={styles.detailLabel}>Наценка РФ</Text>
-                <Text style={styles.detailValue}>×{stats?.ru_markup || 1.7}</Text>
+                <Text style={styles.detailValue}>×{(stats?.ru_markup || 1.5).toFixed(2)}</Text>
               </View>
               <View style={styles.detailItem}>
                 <Text style={styles.detailLabel}>Оценено</Text>

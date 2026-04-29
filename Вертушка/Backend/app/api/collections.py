@@ -16,15 +16,24 @@ from app.api.auth import get_current_user
 from app.config import get_settings
 from app.services.exchange import get_usd_rub_rate
 from app.services.cover_storage import ensure_cover_cached
-
-# Страны, для которых наценка импорта не применяется
-_LOCAL_COUNTRIES = {'Russia', 'USSR', 'Россия', 'СССР'}
+from app.services.pricing import PricingParams, estimate_rub
 
 
-def _calc_price_rub(price_usd: float, usd_rub: float, markup: float, country: str | None) -> float:
-    """Рассчитывает цену в рублях. Для РФ/СССР-изданий наценка не применяется."""
-    effective_markup = 1.0 if country and country in _LOCAL_COUNTRIES else markup
-    return round(price_usd * usd_rub * effective_markup, 2)
+def _record_rub(record: Record, usd_rub: float, params: PricingParams) -> float:
+    """Считает цену в рублях для записи через компонентную формулу."""
+    if not record.estimated_price_min:
+        return 0.0
+    return estimate_rub(
+        float(record.estimated_price_min),
+        record.country,
+        usd_rub,
+        params,
+        format_type=record.format_type,
+        format_description=record.format_description,
+        discogs_data=record.discogs_data,
+    )
+
+
 from app.schemas.collection import (
     CollectionCreate,
     CollectionUpdate,
@@ -91,13 +100,12 @@ async def recalculate_prices(
             continue
 
     # Пересчитываем рубли во всех CollectionItem
+    params = PricingParams.from_settings(settings)
     updated_items = 0
     for item in items:
         record = item.record
         if record and record.estimated_price_min:
-            item.estimated_price_rub = _calc_price_rub(
-                float(record.estimated_price_min), usd_rub, settings.ru_vinyl_markup, record.country
-            )
+            item.estimated_price_rub = _record_rub(record, usd_rub, params)
             updated_items += 1
         else:
             item.estimated_price_rub = None
@@ -110,7 +118,6 @@ async def recalculate_prices(
         "total_items": len(items),
         "max_records_per_call": MAX_RECORDS,
         "usd_rub_rate": usd_rub,
-        "markup": settings.ru_vinyl_markup,
     }
 
 
@@ -426,9 +433,8 @@ async def add_record_to_collection(
     if record.estimated_price_min:
         settings = get_settings()
         usd_rub = await get_usd_rub_rate()
-        estimated_price_rub = _calc_price_rub(
-            float(record.estimated_price_min), usd_rub, settings.ru_vinyl_markup, record.country
-        )
+        params = PricingParams.from_settings(settings)
+        estimated_price_rub = _record_rub(record, usd_rub, params)
 
     # Добавляем в коллекцию (дубликаты разрешены - можно иметь несколько копий одной пластинки)
     item = CollectionItem(
@@ -615,6 +621,13 @@ async def get_collection_stats(
     settings = get_settings()
     usd_rub = await get_usd_rub_rate()
 
+    # Эффективный множитель — агрегированно по коллекции (rub / (usd × rate))
+    aggregate_markup = (
+        round(total_rub / (total_min * usd_rub), 2)
+        if total_min > 0 and usd_rub > 0
+        else 1.0
+    )
+
     return CollectionStats(
         total_records=total_records,
         total_estimated_value_min=total_min if total_min > 0 else None,
@@ -622,7 +635,7 @@ async def get_collection_stats(
         total_estimated_value_median=total_median if total_median > 0 else None,
         total_estimated_value_rub=round(total_rub, 2) if total_rub > 0 else None,
         usd_rub_rate=usd_rub,
-        ru_markup=settings.ru_vinyl_markup,
+        ru_markup=aggregate_markup,
         most_expensive=most_expensive_item.record if most_expensive_item else None,
         most_expensive_price_rub=most_expensive_rub if most_expensive_item else None,
         records_with_price=records_with_price,
