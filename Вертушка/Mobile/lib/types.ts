@@ -172,6 +172,9 @@ export interface MasterVersion {
   thumb_image_url?: string;
   cover_image_url?: string;
   cover_url?: string;
+  is_first_press?: boolean;
+  is_limited?: boolean;
+  is_hot?: boolean;
 }
 
 export interface MasterSearchResponse {

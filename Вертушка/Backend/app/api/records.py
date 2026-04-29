@@ -590,6 +590,7 @@ async def get_master_versions(
     page: int = Query(1, ge=1, description="Номер страницы"),
     per_page: int = Query(50, ge=1, le=100, description="Записей на страницу"),
     current_user: User | None = Depends(get_current_user_optional),
+    db: AsyncSession = Depends(get_db),
 ):
     """
     Получение всех версий (изданий) мастер-релиза.
@@ -604,6 +605,28 @@ async def get_master_versions(
             page=page,
             per_page=per_page
         )
+
+        # Подмешиваем rarity-флаги из локальной БД для тех релизов,
+        # которые мы уже видели (один SQL IN)
+        release_ids = [v.release_id for v in versions.results if v.release_id]
+        if release_ids:
+            rows = await db.execute(
+                select(
+                    Record.discogs_id,
+                    Record.is_first_press,
+                    Record.is_limited,
+                    Record.is_hot,
+                ).where(Record.discogs_id.in_(release_ids))
+            )
+            flags_by_id = {
+                row.discogs_id: (row.is_first_press, row.is_limited, row.is_hot)
+                for row in rows
+            }
+            for v in versions.results:
+                f = flags_by_id.get(v.release_id)
+                if f:
+                    v.is_first_press, v.is_limited, v.is_hot = f
+
         return versions
     except Exception as e:
         raise HTTPException(

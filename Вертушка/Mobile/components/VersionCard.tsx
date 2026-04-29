@@ -12,6 +12,7 @@ import { Image } from 'expo-image';
 import { Ionicons } from '@expo/vector-icons';
 import { Colors, Typography, BorderRadius, Shadows, Spacing } from '../constants/theme';
 import { MasterVersion } from '../lib/types';
+import { RarityAura, TierCoverEffects, TierLabel, pickRarityTier } from './RarityAura';
 
 interface VersionCardProps {
   version: MasterVersion;
@@ -20,10 +21,11 @@ interface VersionCardProps {
 
 export function VersionCard({ version, onPress }: VersionCardProps) {
   const imageUrl = version.cover_image_url || version.thumb_image_url;
+  const rarityTier = pickRarityTier(version, 'search');
 
-  return (
+  const inner = (
     <TouchableOpacity
-      style={[styles.container, Shadows.sm]}
+      style={[styles.container, rarityTier ? styles.containerNoMargin : Shadows.sm]}
       onPress={onPress}
       activeOpacity={0.9}
       disabled={!onPress}
@@ -42,6 +44,7 @@ export function VersionCard({ version, onPress }: VersionCardProps) {
             <Ionicons name="disc-outline" size={32} color={Colors.textMuted} />
           </View>
         )}
+        <TierCoverEffects tier={rarityTier} radius={0} />
       </View>
 
       {/* Информация */}
@@ -83,6 +86,12 @@ export function VersionCard({ version, onPress }: VersionCardProps) {
             <Text style={styles.metaText}>{version.format}</Text>
           </View>
         )}
+
+        {rarityTier && (
+          <View style={styles.metaRow}>
+            <TierLabel tier={rarityTier} />
+          </View>
+        )}
       </View>
 
       {/* Иконка перехода */}
@@ -92,6 +101,13 @@ export function VersionCard({ version, onPress }: VersionCardProps) {
         </View>
       )}
     </TouchableOpacity>
+  );
+
+  if (!rarityTier) return inner;
+  return (
+    <RarityAura tier={rarityTier} radius={BorderRadius.md} leftEdge style={styles.rarityWrap}>
+      {inner}
+    </RarityAura>
   );
 }
 
@@ -145,6 +161,12 @@ const styles = StyleSheet.create({
   },
   chevron: {
     paddingRight: Spacing.sm,
+  },
+  containerNoMargin: {
+    marginBottom: 0,
+  },
+  rarityWrap: {
+    marginBottom: Spacing.sm,
   },
 });
 

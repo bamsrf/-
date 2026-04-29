@@ -261,10 +261,10 @@ function CoverBlink({ radius = 0 }: { radius?: number }) {
   }, [t]);
 
   const animStyle = useAnimatedStyle(() => {
-    // 0 → 0.88 invisible; 0.88 → 1.0 sweeps from -120% to 220%
+    // 0 → 0.85 invisible; 0.85 → 1.0 sweeps from -120% to 220%
     const v = t.value;
-    const swept = v < 0.88 ? -1.2 : -1.2 + ((v - 0.88) / 0.12) * 3.4;
-    const opacity = v < 0.88 || v > 0.99 ? 0 : 0.85;
+    const swept = v < 0.85 ? -1.2 : -1.2 + ((v - 0.85) / 0.15) * 3.4;
+    const opacity = v < 0.85 || v > 0.99 ? 0 : 1;
     return {
       opacity,
       transform: [{ translateX: swept * 100 }, { skewX: '-18deg' }],
@@ -282,9 +282,9 @@ function CoverBlink({ radius = 0 }: { radius?: number }) {
       <Animated.View style={[styles.coverBlink, animStyle]} pointerEvents="none">
         <LinearGradient
           colors={[
-            'rgba(255,247,220,0)',
-            'rgba(255,247,220,0.55)',
-            'rgba(255,247,220,0)',
+            'rgba(255,247,180,0)',
+            'rgba(255,242,160,0.95)',
+            'rgba(255,247,180,0)',
           ] as const}
           start={{ x: 0, y: 0.5 }}
           end={{ x: 1, y: 0.5 }}
@@ -300,13 +300,15 @@ function CoverBlink({ radius = 0 }: { radius?: number }) {
  * 2-second cycle. Approximates CSS inset shadow with overlaid edge gradients.
  */
 function HeatHaze({ radius = 0 }: { radius?: number }) {
-  const opacity = useSharedValue(0.35);
+  // RN не поддерживает inset box-shadow и mixBlendMode: 'screen' — компенсируем
+  // более насыщенными альфами, чтобы эффект не терялся на светлом фоне.
+  const opacity = useSharedValue(0.6);
 
   useEffect(() => {
     opacity.value = withRepeat(
       withSequence(
-        withTiming(0.55, { duration: 1000, easing: Easing.inOut(Easing.ease) }),
-        withTiming(0.35, { duration: 1000, easing: Easing.inOut(Easing.ease) }),
+        withTiming(0.95, { duration: 1000, easing: Easing.inOut(Easing.ease) }),
+        withTiming(0.6, { duration: 1000, easing: Easing.inOut(Easing.ease) }),
       ),
       -1,
       false,
@@ -324,27 +326,39 @@ function HeatHaze({ radius = 0 }: { radius?: number }) {
         animStyle,
       ]}
     >
-      {/* Edge halos: 4 directional gradients, plus a soft border for the inner glow. */}
+      {/* Inset-glow approximation: солидный цветной бордер + 4 направленные засветки от краёв внутрь. */}
       <View
         style={[
           StyleSheet.absoluteFill,
           {
             borderRadius: radius,
-            borderWidth: 3,
-            borderColor: 'rgba(255, 94, 58, 0.45)',
+            borderWidth: 4,
+            borderColor: 'rgba(255, 80, 40, 0.85)',
           },
         ]}
       />
       <LinearGradient
-        colors={['rgba(255, 94, 58, 0.6)', 'transparent'] as const}
+        colors={['rgba(255, 94, 58, 0.85)', 'transparent'] as const}
         start={{ x: 0.5, y: 0 }}
         end={{ x: 0.5, y: 0.45 }}
         style={[StyleSheet.absoluteFill, { borderRadius: radius }]}
       />
       <LinearGradient
-        colors={['transparent', 'rgba(255, 94, 58, 0.6)'] as const}
+        colors={['transparent', 'rgba(178, 34, 34, 0.85)'] as const}
         start={{ x: 0.5, y: 0.55 }}
         end={{ x: 0.5, y: 1 }}
+        style={[StyleSheet.absoluteFill, { borderRadius: radius }]}
+      />
+      <LinearGradient
+        colors={['rgba(255, 94, 58, 0.7)', 'transparent'] as const}
+        start={{ x: 0, y: 0.5 }}
+        end={{ x: 0.4, y: 0.5 }}
+        style={[StyleSheet.absoluteFill, { borderRadius: radius }]}
+      />
+      <LinearGradient
+        colors={['transparent', 'rgba(255, 94, 58, 0.7)'] as const}
+        start={{ x: 0.6, y: 0.5 }}
+        end={{ x: 1, y: 0.5 }}
         style={[StyleSheet.absoluteFill, { borderRadius: radius }]}
       />
     </Animated.View>
