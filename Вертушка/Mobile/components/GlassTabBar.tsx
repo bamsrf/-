@@ -66,27 +66,23 @@ function TabIcon({
   }, [isFocused]);
 
   return (
-    <View
+    <TouchableOpacity
       ref={targetKey ? tourTarget.ref : undefined}
       onLayout={targetKey ? tourTarget.onLayout : undefined}
-      style={styles.tabItem}
       collapsable={false}
+      style={styles.tabItem}
+      onPress={onPress}
+      onLongPress={onLongPress}
+      activeOpacity={0.7}
     >
-      <TouchableOpacity
-        style={styles.tabItemInner}
-        onPress={onPress}
-        onLongPress={onLongPress}
-        activeOpacity={0.7}
-      >
-        <Animated.View style={[animatedIcon, animatedOpacity]}>
-          <Ionicons
-            name={isFocused ? icons.filled : icons.outline}
-            size={ICON_SIZE}
-            color={isFocused ? Colors.royalBlue : Colors.textMuted}
-          />
-        </Animated.View>
-      </TouchableOpacity>
-    </View>
+      <Animated.View style={[animatedIcon, animatedOpacity]}>
+        <Ionicons
+          name={isFocused ? icons.filled : icons.outline}
+          size={ICON_SIZE}
+          color={isFocused ? Colors.royalBlue : Colors.textMuted}
+        />
+      </Animated.View>
+    </TouchableOpacity>
   );
 }
 
@@ -203,10 +199,6 @@ const styles = StyleSheet.create({
     justifyContent: 'space-around',
   },
   tabItem: {
-    flex: 1,
-    height: '100%',
-  },
-  tabItemInner: {
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',

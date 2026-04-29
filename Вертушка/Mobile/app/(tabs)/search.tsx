@@ -742,14 +742,15 @@ export default function SearchScreen() {
           )}
         </View>
         {!isUserSearch && (
-          <View ref={filtersTarget.ref} onLayout={filtersTarget.onLayout} collapsable={false}>
-            <TouchableOpacity
-              style={[styles.filterButton, hasActiveFilters && styles.filterButtonActive]}
-              onPress={openFilters}
-            >
-              <Ionicons name="options-outline" size={20} color={hasActiveFilters ? Colors.background : Colors.text} />
-            </TouchableOpacity>
-          </View>
+          <TouchableOpacity
+            ref={filtersTarget.ref}
+            onLayout={filtersTarget.onLayout}
+            collapsable={false}
+            style={[styles.filterButton, hasActiveFilters && styles.filterButtonActive]}
+            onPress={openFilters}
+          >
+            <Ionicons name="options-outline" size={20} color={hasActiveFilters ? Colors.background : Colors.text} />
+          </TouchableOpacity>
         )}
       </View>
 
