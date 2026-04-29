@@ -339,21 +339,74 @@ class DiscogsService:
         "white label",
     )
 
+    # Токены, по которым релиз явно помечен как оригинальный пресс
+    # (используем как fallback для is_first_press, когда год не совпадает с master.year)
+    FIRST_PRESS_TOKENS = (
+        "first pressing",
+        "first press",
+        "original pressing",
+        "original press",
+    )
+
     @classmethod
     def _compute_rarity_flags(
         cls,
         release_data: dict[str, Any],
         master_data: "MasterRelease | None",
+        master_versions_count: int | None = None,
     ) -> dict[str, bool]:
-        """Compute three rarity flags from raw Discogs payloads.
+        """Compute four rarity flags from raw Discogs payloads.
 
-        See Mobile/components/RarityAura.tsx and plans/RARITY_BADGES_PLAN.md.
+        See Mobile/components/RarityAura.tsx.
+
+        Independent semantics:
+        - is_canon: release is the master.main_release (community-edited canonical
+          version per Discogs editors). May not be the chronologically first press.
+        - is_first_press: this release matches the original year of the master
+          (release.year == master.year) AND the master has multiple versions,
+          OR the release is explicitly marked as first/original in notes/formats.
+
+        Critically these are now INDEPENDENT — for the same master, the canon may
+        be a 2014 reissue (with main_release pointing to it), while a 1994 release
+        of the same master gets is_first_press because it matches master.year.
         """
-        # is_first_press: master canonicalises one release as the original
+        release_id = str(release_data.get("id") or "")
+        is_canon = bool(
+            master_data
+            and master_data.main_release_id
+            and release_id
+            and release_id == str(master_data.main_release_id)
+        )
+
         is_first_press = False
-        if master_data is not None and master_data.main_release_id:
-            release_id = str(release_data.get("id") or "")
-            if release_id and release_id == str(master_data.main_release_id):
+        if master_data is not None:
+            release_year = release_data.get("year")
+            master_year = master_data.year
+            year_matches = (
+                release_year is not None
+                and master_year is not None
+                and int(release_year) == int(master_year)
+            )
+            has_multiple_versions = (
+                master_versions_count is None  # unknown — don't gate on this
+                or master_versions_count >= 2
+            )
+            # Fallback: релиз явно помечен как оригинальный пресс
+            notes_lower = (release_data.get("notes") or "").lower()
+            notes_say_first = any(tok in notes_lower for tok in cls.FIRST_PRESS_TOKENS)
+            formats_say_first = False
+            for fmt in release_data.get("formats") or []:
+                for desc in fmt.get("descriptions") or []:
+                    if not desc:
+                        continue
+                    lower = desc.lower()
+                    if any(tok in lower for tok in cls.FIRST_PRESS_TOKENS) or "original" in lower:
+                        formats_say_first = True
+                        break
+                if formats_say_first:
+                    break
+
+            if has_multiple_versions and (year_matches or notes_say_first or formats_say_first):
                 is_first_press = True
 
         # is_limited: any structural marker in formats[].descriptions
@@ -381,6 +434,7 @@ class DiscogsService:
 
         return {
             "is_first_press": is_first_press,
+            "is_canon": is_canon,
             "is_limited": is_limited,
             "is_hot": is_hot,
         }
@@ -462,19 +516,30 @@ class DiscogsService:
         except Exception:
             logger.exception("Failed to get price stats for release %s", release_id)
 
-        # Признаки редкости — нужен мастер для is_first_press;
-        # сам get_master кэшируется на TTL_MASTER, повторный запрос дёшев.
+        # Признаки редкости — нужен мастер для is_canon, плюс кол-во версий
+        # для строгого is_first_press. get_master/versions кэшируются.
         master_data = None
+        master_versions_count = None
         master_id_raw = data.get("master_id")
         if master_id_raw:
+            mid = str(master_id_raw)
             try:
-                master_data = await self.get_master(str(master_id_raw))
+                master_data = await self.get_master(mid)
             except Exception:
                 logger.exception(
                     "Failed to fetch master %s for rarity flags (release %s)",
-                    master_id_raw, release_id,
+                    mid, release_id,
                 )
-        rarity_flags = self._compute_rarity_flags(data, master_data)
+            try:
+                master_versions_count = await self._get_master_versions_count(mid)
+            except Exception:
+                logger.exception(
+                    "Failed to fetch versions count for master %s (release %s)",
+                    mid, release_id,
+                )
+        rarity_flags = self._compute_rarity_flags(
+            data, master_data, master_versions_count=master_versions_count,
+        )
 
         result = {
             "id": str(data.get("id")),
@@ -1107,6 +1172,29 @@ class DiscogsService:
         elif self.api_key:
             headers["Authorization"] = f"Discogs key={self.api_key}, secret={self.api_secret}"
         return headers
+
+    async def _get_master_versions_count(self, master_id: str) -> int | None:
+        """Кол-во версий у мастера. Тянем минимум данных (per_page=1) и читаем
+        pagination.items. Кэшируется на TTL_MASTER_VERSIONS."""
+        cache_key = f"count:{master_id}"
+        cached = await cache.get("master_versions", cache_key)
+        if cached is not None:
+            return cached.get("count") if isinstance(cached, dict) else None
+        try:
+            data = await self._get(
+                f"{self.BASE_URL}/masters/{master_id}/versions",
+                params={"page": 1, "per_page": 1},
+                priority=Priority.ENRICHMENT,
+            )
+            count = (data.get("pagination") or {}).get("items")
+            if count is not None:
+                await cache.set(
+                    "master_versions", cache_key, {"count": int(count)}, TTL_MASTER_VERSIONS,
+                )
+                return int(count)
+        except Exception:
+            logger.exception("Failed to get versions count for master %s", master_id)
+        return None
 
     async def _get_price_stats(self, release_id: str) -> dict | None:
         """Получение статистики цен для релиза (всегда в USD).
