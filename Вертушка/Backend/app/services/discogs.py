@@ -328,7 +328,9 @@ class DiscogsService:
     HOT_MIN_HAVE = 100
 
     # Пороги для is_collectible — комбо «дорогая + дефицит на маркете + не массовая»
-    COLLECTIBLE_MIN_PRICE_USD = 50.0
+    # Подобраны после анализа реальной коллекции (см. analyze_db_pricemin.py):
+    # на 188 записях $50 покрывает 27% (слишком много), $100 — 14% (~1 из 7).
+    COLLECTIBLE_MIN_PRICE_USD = 100.0
     COLLECTIBLE_MAX_FOR_SALE = 3
     COLLECTIBLE_MAX_HAVE = 200
 
@@ -387,31 +389,40 @@ class DiscogsService:
 
         is_first_press = False  # тир закрыт — см. docstring
 
-        # is_collectible: дорогая + дефицит на маркете + не массовая
+        # is_collectible: дорогая + дефицит на маркете + не массовая.
+        # Цену берём median_price, при отсутствии — fallback на lowest_price
+        # (median Discogs возвращает только если было ≥2 продаж — у редких
+        # часто null, тогда lowest_price это «единственное предложение»).
         is_collectible = False
         community = release_data.get("community") or {}
         have = community.get("have") or 0
+
+        def _price_value(stats: dict | None, key: str) -> float | None:
+            if not stats:
+                return None
+            obj = stats.get(key)
+            if isinstance(obj, dict):
+                obj = obj.get("value")
+            try:
+                return float(obj) if obj is not None else None
+            except (TypeError, ValueError):
+                return None
+
         if price_stats:
             num_for_sale = price_stats.get("num_for_sale")
-            median_price_obj = price_stats.get("median_price") or {}
-            median_value = (
-                median_price_obj.get("value")
-                if isinstance(median_price_obj, dict)
-                else median_price_obj
-            )
-            try:
-                median_price_usd = float(median_value) if median_value is not None else None
-            except (TypeError, ValueError):
-                median_price_usd = None
             try:
                 num_for_sale_int = int(num_for_sale) if num_for_sale is not None else None
             except (TypeError, ValueError):
                 num_for_sale_int = None
+            price_usd = (
+                _price_value(price_stats, "median_price")
+                or _price_value(price_stats, "lowest_price")
+            )
 
             if (
-                median_price_usd is not None
+                price_usd is not None
                 and num_for_sale_int is not None
-                and median_price_usd >= cls.COLLECTIBLE_MIN_PRICE_USD
+                and price_usd >= cls.COLLECTIBLE_MIN_PRICE_USD
                 and num_for_sale_int <= cls.COLLECTIBLE_MAX_FOR_SALE
                 and have <= cls.COLLECTIBLE_MAX_HAVE
             ):
