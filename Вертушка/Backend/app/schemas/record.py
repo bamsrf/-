@@ -130,6 +130,13 @@ class RecordSearchResult(BaseModel):
     cover_image_url: str | None
     thumb_image_url: str | None
     format_type: str | None
+    # Rarity-флаги — подмешиваются из локальной БД (если запись виделась раньше)
+    # + on-the-fly is_limited по парсингу format_type. Дешёвые сигналы только.
+    is_first_press: bool = False
+    is_canon: bool = False
+    is_collectible: bool = False
+    is_limited: bool = False
+    is_hot: bool = False
 
 
 class RecordSearchResponse(BaseModel):
@@ -217,6 +224,12 @@ class ReleaseSearchResult(BaseModel):
     format: str | None = None
     cover_image_url: str | None = None
     thumb_image_url: str | None = None
+    # Rarity-флаги — подмешиваются из локальной БД + парсинг is_limited из format
+    is_first_press: bool = False
+    is_canon: bool = False
+    is_collectible: bool = False
+    is_limited: bool = False
+    is_hot: bool = False
 
 
 class ReleaseSearchResponse(BaseModel):

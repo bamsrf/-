@@ -2,13 +2,13 @@
  * Rarity highlighting for vinyl records — card-as-signal tiers.
  *
  * Active tiers:
- *   canon       → slate graphite, double border glow 5s (Discogs editorial pick)
- *   collectible → emerald, double layer pulse 6s (price>=$50 + scarce + low have)
+ *   collectible → heritage gold, rotating shimmer 8s (price>=$100 + scarce + low have)
  *   limited     → cold platinum violet, pulse 4s
  *   hot         → hot ember, pulse 2s + heat-haze halo on cover
  *
- * Closed tiers (kept in types for backward compat with backend):
+ * Closed tiers (kept in types for backward compat with backend, ignored in UI):
  *   first_press — too heuristic without matrix/runout inspection
+ *   canon       — Discogs editorial pick, не несёт ценности отдельно от других флагов
  */
 import React, { useEffect } from 'react';
 import { View, Text, StyleSheet, StyleProp, ViewStyle } from 'react-native';
@@ -22,7 +22,7 @@ import Animated, {
   withTiming,
 } from 'react-native-reanimated';
 
-export type RarityTier = 'canon' | 'collectible' | 'limited' | 'hot';
+export type RarityTier = 'collectible' | 'limited' | 'hot';
 export type RarityContext =
   | 'collection'
   | 'wishlist'
@@ -56,28 +56,15 @@ export const RARITY_TIERS: Record<RarityTier, TierTokens> = {
   collectible: {
     id: 'collectible',
     label: 'Коллекционка',
-    longLabel: 'Дорогая (≥$50), почти не продаётся, мало у кого есть',
-    palette: ['#3F8E6F', '#1F5C4D', '#0E2E26'],
-    auraOuter: 'rgba(31, 92, 77, 0.55)',
-    auraInner: 'rgba(63, 142, 111, 0.85)',
-    edge: ['#3F8E6F', '#1F5C4D', '#0E2E26'],
-    iconColor: '#3F8E6F',
-    iconGlow: 'rgba(63, 142, 111, 0.95)',
-    textColor: '#1F5C4D',
-    mood: 'pulse · 6s',
-  },
-  canon: {
-    id: 'canon',
-    label: 'Канон',
-    longLabel: 'Каноническое издание мастер-релиза по версии Discogs',
-    palette: ['#8B95A8', '#5A6B7D', '#2E3844'],
-    auraOuter: 'rgba(90, 107, 125, 0.5)',
-    auraInner: 'rgba(139, 149, 168, 0.75)',
-    edge: ['#8B95A8', '#5A6B7D', '#2E3844'],
-    iconColor: '#6B7C8E',
-    iconGlow: 'rgba(107, 124, 142, 0.85)',
-    textColor: '#3F4E5E',
-    mood: 'border glow · 5s',
+    longLabel: 'Дорогая (≥$100), почти не продаётся, мало у кого есть',
+    palette: ['#F4D27A', '#B8860B', '#6B4423'],
+    auraOuter: 'rgba(184, 134, 11, 0.55)',
+    auraInner: 'rgba(244, 210, 122, 0.80)',
+    edge: ['#F4D27A', '#B8860B', '#6B4423'],
+    iconColor: '#B8860B',
+    iconGlow: 'rgba(184, 134, 11, 0.9)',
+    textColor: '#8A6314',
+    mood: 'shimmer · 8s',
   },
   limited: {
     id: 'limited',
@@ -85,10 +72,10 @@ export const RARITY_TIERS: Record<RarityTier, TierTokens> = {
     longLabel: 'Специальное издание',
     palette: ['#C0C0D8', '#6B4DCE', '#2A1F4E'],
     auraOuter: 'rgba(107, 77, 206, 0.55)',
-    auraInner: 'rgba(192, 192, 216, 0.85)',
+    auraInner: 'rgba(192, 192, 216, 0.80)',
     edge: ['#C0C0D8', '#6B4DCE', '#2A1F4E'],
     iconColor: '#7A5FE0',
-    iconGlow: 'rgba(140, 110, 230, 0.9)',
+    iconGlow: 'rgba(140, 110, 230, 0.85)',
     textColor: '#5A40B2',
     mood: 'pulse · 4s',
   },
@@ -98,10 +85,10 @@ export const RARITY_TIERS: Record<RarityTier, TierTokens> = {
     longLabel: 'Высокий спрос на Discogs',
     palette: ['#FFB347', '#FF5E3A', '#B22222'],
     auraOuter: 'rgba(255, 94, 58, 0.62)',
-    auraInner: 'rgba(255, 179, 71, 0.95)',
+    auraInner: 'rgba(255, 179, 71, 0.85)',
     edge: ['#FFB347', '#FF5E3A', '#B22222'],
     iconColor: '#FF6B3D',
-    iconGlow: 'rgba(255, 94, 58, 0.95)',
+    iconGlow: 'rgba(255, 94, 58, 0.9)',
     textColor: '#C73A1B',
     mood: 'pulse · 2s',
   },
@@ -110,10 +97,9 @@ export const RARITY_TIERS: Record<RarityTier, TierTokens> = {
 /**
  * Pick the single most important tier for a card given context.
  * `collection` hides `hot` (demand is irrelevant when you already own it).
- * Priority: collectible → canon → limited → hot.
+ * Priority: collectible → limited → hot.
  *
- * Collectible (price + scarcity + rarity combo) is the strongest objective signal,
- * so it wins over canon (Discogs editorial pick).
+ * Только один тир за раз — чтобы карточки не превращались в кашу из нескольких сигналов.
  */
 export function pickRarityTier(
   flags: RarityFlags | null | undefined,
@@ -121,23 +107,19 @@ export function pickRarityTier(
 ): RarityTier | null {
   if (!flags) return null;
   if (flags.is_collectible) return 'collectible';
-  if (flags.is_canon) return 'canon';
   if (flags.is_limited) return 'limited';
   if (flags.is_hot && context !== 'collection') return 'hot';
   return null;
 }
 
 /**
- * Return all applicable tiers (used on the detail screen, no context filtering).
+ * Single-tier helper for the detail screen (no context filtering).
+ * Возвращаем массив только чтобы не ломать call sites — но всегда максимум один элемент,
+ * чтобы блок «Особенности» показывал ровно одну плашку, без наложения сигналов.
  */
 export function allRarityTiers(flags: RarityFlags | null | undefined): RarityTier[] {
-  if (!flags) return [];
-  const tiers: RarityTier[] = [];
-  if (flags.is_collectible) tiers.push('collectible');
-  if (flags.is_canon) tiers.push('canon');
-  if (flags.is_limited) tiers.push('limited');
-  if (flags.is_hot) tiers.push('hot');
-  return tiers;
+  const tier = pickRarityTier(flags, 'detail');
+  return tier ? [tier] : [];
 }
 
 // ─── Aura primitives ─────────────────────────────────────────
@@ -148,126 +130,90 @@ interface AuraProps {
 }
 
 /**
- * Collectible aura: deep emerald double-layer pulse on a 6s cycle.
- * Slower than limited (4s) and hot (2s) — reads as "contained value, museum piece"
- * rather than "active demand". Two layers: deep outer halo + close border-glow.
+ * Collectible aura: rotating emerald gradient ring around the card on a 8s cycle.
+ * Same mechanic as the closed `first_press` shimmer, but with the deep-emerald
+ * collectible palette. Reads as "museum piece" — slow, deliberate, expensive.
+ *
+ * Implementation: outer shadow ring (visible glow) + inner clipped rotator
+ * containing a multi-stop emerald gradient. The card body sits on top and masks
+ * the inside of the ring, leaving only a thin animated rim visible.
  */
 function CollectibleAura({ radius = 16 }: { radius?: number }) {
   const tokens = RARITY_TIERS.collectible;
-  const t = useSharedValue(0);
+  const rotation = useSharedValue(0);
 
   useEffect(() => {
-    t.value = withRepeat(
-      withSequence(
-        withTiming(1, { duration: 3000, easing: Easing.inOut(Easing.ease) }),
-        withTiming(0, { duration: 3000, easing: Easing.inOut(Easing.ease) }),
-      ),
+    rotation.value = withRepeat(
+      withTiming(-360, { duration: 8000, easing: Easing.linear }),
       -1,
       false,
     );
-  }, [t]);
+  }, [rotation]);
 
-  const outerStyle = useAnimatedStyle(() => ({
-    shadowRadius: 18 + 12 * t.value,
-    shadowOpacity: 0.45 + 0.45 * t.value,
-  }));
-  const borderStyle = useAnimatedStyle(() => ({
-    borderWidth: 1.5 + 0.5 * t.value,
-    borderColor: `rgba(63, 142, 111, ${0.55 + 0.4 * t.value})`,
+  const rotateStyle = useAnimatedStyle(() => ({
+    transform: [{ rotate: `${rotation.value}deg` }],
   }));
 
   return (
     <>
-      <Animated.View
+      {/* Внешний цветной shadow для глубокого свечения вокруг карточки */}
+      <View
         pointerEvents="none"
         style={[
-          styles.collectibleHalo,
+          styles.auraRingOuter,
           {
-            borderRadius: radius + 4,
+            borderRadius: radius + 2,
+            backgroundColor: 'rgba(184, 134, 11, 0.18)',
             shadowColor: tokens.palette[1],
-            shadowOffset: { width: 0, height: 0 },
-            elevation: 12,
-          },
-          outerStyle,
-        ]}
-      />
-      <Animated.View
-        pointerEvents="none"
-        style={[
-          styles.collectibleBorder,
-          { borderRadius: radius },
-          borderStyle,
-        ]}
-      />
-    </>
-  );
-}
-
-/**
- * Pulse aura: a static-colored glow whose opacity oscillates.
- * 4s for `limited` (subtle breath), 2s for `hot` (active, intense).
- */
-function PulseAura({ tier, radius = 16 }: AuraProps) {
-  const tokens = RARITY_TIERS[tier];
-  const isHot = tier === 'hot';
-  const min = isHot ? 0.4 : 0.5;
-  const max = isHot ? 1.0 : 0.9;
-  const half = (isHot ? 2000 : 4000) / 2;
-
-  const opacity = useSharedValue(min);
-
-  useEffect(() => {
-    opacity.value = withRepeat(
-      withSequence(
-        withTiming(max, { duration: half, easing: Easing.inOut(Easing.ease) }),
-        withTiming(min, { duration: half, easing: Easing.inOut(Easing.ease) }),
-      ),
-      -1,
-      false,
-    );
-  }, [opacity, min, max, half]);
-
-  const animStyle = useAnimatedStyle(() => ({ opacity: opacity.value }));
-
-  return (
-    <>
-      {/* Глубокий цветной halo */}
-      <Animated.View
-        pointerEvents="none"
-        style={[
-          styles.auraPulseDeep,
-          {
-            borderRadius: radius + 4,
-            shadowColor: tokens.palette[1],
-            shadowOpacity: 0.95,
-            shadowRadius: isHot ? 32 : 26,
-            shadowOffset: { width: 0, height: 0 },
-            elevation: 14,
-          },
-          animStyle,
-        ]}
-      />
-      {/* Близкий border-glow */}
-      <Animated.View
-        pointerEvents="none"
-        style={[
-          styles.auraPulse,
-          {
-            borderRadius: radius,
-            shadowColor: tokens.palette[1],
-            shadowOpacity: 0.85,
-            shadowRadius: 14,
+            shadowOpacity: 0.6,
+            shadowRadius: 18,
             shadowOffset: { width: 0, height: 0 },
             elevation: 10,
-            borderWidth: 2,
-            borderColor: tokens.palette[1] + 'aa',
           },
-          animStyle,
         ]}
       />
+      {/* Кольцо с вращающимся золотым шиммером */}
+      <View
+        pointerEvents="none"
+        style={[
+          styles.auraRing,
+          {
+            borderRadius: radius + 2,
+            shadowColor: tokens.palette[0],
+            shadowOpacity: 0.55,
+            shadowRadius: 10,
+            shadowOffset: { width: 0, height: 3 },
+            elevation: 8,
+          },
+        ]}
+      >
+        <View
+          style={[StyleSheet.absoluteFill, styles.auraClip, { borderRadius: radius + 2 }]}
+          pointerEvents="none"
+        >
+          <Animated.View style={[styles.auraRotator, rotateStyle]} pointerEvents="none">
+            <LinearGradient
+              colors={[
+                tokens.palette[0],
+                tokens.palette[1],
+                tokens.palette[0],
+                tokens.palette[1] + 'cc',
+                tokens.palette[0],
+                tokens.palette[1],
+                tokens.palette[0] + 'cc',
+                tokens.palette[1],
+              ] as readonly [string, string, ...string[]]}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+              style={StyleSheet.absoluteFill}
+            />
+          </Animated.View>
+        </View>
+      </View>
     </>
   );
 }
+
 
 // ─── Cover-internal effects ───────────────────────────────────
 
@@ -284,13 +230,13 @@ interface CoverEffectProps {
 function HeatHaze({ radius = 0 }: { radius?: number }) {
   // RN не поддерживает inset box-shadow и mixBlendMode: 'screen' — компенсируем
   // более насыщенными альфами, чтобы эффект не терялся на светлом фоне.
-  const opacity = useSharedValue(0.6);
+  const opacity = useSharedValue(0.4);
 
   useEffect(() => {
     opacity.value = withRepeat(
       withSequence(
-        withTiming(0.95, { duration: 1000, easing: Easing.inOut(Easing.ease) }),
-        withTiming(0.6, { duration: 1000, easing: Easing.inOut(Easing.ease) }),
+        withTiming(0.7, { duration: 1000, easing: Easing.inOut(Easing.ease) }),
+        withTiming(0.4, { duration: 1000, easing: Easing.inOut(Easing.ease) }),
       ),
       -1,
       false,
@@ -314,31 +260,31 @@ function HeatHaze({ radius = 0 }: { radius?: number }) {
           StyleSheet.absoluteFill,
           {
             borderRadius: radius,
-            borderWidth: 4,
-            borderColor: 'rgba(255, 80, 40, 0.85)',
+            borderWidth: 3,
+            borderColor: 'rgba(255, 80, 40, 0.55)',
           },
         ]}
       />
       <LinearGradient
-        colors={['rgba(255, 94, 58, 0.85)', 'transparent'] as const}
+        colors={['rgba(255, 94, 58, 0.55)', 'transparent'] as const}
         start={{ x: 0.5, y: 0 }}
         end={{ x: 0.5, y: 0.45 }}
         style={[StyleSheet.absoluteFill, { borderRadius: radius }]}
       />
       <LinearGradient
-        colors={['transparent', 'rgba(178, 34, 34, 0.85)'] as const}
+        colors={['transparent', 'rgba(178, 34, 34, 0.55)'] as const}
         start={{ x: 0.5, y: 0.55 }}
         end={{ x: 0.5, y: 1 }}
         style={[StyleSheet.absoluteFill, { borderRadius: radius }]}
       />
       <LinearGradient
-        colors={['rgba(255, 94, 58, 0.7)', 'transparent'] as const}
+        colors={['rgba(255, 94, 58, 0.45)', 'transparent'] as const}
         start={{ x: 0, y: 0.5 }}
         end={{ x: 0.4, y: 0.5 }}
         style={[StyleSheet.absoluteFill, { borderRadius: radius }]}
       />
       <LinearGradient
-        colors={['transparent', 'rgba(255, 94, 58, 0.7)'] as const}
+        colors={['transparent', 'rgba(255, 94, 58, 0.45)'] as const}
         start={{ x: 0.6, y: 0.5 }}
         end={{ x: 1, y: 0.5 }}
         style={[StyleSheet.absoluteFill, { borderRadius: radius }]}
@@ -348,70 +294,53 @@ function HeatHaze({ radius = 0 }: { radius?: number }) {
 }
 
 /**
- * Canon: thin double-layered border that pulses on a 5s cycle. RN не
- * поддерживает CSS inset box-shadow напрямую — эмулируем двумя слоями:
- * внутренний border (animated) + внешний glow shadow.
- * Without rotation or sweep — strict, "editorial pick" feeling.
+ * Collectible-only: a soft warm light blink that sweeps diagonally across
+ * the cover roughly once every 10 seconds. Heritage gold colors — same effect
+ * the closed first_press tier used (это и есть та "фишка с пластинки").
  */
-function CanonBorderGlow({ radius = 16 }: { radius?: number }) {
-  const tokens = RARITY_TIERS.canon;
+function CoverBlink({ radius = 0 }: { radius?: number }) {
   const t = useSharedValue(0);
 
   useEffect(() => {
     t.value = withRepeat(
       withSequence(
-        withTiming(1, { duration: 2500, easing: Easing.inOut(Easing.ease) }),
-        withTiming(0, { duration: 2500, easing: Easing.inOut(Easing.ease) }),
+        withTiming(0, { duration: 0 }),
+        withTiming(1, { duration: 10000, easing: Easing.inOut(Easing.ease) }),
       ),
       -1,
       false,
     );
   }, [t]);
 
-  // Inset border: animated borderWidth and borderColor opacity
-  const innerStyle = useAnimatedStyle(() => {
-    const width = 1.5 + 0.5 * t.value;
-    const alpha = 0.5 + 0.35 * t.value;
+  const animStyle = useAnimatedStyle(() => {
+    // 0 → 0.85 invisible; 0.85 → 1.0 sweeps from -120% to 220% across the cover
+    const v = t.value;
+    const swept = v < 0.85 ? -1.2 : -1.2 + ((v - 0.85) / 0.15) * 3.4;
+    const opacity = v < 0.85 || v > 0.99 ? 0 : 1;
     return {
-      borderWidth: width,
-      borderColor: `rgba(139,149,168,${alpha})`,
-    };
-  });
-
-  // Outer glow: animated shadowRadius + opacity
-  const outerStyle = useAnimatedStyle(() => {
-    const radiusGlow = 16 + 12 * t.value;
-    const opacity = 0.35 + 0.35 * t.value;
-    return {
-      shadowRadius: radiusGlow,
-      shadowOpacity: opacity,
+      opacity,
+      transform: [{ translateX: swept * 100 }, { skewX: '-18deg' }],
     };
   });
 
   return (
-    <>
-      <Animated.View
-        pointerEvents="none"
-        style={[
-          styles.canonOuterGlow,
-          {
-            borderRadius: radius,
-            shadowColor: tokens.palette[0],
-            shadowOffset: { width: 0, height: 0 },
-            elevation: 8,
-          },
-          outerStyle,
-        ]}
-      />
-      <Animated.View
-        pointerEvents="none"
-        style={[
-          styles.canonInnerBorder,
-          { borderRadius: radius },
-          innerStyle,
-        ]}
-      />
-    </>
+    <View
+      pointerEvents="none"
+      style={[styles.coverEffectClip, { borderRadius: radius }]}
+    >
+      <Animated.View style={[styles.coverBlink, animStyle]} pointerEvents="none">
+        <LinearGradient
+          colors={[
+            'rgba(255,247,180,0)',
+            'rgba(255,242,160,0.85)',
+            'rgba(255,247,180,0)',
+          ] as const}
+          start={{ x: 0, y: 0.5 }}
+          end={{ x: 1, y: 0.5 }}
+          style={StyleSheet.absoluteFill}
+        />
+      </Animated.View>
+    </View>
   );
 }
 
@@ -420,48 +349,56 @@ function CanonBorderGlow({ radius = 16 }: { radius?: number }) {
 interface RarityAuraProps {
   tier: RarityTier | null;
   radius?: number;
-  /** When true, also paints a 3px tier-gradient strip along the left edge (LIST variant). */
-  leftEdge?: boolean;
   style?: StyleProp<ViewStyle>;
   children: React.ReactNode;
 }
 
 /**
- * Wraps a card with the tier-specific aura. When `tier` is null this is a
+ * Wraps a card with the tier-specific signal:
+ *   collectible   → animated golden ring around the entire card
+ *   limited / hot → only a 5px colored strip on the left edge (no animation, no glow)
+ *
+ * One signal per tier — no double effect. When `tier` is null this is a
  * zero-cost passthrough so non-rare cards pay nothing.
  */
 export function RarityAura({
   tier,
   radius = 16,
-  leftEdge = false,
   style,
   children,
 }: RarityAuraProps) {
   if (!tier) return <View style={style}>{children}</View>;
-  const tokens = RARITY_TIERS[tier];
 
+  if (tier === 'collectible') {
+    return (
+      <View style={[{ position: 'relative', borderRadius: radius }, style]}>
+        <CollectibleAura radius={radius} />
+        {children}
+      </View>
+    );
+  }
+
+  // limited / hot — calm static left strip, no aura.
+  // Strip is rendered AFTER children so it overlays the card's left edge
+  // (children have their own white background which would otherwise cover it).
+  const tokens = RARITY_TIERS[tier];
   return (
-    <View style={[{ position: 'relative', borderRadius: radius }, style]}>
-      {tier === 'collectible' && <CollectibleAura radius={radius} />}
-      {tier === 'canon' && <CanonBorderGlow radius={radius} />}
-      {(tier === 'limited' || tier === 'hot') && <PulseAura tier={tier} radius={radius} />}
+    <View style={[{ position: 'relative' }, style]}>
       {children}
-      {leftEdge && (
-        <View
-          pointerEvents="none"
-          style={[
-            styles.leftEdge,
-            { borderTopLeftRadius: radius, borderBottomLeftRadius: radius },
-          ]}
-        >
-          <LinearGradient
-            colors={tokens.edge}
-            start={{ x: 0.5, y: 0 }}
-            end={{ x: 0.5, y: 1 }}
-            style={StyleSheet.absoluteFill}
-          />
-        </View>
-      )}
+      <View
+        pointerEvents="none"
+        style={[
+          styles.leftEdge,
+          { borderTopLeftRadius: radius, borderBottomLeftRadius: radius },
+        ]}
+      >
+        <LinearGradient
+          colors={tokens.edge}
+          start={{ x: 0.5, y: 0 }}
+          end={{ x: 0.5, y: 1 }}
+          style={StyleSheet.absoluteFill}
+        />
+      </View>
     </View>
   );
 }
@@ -475,6 +412,7 @@ interface TierCoverEffectsProps {
 export function TierCoverEffects({ tier, radius = 0 }: TierCoverEffectsProps) {
   if (!tier) return null;
   if (tier === 'hot') return <HeatHaze radius={radius} />;
+  if (tier === 'collectible') return <CoverBlink radius={radius} />;
   return null;
 }
 
@@ -506,13 +444,19 @@ interface TierFeatureBlockProps {
   tier: RarityTier;
 }
 
-/** Feature-card row used in the "Особенности" section on the record detail screen. */
+/**
+ * Feature-card row used in the "Особенности" section on the record detail screen.
+ *
+ * RarityAura handles the per-tier visual: collectible → animated ring, limited/hot → left strip.
+ * Dot is anchored to the title line (alignSelf flex-start + marginTop), not vertically centered
+ * to the whole row, so it reads as a marker right next to the tier name.
+ */
 export function TierFeatureBlock({ tier }: TierFeatureBlockProps) {
   const tokens = RARITY_TIERS[tier];
   const radius = 14;
 
   return (
-    <RarityAura tier={tier} radius={radius} leftEdge style={styles.featureWrap}>
+    <RarityAura tier={tier} radius={radius} style={styles.featureWrap}>
       <View style={[styles.featureCard, { borderRadius: radius }]}>
         <View
           style={[
@@ -536,51 +480,31 @@ export function TierFeatureBlock({ tier }: TierFeatureBlockProps) {
 
 const styles = StyleSheet.create({
   // Aura layers — positioned absolutely behind card content
-  auraPulse: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-  },
-  auraPulseDeep: {
-    position: 'absolute',
-    top: -4,
-    left: -4,
-    right: -4,
-    bottom: -4,
-  },
 
-  // Canon: editorial double border
-  canonOuterGlow: {
+  // Collectible: thin rotating shimmer ring around the card
+  auraRingOuter: {
     position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
+    top: -1,
+    left: -1,
+    right: -1,
+    bottom: -1,
   },
-  canonInnerBorder: {
+  auraRing: {
     position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
+    top: -2,
+    left: -2,
+    right: -2,
+    bottom: -2,
   },
-
-  // Collectible: emerald double layer
-  collectibleHalo: {
-    position: 'absolute',
-    top: -4,
-    left: -4,
-    right: -4,
-    bottom: -4,
+  auraClip: {
+    overflow: 'hidden',
   },
-  collectibleBorder: {
+  auraRotator: {
     position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
+    top: '-50%',
+    left: '-50%',
+    width: '200%',
+    height: '200%',
   },
 
   // Cover-internal effects
@@ -592,7 +516,13 @@ const styles = StyleSheet.create({
     bottom: 0,
     overflow: 'hidden',
   },
-
+  coverBlink: {
+    position: 'absolute',
+    top: 0,
+    bottom: 0,
+    left: 0,
+    width: '40%',
+  },
 
   // Left edge accent (LIST)
   leftEdge: {
@@ -600,7 +530,7 @@ const styles = StyleSheet.create({
     left: 0,
     top: 0,
     bottom: 0,
-    width: 3,
+    width: 5,
     overflow: 'hidden',
   },
 
@@ -614,13 +544,16 @@ const styles = StyleSheet.create({
     paddingLeft: 22,
     paddingRight: 14,
     flexDirection: 'row',
-    alignItems: 'center',
+    alignItems: 'flex-start',
     gap: 14,
   },
   featureDot: {
     width: 10,
     height: 10,
     borderRadius: 5,
+    // Анхор к title: title fontSize=14, lineHeight≈17. Центр title ≈ 8.5px от верха.
+    // Чтобы dot центр совпал — top = 8.5 - 5 = ~3.5
+    marginTop: 4,
     shadowOpacity: 0.95,
     shadowRadius: 8,
     shadowOffset: { width: 0, height: 0 },

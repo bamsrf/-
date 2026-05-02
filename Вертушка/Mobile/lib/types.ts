@@ -94,6 +94,12 @@ export interface RecordSearchResult {
   thumb_image_url?: string;
   cover_url?: string;
   format_type?: string;
+  // Rarity flags — backfilled by backend from local DB / cheap on-the-fly parsing
+  is_first_press?: boolean;
+  is_canon?: boolean;
+  is_collectible?: boolean;
+  is_limited?: boolean;
+  is_hot?: boolean;
 }
 
 export interface RecordSearchResponse {
@@ -320,6 +326,12 @@ export interface ReleaseSearchResult {
   format?: string;
   cover_image_url?: string;
   thumb_image_url?: string;
+  // Rarity flags — backfilled by backend from local DB / cheap on-the-fly parsing
+  is_first_press?: boolean;
+  is_canon?: boolean;
+  is_collectible?: boolean;
+  is_limited?: boolean;
+  is_hot?: boolean;
 }
 
 export interface ReleaseSearchResponse {

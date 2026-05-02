@@ -105,7 +105,7 @@ export function VersionCard({ version, onPress }: VersionCardProps) {
 
   if (!rarityTier) return inner;
   return (
-    <RarityAura tier={rarityTier} radius={BorderRadius.md} leftEdge style={styles.rarityWrap}>
+    <RarityAura tier={rarityTier} radius={BorderRadius.md} style={styles.rarityWrap}>
       {inner}
     </RarityAura>
   );
@@ -166,7 +166,8 @@ const styles = StyleSheet.create({
     marginBottom: 0,
   },
   rarityWrap: {
-    marginBottom: Spacing.sm,
+    marginTop: 6,
+    marginBottom: Spacing.md,
   },
 });
 

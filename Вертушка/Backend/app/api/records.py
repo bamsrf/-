@@ -1,6 +1,7 @@
 """
 API для работы с пластинками
 """
+import asyncio
 import logging
 from uuid import UUID
 
@@ -9,6 +10,8 @@ logger = logging.getLogger(__name__)
 from fastapi import APIRouter, Depends, HTTPException, status, Query, Response
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.services.cache import cache, TTL_MASTER_VERSIONS
 
 from app.database import get_db
 from app.models.user import User
@@ -35,6 +38,55 @@ from app.services.discogs import DiscogsService
 from app.services.openai_vision import OpenAIVisionService, CoverRecognitionError
 
 router = APIRouter()
+
+
+async def _enrich_search_results_with_rarity(
+    items: list,
+    db: AsyncSession,
+    *,
+    id_attr: str,
+    format_attr: str,
+) -> None:
+    """
+    Cheap rarity enrichment for search/release lists:
+      - parses is_limited from format string token match
+      - pulls is_canon/is_collectible/is_limited/is_hot from local Record table
+        for any release the backend has previously seen.
+
+    Items without a DB row still get is_limited if the format string matches.
+    No external Discogs calls — bounded cost (single SQL IN-query).
+    """
+    if not items:
+        return
+
+    for item in items:
+        fmt_lower = (getattr(item, format_attr, None) or "").lower()
+        if any(tok in fmt_lower for tok in DiscogsService.LIMITED_TOKENS):
+            item.is_limited = True
+
+    ids = [getattr(item, id_attr) for item in items if getattr(item, id_attr, None)]
+    if not ids:
+        return
+    rows = await db.execute(
+        select(
+            Record.discogs_id,
+            Record.is_canon,
+            Record.is_collectible,
+            Record.is_limited,
+            Record.is_hot,
+        ).where(Record.discogs_id.in_(ids))
+    )
+    flags_by_id = {
+        row.discogs_id: (row.is_canon, row.is_collectible, row.is_limited, row.is_hot)
+        for row in rows
+    }
+    for item in items:
+        f = flags_by_id.get(getattr(item, id_attr, None))
+        if f:
+            item.is_canon = item.is_canon or f[0]
+            item.is_collectible = item.is_collectible or f[1]
+            item.is_limited = item.is_limited or f[2]
+            item.is_hot = item.is_hot or f[3]
 
 
 async def _enrich_response_with_rub(
@@ -241,6 +293,9 @@ async def search_records(
             label=label,
             page=page,
             per_page=per_page
+        )
+        await _enrich_search_results_with_rarity(
+            results.results, db, id_attr="discogs_id", format_attr="format_type"
         )
         return results
     except Exception as e:
@@ -539,6 +594,7 @@ async def search_releases(
     page: int = Query(1, ge=1, description="Номер страницы"),
     per_page: int = Query(20, ge=1, le=100, description="Записей на страницу"),
     current_user: User | None = Depends(get_current_user_optional),
+    db: AsyncSession = Depends(get_db),
 ):
     """
     Поиск конкретных релизов с фильтрами в Discogs.
@@ -555,6 +611,9 @@ async def search_releases(
             year=year,
             page=page,
             per_page=per_page
+        )
+        await _enrich_search_results_with_rarity(
+            results.results, db, id_attr="release_id", format_attr="format"
         )
         return results
     except Exception as e:
@@ -601,6 +660,15 @@ async def get_master_versions(
     Не требует авторизации.
     """
     response.headers["Cache-Control"] = "public, max-age=3600"
+
+    # Кэш ENRICHED-ответа отдельный — get_master_versions кэширует только сырые
+    # данные от Discogs, без is_collectible/is_hot. Здесь храним полностью
+    # обогащённую версию, чтобы не делать N×get_release на каждый запрос.
+    enriched_ck = f"{master_id}:p{page}:pp{per_page}"
+    cached_enriched = await cache.get("master_versions_enriched", enriched_ck)
+    if cached_enriched:
+        return MasterVersionsResponse(**cached_enriched)
+
     discogs = DiscogsService()
 
     try:
@@ -613,9 +681,6 @@ async def get_master_versions(
         # Дешёвые «on-the-fly» флаги для всех версий:
         # - is_canon = release_id == master.main_release_id (один кэшированный get_master)
         # - is_limited = парсинг строки format на токены (без новых вызовов)
-        # - is_collectible / is_hot — пропускаем (требуют marketplace stats per release =
-        #   50 запросов на список = слишком дорого). Подмешиваем только из локальной БД
-        #   для уже виденных релизов.
         try:
             master = await discogs.get_master(master_id)
             main_release_id = str(master.main_release_id) if master.main_release_id else None
@@ -631,6 +696,7 @@ async def get_master_versions(
 
         # Локальная БД дополняет (включая is_collectible / is_hot для виденных)
         release_ids = [v.release_id for v in versions.results if v.release_id]
+        seen_ids: set[str] = set()
         if release_ids:
             rows = await db.execute(
                 select(
@@ -645,6 +711,7 @@ async def get_master_versions(
                 row.discogs_id: (row.is_canon, row.is_collectible, row.is_limited, row.is_hot)
                 for row in rows
             }
+            seen_ids = set(flags_by_id.keys())
             for v in versions.results:
                 f = flags_by_id.get(v.release_id)
                 if f:
@@ -653,6 +720,31 @@ async def get_master_versions(
                     v.is_limited = v.is_limited or f[2]
                     v.is_hot = v.is_hot or f[3]
 
+        # Для версий, ещё не виденных в БД, считаем is_collectible/is_hot свежо
+        # через discogs.get_release (там и price_stats, и community.have, и
+        # _compute_rarity_flags). Параллельно с capping concurrency, чтобы
+        # не уткнуться в Discogs rate-limit. Первый вызов на мастер медленный
+        # (~5–15 сек), последующие — мгновенные за счёт кэша master_versions_enriched.
+        unseen = [v for v in versions.results if v.release_id and v.release_id not in seen_ids]
+        if unseen:
+            sem = asyncio.Semaphore(5)
+
+            async def fetch_flags(version):
+                async with sem:
+                    try:
+                        data = await discogs.get_release(version.release_id)
+                        version.is_canon = version.is_canon or bool(data.get("is_canon"))
+                        version.is_collectible = version.is_collectible or bool(data.get("is_collectible"))
+                        version.is_limited = version.is_limited or bool(data.get("is_limited"))
+                        version.is_hot = version.is_hot or bool(data.get("is_hot"))
+                    except Exception:
+                        # rate-limit / network — оставляем дешёвые флаги, не падаем
+                        pass
+
+            await asyncio.gather(*[fetch_flags(v) for v in unseen])
+
+        # Кэшируем enriched-результат на 3 дня (как master_versions у Discogs)
+        await cache.set("master_versions_enriched", enriched_ck, versions.model_dump(), TTL_MASTER_VERSIONS)
         return versions
     except Exception as e:
         raise HTTPException(
@@ -720,6 +812,7 @@ async def get_artist_releases(
     page: int = Query(1, ge=1, description="Номер страницы"),
     per_page: int = Query(50, ge=1, le=100, description="Записей на страницу"),
     current_user: User | None = Depends(get_current_user_optional),
+    db: AsyncSession = Depends(get_db),
 ):
     """
     Получение релизов артиста.
@@ -733,6 +826,9 @@ async def get_artist_releases(
             artist_id=artist_id,
             page=page,
             per_page=per_page
+        )
+        await _enrich_search_results_with_rarity(
+            releases.results, db, id_attr="release_id", format_attr="format"
         )
         return releases
     except Exception as e:

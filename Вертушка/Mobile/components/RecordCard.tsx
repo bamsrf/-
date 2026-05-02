@@ -21,7 +21,7 @@ import Animated, {
 import { Colors, Typography, BorderRadius, Shadows, Spacing, Gradients } from '../constants/theme';
 import { RecordSearchResult, VinylRecord, MasterSearchResult, ReleaseSearchResult, PublicProfileRecord } from '../lib/types';
 import { getCoverUrl } from '../lib/api';
-import { RarityAura, TierCoverEffects, TierLabel, pickRarityTier, RarityContext, RarityFlags } from './RarityAura';
+import { RarityAura, TierCoverEffects, TierLabel, pickRarityTier, RarityContext, RarityFlags, RARITY_TIERS } from './RarityAura';
 
 const { width } = Dimensions.get('window');
 const CARD_WIDTH = (width - Spacing.md * 3) / 2;
@@ -43,6 +43,8 @@ interface RecordCardProps {
   isBooked?: boolean;
   /** Where this card is rendered — drives rarity tier selection. `collection` hides "hot". */
   rarityContext?: RarityContext;
+  /** Disable the rarity aura/animation wrapper — show only the inline text label. Used in grid/tile mode. */
+  noRarityAura?: boolean;
 }
 
 const FORMAT_TRANSLATIONS: Record<string, string> = {
@@ -109,11 +111,13 @@ function RecordCardComponent({
   onLongPress,
   isBooked = false,
   rarityContext = 'search',
+  noRarityAura = false,
 }: RecordCardProps) {
   const imageUrl = getCoverUrl(record);
   const cardWidth = size === 'large' ? width - Spacing.md * 2 : CARD_WIDTH;
   const imageHeight = size === 'large' ? cardWidth * 0.8 : CARD_WIDTH;
   const rarityTier = pickRarityTier(record as RarityFlags, rarityContext);
+  const auraTier = noRarityAura ? null : rarityTier;
 
   const scale = useSharedValue(1);
   const didLongPress = useRef(false);
@@ -221,6 +225,13 @@ function RecordCardComponent({
           <Text style={styles.compactTitle} numberOfLines={2}>
             {record.title}
           </Text>
+          {rarityTier && (
+            <View style={[styles.compactRarity, { backgroundColor: RARITY_TIERS[rarityTier].palette[1] }]}>
+              <Text style={styles.compactRarityText} numberOfLines={1}>
+                {RARITY_TIERS[rarityTier].label}
+              </Text>
+            </View>
+          )}
         </LinearGradient>
       </AnimatedPressable>
     );
@@ -238,7 +249,7 @@ function RecordCardComponent({
       <AnimatedPressable
         style={[
           styles.listContainer,
-          rarityTier ? styles.cardNoMargin : Shadows.sm,
+          auraTier ? styles.cardNoMargin : Shadows.sm,
           isSelectionMode && isSelected && styles.containerSelected,
           animatedStyle,
         ]}
@@ -264,7 +275,7 @@ function RecordCardComponent({
               <Ionicons name="disc-outline" size={28} color={Colors.periwinkle} />
             </View>
           )}
-          <TierCoverEffects tier={rarityTier} radius={10} />
+          <TierCoverEffects tier={auraTier} radius={10} />
           {isBooked && !isSelectionMode && (
             <View style={styles.listBookedBadge}>
               <Ionicons name="gift-outline" size={10} color={Colors.background} />
@@ -312,9 +323,9 @@ function RecordCardComponent({
       </AnimatedPressable>
     );
 
-    if (!rarityTier) return listInner;
+    if (!auraTier) return listInner;
     return (
-      <RarityAura tier={rarityTier} radius={14} leftEdge style={styles.rarityWrapList}>
+      <RarityAura tier={auraTier} radius={14} style={styles.rarityWrapList}>
         {listInner}
       </RarityAura>
     );
@@ -334,7 +345,7 @@ function RecordCardComponent({
       style={[
         styles.expandedContainer,
         { width: cardWidth },
-        rarityTier ? styles.cardNoMargin : Shadows.md,
+        auraTier ? styles.cardNoMargin : Shadows.md,
         isSelectionMode && isSelected && styles.containerSelected,
         animatedStyle,
       ]}
@@ -360,7 +371,7 @@ function RecordCardComponent({
             <Ionicons name="disc-outline" size={48} color={Colors.periwinkle} />
           </View>
         )}
-        <TierCoverEffects tier={rarityTier} radius={0} />
+        <TierCoverEffects tier={auraTier} radius={0} />
         {isBooked && !isSelectionMode && (
           <LinearGradient
             colors={[Colors.royalBlue, Colors.periwinkle]}
@@ -434,9 +445,9 @@ function RecordCardComponent({
     </AnimatedPressable>
   );
 
-  if (!rarityTier) return expandedInner;
+  if (!auraTier) return expandedInner;
   return (
-    <RarityAura tier={rarityTier} radius={16} style={styles.rarityWrapExpanded}>
+    <RarityAura tier={auraTier} radius={16} style={styles.rarityWrapExpanded}>
       {expandedInner}
     </RarityAura>
   );
@@ -486,6 +497,20 @@ const styles = StyleSheet.create({
     fontFamily: 'Inter_700Bold',
     color: '#FFFFFF',
     lineHeight: 20,
+  },
+  compactRarity: {
+    alignSelf: 'flex-start',
+    marginTop: 6,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 6,
+  },
+  compactRarityText: {
+    fontSize: 10,
+    fontFamily: 'Inter_700Bold',
+    color: '#FFFFFF',
+    letterSpacing: 0.4,
+    textTransform: 'uppercase',
   },
   yearBadge: {
     position: 'absolute',
@@ -703,11 +728,14 @@ const styles = StyleSheet.create({
   },
 
   // ===== RARITY wrappers =====
+  // Extra marginTop+Bottom чтобы соседние подсвеченные карточки не слипались аурами
   rarityWrapList: {
-    marginBottom: Spacing.sm,
+    marginTop: 6,
+    marginBottom: Spacing.md,
   },
   rarityWrapExpanded: {
-    marginBottom: Spacing.md,
+    marginTop: 6,
+    marginBottom: Spacing.lg,
   },
   cardNoMargin: {
     marginBottom: 0,

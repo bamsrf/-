@@ -122,6 +122,7 @@ function RecordGridComponent<T extends RecordItem = RecordItem>({
           }
           isBooked={isBooked}
           rarityContext={rarityContext}
+          noRarityAura={numColumns >= 2}
         />
       </Animated.View>
     );
