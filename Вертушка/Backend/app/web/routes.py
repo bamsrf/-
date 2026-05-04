@@ -2,7 +2,7 @@
 Web-маршруты для публичных страниц (HTML, не API)
 """
 import logging
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta
 from decimal import Decimal
 from uuid import UUID
 
@@ -263,8 +263,11 @@ async def public_profile_page(
         )
         newest = newest_row.first()
 
-        # Релизы текущего года
-        current_year = datetime.now(timezone.utc).year
+        # Релизы текущего года.
+        # added_at в БД хранится без таймзоны — работаем с naive UTC,
+        # чтобы asyncpg не падал на сравнении offset-aware с naive.
+        now_utc_naive = datetime.utcnow()
+        current_year = now_utc_naive.year
         fresh_count = await db.scalar(
             select(func.count(Record.id))
             .select_from(ur_join)
@@ -296,11 +299,14 @@ async def public_profile_page(
             .where(or_(Record.is_first_press == True, Record.is_canon == True, Record.is_collectible == True))
         ) or 0
 
-        # Самая дорогая (по estimated_price_rub в коллекции юзера)
+        # Самая дорогая (по estimated_price_rub в коллекции юзера).
+        # select_from(CollectionItem) — иначе SQLA вывел бы FROM из Record и
+        # JOIN-цепочка не сошлась бы.
         priciest_row = await db.execute(
             select(Record.artist, Record.title, CollectionItem.estimated_price_rub)
-            .join(Collection, Collection.id == CollectionItem.collection_id)
-            .join(Record, Record.id == CollectionItem.record_id)
+            .select_from(CollectionItem)
+            .join(Collection, CollectionItem.collection_id == Collection.id)
+            .join(Record, CollectionItem.record_id == Record.id)
             .where(
                 Collection.user_id == user.id,
                 CollectionItem.estimated_price_rub.isnot(None),
@@ -319,7 +325,7 @@ async def public_profile_page(
         )
 
         # Новых за последние 7 дней
-        week_ago = datetime.now(timezone.utc) - timedelta(days=7)
+        week_ago = now_utc_naive - timedelta(days=7)
         new_this_week = await db.scalar(
             select(func.count(CollectionItem.id))
             .join(Collection, Collection.id == CollectionItem.collection_id)
@@ -401,9 +407,8 @@ async def public_profile_page(
                 "html": f"Самая дорогая: <b>{price_fmt} ₽</b>",
             })
         if first_added:
-            now = datetime.now(timezone.utc)
-            fa = first_added if first_added.tzinfo else first_added.replace(tzinfo=timezone.utc)
-            days = (now - fa).days
+            fa = first_added.replace(tzinfo=None) if first_added.tzinfo else first_added
+            days = (now_utc_naive - fa).days
             if days >= 365:
                 years = days // 365
                 word = "год" if years == 1 else ("года" if 2 <= years <= 4 else "лет")
