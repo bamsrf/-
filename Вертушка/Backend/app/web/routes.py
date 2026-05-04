@@ -2,6 +2,7 @@
 Web-маршруты для публичных страниц (HTML, не API)
 """
 import logging
+from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from uuid import UUID
 
@@ -252,6 +253,42 @@ async def public_profile_page(
         )
         oldest = oldest_row.first()
 
+        # Самая свежая пластинка
+        newest_row = await db.execute(
+            select(Record.year)
+            .select_from(ur_join)
+            .where(Record.year.isnot(None), Record.year > 1900)
+            .order_by(Record.year.desc())
+            .limit(1)
+        )
+        newest = newest_row.first()
+
+        # Релизы текущего года
+        current_year = datetime.now(timezone.utc).year
+        fresh_count = await db.scalar(
+            select(func.count(Record.id))
+            .select_from(ur_join)
+            .where(Record.year == current_year)
+        ) or 0
+
+        # Distinct artists
+        artists_count = await db.scalar(
+            select(func.count(func.distinct(Record.artist)))
+            .select_from(ur_join)
+            .where(Record.artist.isnot(None), Record.artist != "")
+        ) or 0
+
+        # Топ-артист (count distinct records по artist)
+        top_artist_row = await db.execute(
+            select(Record.artist, func.count(Record.id).label("cnt"))
+            .select_from(ur_join)
+            .where(Record.artist.isnot(None), Record.artist != "")
+            .group_by(Record.artist)
+            .order_by(func.count(Record.id).desc())
+            .limit(1)
+        )
+        top_artist = top_artist_row.first()
+
         # Первые прессы / Каноничные / Коллекционка
         rare_count = await db.scalar(
             select(func.count(Record.id))
@@ -259,8 +296,43 @@ async def public_profile_page(
             .where(or_(Record.is_first_press == True, Record.is_canon == True, Record.is_collectible == True))
         ) or 0
 
-        # Собираем список (только непустые)
-        if color_count >= 1:
+        # Самая дорогая (по estimated_price_rub в коллекции юзера)
+        priciest_row = await db.execute(
+            select(Record.artist, Record.title, CollectionItem.estimated_price_rub)
+            .join(Collection, Collection.id == CollectionItem.collection_id)
+            .join(Record, Record.id == CollectionItem.record_id)
+            .where(
+                Collection.user_id == user.id,
+                CollectionItem.estimated_price_rub.isnot(None),
+                CollectionItem.estimated_price_rub > 0,
+            )
+            .order_by(CollectionItem.estimated_price_rub.desc())
+            .limit(1)
+        )
+        priciest = priciest_row.first()
+
+        # Возраст коллекции (дни от первой добавленной записи)
+        first_added = await db.scalar(
+            select(func.min(CollectionItem.added_at))
+            .join(Collection, Collection.id == CollectionItem.collection_id)
+            .where(Collection.user_id == user.id)
+        )
+
+        # Новых за последние 7 дней
+        week_ago = datetime.now(timezone.utc) - timedelta(days=7)
+        new_this_week = await db.scalar(
+            select(func.count(CollectionItem.id))
+            .join(Collection, Collection.id == CollectionItem.collection_id)
+            .where(
+                Collection.user_id == user.id,
+                CollectionItem.added_at >= week_ago,
+            )
+        ) or 0
+
+        # === Сборка списка ===
+        # Правило: stat показывается только если значение > 0 и проходит порог.
+        # Порог выше 1 ставим там, где маленькое число выглядит неинтересно (лейблы, артисты).
+        if color_count > 0:
             fun_stats.append({
                 "icon": "🎨",
                 "html": f"<b>{color_count}</b> цветных пластинок",
@@ -275,6 +347,11 @@ async def public_profile_page(
                 "icon": "📻",
                 "html": f"<b>{top_decade_count}</b> пластинок из {top_decade}-х",
             })
+        if fresh_count > 0:
+            fun_stats.append({
+                "icon": "🚀",
+                "html": f"<b>{fresh_count}</b> релизов {current_year}-го",
+            })
         if countries_count >= 2:
             fun_stats.append({
                 "icon": "🌍",
@@ -285,15 +362,66 @@ async def public_profile_page(
                 "icon": "🏷️",
                 "html": f"<b>{labels_count}</b> разных лейблов",
             })
-        if oldest:
+        if artists_count >= 5:
+            fun_stats.append({
+                "icon": "🎙️",
+                "html": f"<b>{artists_count}</b> разных артистов",
+            })
+        if top_artist and top_artist[1] >= 2:
+            artist_name = (top_artist[0] or "").strip()
+            if len(artist_name) > 22:
+                artist_name = artist_name[:22] + "…"
+            fun_stats.append({
+                "icon": "👑",
+                "html": f"Топ-артист: <b>{artist_name}</b>",
+            })
+        if oldest and oldest[0]:
+            artist_name = (oldest[1] or "").strip()
+            if len(artist_name) > 18:
+                artist_name = artist_name[:18] + "…"
+            suffix = f" · {artist_name}" if artist_name else ""
             fun_stats.append({
                 "icon": "🕰️",
-                "html": f"Самая старая: <b>{oldest[0]}</b> · {oldest[1]}",
+                "html": f"Самая старая: <b>{oldest[0]}</b>{suffix}",
             })
-        if rare_count >= 1:
+        if newest and newest[0] and (not oldest or newest[0] != oldest[0]):
+            fun_stats.append({
+                "icon": "🆕",
+                "html": f"Самая свежая: <b>{newest[0]}</b>",
+            })
+        if rare_count > 0:
             fun_stats.append({
                 "icon": "💎",
                 "html": f"<b>{rare_count}</b> редких изданий",
+            })
+        if priciest and priciest[2] and priciest[2] >= 1000:
+            price_fmt = f"{int(priciest[2]):,}".replace(",", " ")
+            fun_stats.append({
+                "icon": "💸",
+                "html": f"Самая дорогая: <b>{price_fmt} ₽</b>",
+            })
+        if first_added:
+            now = datetime.now(timezone.utc)
+            fa = first_added if first_added.tzinfo else first_added.replace(tzinfo=timezone.utc)
+            days = (now - fa).days
+            if days >= 365:
+                years = days // 365
+                word = "год" if years == 1 else ("года" if 2 <= years <= 4 else "лет")
+                fun_stats.append({
+                    "icon": "📅",
+                    "html": f"Собирает <b>{years}</b> {word}",
+                })
+            elif days >= 90:
+                months = max(1, days // 30)
+                word = "месяц" if months == 1 else ("месяца" if 2 <= months <= 4 else "месяцев")
+                fun_stats.append({
+                    "icon": "📅",
+                    "html": f"Собирает <b>{months}</b> {word}",
+                })
+        if new_this_week >= 2:
+            fun_stats.append({
+                "icon": "⚡",
+                "html": f"<b>{new_this_week}</b> новых за неделю",
             })
     except Exception as e:
         logger.warning("fun_stats computation failed: %s", e)
