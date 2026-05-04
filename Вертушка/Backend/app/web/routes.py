@@ -155,7 +155,8 @@ async def public_profile_page(
 
     # === Fun stats — ротирующие фишки коллекции ===
     fun_stats: list[dict] = []
-    if profile.show_collection and collection_count > 0:
+    try:
+      if profile.show_collection and collection_count > 0:
         # Цветные пластинки (по format_description: Coloured / Translucent / Picture / Splatter)
         color_keywords = ["Coloured", "Color", "Translucent", "Picture Disc", "Splatter", "Marbled", "Glow"]
         color_filter = func.coalesce(Record.format_description, "")
@@ -185,19 +186,22 @@ async def public_profile_page(
         if genre_counter:
             top_genre, top_genre_count = max(genre_counter.items(), key=lambda kv: kv[1])
 
-        # Декада с наибольшим количеством
-        decade_rows = await db.execute(
-            select(((Record.year / 10) * 10).label("decade"), func.count(Record.id).label("c"))
+        # Декада с наибольшим количеством — считаем в Python поверх плоского списка лет
+        year_rows = await db.execute(
+            select(Record.year)
             .join(CollectionItem, CollectionItem.record_id == Record.id)
             .join(Collection)
             .where(Collection.user_id == user.id, Record.year.isnot(None), Record.year > 1900)
-            .group_by("decade")
-            .order_by(func.count(Record.id).desc())
-            .limit(1)
         )
-        decade_row = decade_rows.first()
-        top_decade = int(decade_row[0]) if decade_row else None
-        top_decade_count = int(decade_row[1]) if decade_row else 0
+        decade_counter: dict[int, int] = {}
+        for (yr,) in year_rows:
+            if yr is None:
+                continue
+            d = (int(yr) // 10) * 10
+            decade_counter[d] = decade_counter.get(d, 0) + 1
+        top_decade, top_decade_count = (None, 0)
+        if decade_counter:
+            top_decade, top_decade_count = max(decade_counter.items(), key=lambda kv: kv[1])
 
         # Стран и лейблов (distinct)
         countries_count = await db.scalar(
@@ -272,6 +276,9 @@ async def public_profile_page(
                 "icon": "💎",
                 "html": f"<b>{rare_count}</b> редких изданий",
             })
+    except Exception as e:
+        logger.warning("fun_stats computation failed: %s", e)
+        fun_stats = []
 
     # === Избранные пластинки ===
     highlights = []
