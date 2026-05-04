@@ -15,6 +15,15 @@ import { toast } from '../../lib/toast';
 import { Image } from 'expo-image';
 import { useLocalSearchParams, useRouter, useFocusEffect } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
+import Animated, {
+  Easing,
+  useAnimatedStyle,
+  useSharedValue,
+  withDelay,
+  withRepeat,
+  withSequence,
+  withTiming,
+} from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { BlurView } from 'expo-blur';
@@ -38,6 +47,45 @@ function getFormatDisplayInfo(format?: string): { label: string; verb: string } 
   if (f.includes('box set')) return { label: 'Бокс-сет', verb: 'добавлен' };
   if (f.includes('cd')) return { label: 'CD', verb: 'добавлен' };
   return { label: 'Винил', verb: 'добавлен' };
+}
+
+const AnimatedIonicons = Animated.createAnimatedComponent(Ionicons);
+
+function OtherVersionsButton({ onPress }: { onPress: () => void }) {
+  const draw = useSharedValue(0);
+
+  useEffect(() => {
+    draw.value = withRepeat(
+      withSequence(
+        withTiming(-1, { duration: 700, easing: Easing.in(Easing.quad) }),
+        withTiming(1.2, { duration: 140, easing: Easing.out(Easing.cubic) }),
+        withTiming(0, { duration: 220, easing: Easing.out(Easing.quad) }),
+        withDelay(900, withTiming(0, { duration: 0 })),
+      ),
+      -1,
+      false,
+    );
+  }, [draw]);
+
+  const arrowStyle = useAnimatedStyle(() => ({
+    transform: [{ translateX: draw.value * 6 }],
+  }));
+
+  return (
+    <TouchableOpacity
+      style={styles.otherVersionsButton}
+      onPress={onPress}
+      activeOpacity={0.7}
+    >
+      <Text style={styles.otherVersionsText}>Смотреть другие версии релиза</Text>
+      <AnimatedIonicons
+        name="chevron-forward"
+        size={18}
+        color={Colors.text}
+        style={arrowStyle}
+      />
+    </TouchableOpacity>
+  );
 }
 
 const handleArtistNavigation = async (artistName: string, router: ReturnType<typeof useRouter>) => {
@@ -555,6 +603,13 @@ export default function RecordDetailScreen() {
           );
         })()}
 
+        {/* Другие версии релиза */}
+        {record.discogs_master_id ? (
+          <OtherVersionsButton
+            onPress={() => router.push(`/master/${record.discogs_master_id}/versions`)}
+          />
+        ) : null}
+
         {/* Треклист */}
         {record.tracklist && record.tracklist.length > 0 && (
           <Card variant="flat" style={styles.card}>
@@ -807,6 +862,23 @@ const styles = StyleSheet.create({
     color: Colors.textMuted,
     textAlign: 'center' as const,
     marginTop: Spacing.sm,
+  },
+  otherVersionsButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: Colors.surface,
+    borderRadius: BorderRadius.lg,
+    paddingVertical: Spacing.md,
+    paddingHorizontal: Spacing.md,
+    marginBottom: Spacing.md,
+  },
+  otherVersionsText: {
+    ...Typography.body,
+    color: Colors.text,
+    fontFamily: 'Inter_700Bold',
+    fontWeight: '700',
+    flex: 1,
   },
   trackRow: {
     flexDirection: 'row',
