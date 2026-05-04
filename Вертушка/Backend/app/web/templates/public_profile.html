@@ -350,13 +350,21 @@
             font-size: 11px; color: var(--periwinkle); margin-top: 2px; font-variant-numeric: tabular-nums;
         }
 
-        /* Auto-scroll infinite rail */
-        .rail-infinite { overflow: hidden; }
+        /* Auto-scroll infinite rail — нативный horizontal scroll, как в мобильном поиске.
+           Авто-двигает scrollLeft через rAF; при касании паузится на 2.5с,
+           юзер свободно драгает / тапает, после grace-периода авто-движение
+           возобновляется с текущей user-позиции. */
+        .rail-infinite {
+            overflow-x: auto; overflow-y: hidden;
+            scrollbar-width: none;
+            -webkit-overflow-scrolling: touch;
+            overscroll-behavior-x: contain;
+        }
+        .rail-infinite::-webkit-scrollbar { display: none; }
         .rail-infinite .rail-track {
             display: flex; gap: 14px;
             padding: 4px 4px 8px;
             width: max-content;
-            will-change: transform;
         }
 
         /* BOOKING EXPLAINER */
@@ -1327,7 +1335,10 @@
             }
         })();
 
-        // Infinite auto-scroll для всех rail-infinite (rAF — работает в Safari)
+        // Infinite auto-scroll рейл — нативный horizontal scroll (как мобильный AutoRail).
+        // Авто-двигаем rail.scrollLeft программно. Когда юзер касается / драгает / крутит
+        // колёсико — паузим на 2.5с. После grace-периода возобновляем движение с
+        // текущей user-позиции, без «прыжков» в авто-точку.
         (function() {
             function startInfiniteRail(rail) {
                 if (!rail || rail.dataset.infiniteInit === '1') return;
@@ -1336,48 +1347,47 @@
                 var cards = Array.from(track.querySelectorAll('.rail-card'));
                 if (cards.length < 2) return;
                 rail.dataset.infiniteInit = '1';
+
+                // Клонируем карточки для бесшовного цикла
                 cards.forEach(function(card) {
                     var clone = card.cloneNode(true);
                     clone.setAttribute('aria-hidden', 'true');
-                    // Клик-обработчик inline-onclick переносится с cloneNode, оставляем как есть
                     track.appendChild(clone);
                 });
+
                 var cardStep = 116 + 14;
                 var loopWidth = cards.length * cardStep;
-                var speed = 45; // px/s
-                var pos = 0;
+                var speed = 45; // px/s — медленнее, чтобы успевать читать
                 var paused = false;
-                var last = null;
-                var canHover = window.matchMedia('(hover: hover)').matches;
-                if (canHover) {
-                    rail.addEventListener('mouseenter', function() { paused = true; });
-                    rail.addEventListener('mouseleave', function() { paused = false; });
-                }
-                // Touch / pointer: пауза при касании, продолжение после release
-                // (с задержкой, чтобы юзер успел кликнуть до того, как карусель снова поедет).
                 var resumeTimer = null;
-                function pause() {
+                var last = null;
+
+                function pauseAndScheduleResume(delay) {
                     paused = true;
-                    if (resumeTimer) { clearTimeout(resumeTimer); resumeTimer = null; }
-                }
-                function resumeWithGrace(delay) {
                     if (resumeTimer) clearTimeout(resumeTimer);
-                    resumeTimer = setTimeout(function() { paused = false; resumeTimer = null; }, delay || 1400);
+                    resumeTimer = setTimeout(function() {
+                        paused = false; resumeTimer = null;
+                    }, delay || 2500);
                 }
-                rail.addEventListener('pointerdown', pause);
-                rail.addEventListener('pointerup',     function() { resumeWithGrace(1400); });
-                rail.addEventListener('pointercancel', function() { resumeWithGrace(800);  });
-                rail.addEventListener('pointerleave',  function() { if (!canHover) resumeWithGrace(800); });
-                // Доп. на iOS Safari, где pointer events иногда подавляются
-                rail.addEventListener('touchstart', pause, { passive: true });
-                rail.addEventListener('touchend',   function() { resumeWithGrace(1400); }, { passive: true });
-                rail.addEventListener('touchcancel',function() { resumeWithGrace(800);  }, { passive: true });
+
+                // Любая активная интеракция → пауза с grace-периодом
+                rail.addEventListener('pointerdown', function() { pauseAndScheduleResume(2500); }, { passive: true });
+                rail.addEventListener('touchstart',  function() { pauseAndScheduleResume(2500); }, { passive: true });
+                rail.addEventListener('wheel',       function() { pauseAndScheduleResume(2500); }, { passive: true });
+                // На десктопе пауза при наведении мыши
+                if (window.matchMedia('(hover: hover)').matches) {
+                    rail.addEventListener('mouseenter', function() { paused = true; if (resumeTimer) { clearTimeout(resumeTimer); resumeTimer = null; } });
+                    rail.addEventListener('mouseleave', function() { pauseAndScheduleResume(800); });
+                }
 
                 function tick(ts) {
                     if (last !== null && !paused) {
-                        pos += speed * (ts - last) / 1000;
-                        if (pos >= loopWidth) pos -= loopWidth;
-                        track.style.transform = 'translateX(-' + pos + 'px)';
+                        var dt = (ts - last) / 1000;
+                        var next = rail.scrollLeft + speed * dt;
+                        if (next >= loopWidth) next -= loopWidth;
+                        // setter не триггерит scroll-event с user intent → юзер по-прежнему может
+                        // драгать поверх авто-движения; pointerdown/touchstart выше всё равно поймают
+                        rail.scrollLeft = next;
                     }
                     last = ts;
                     requestAnimationFrame(tick);
