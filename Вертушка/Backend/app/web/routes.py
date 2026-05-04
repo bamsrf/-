@@ -338,21 +338,26 @@ async def public_profile_page(
     og_description = " \u00b7 ".join(og_parts)
 
     def compute_rub(record) -> int:
-        """\u0421\u0447\u0438\u0442\u0430\u0435\u0442 \u0440\u0443\u0431\u043b\u0451\u0432\u0443\u044e \u0446\u0435\u043d\u0443 \u0437\u0430\u043f\u0438\u0441\u0438 \u0447\u0435\u0440\u0435\u0437 \u043a\u043e\u043c\u043f\u043e\u043d\u0435\u043d\u0442\u043d\u0443\u044e \u0444\u043e\u0440\u043c\u0443\u043b\u0443 (\u0434\u043b\u044f \u0448\u0430\u0431\u043b\u043e\u043d\u0430)."""
+        """\u0421\u0447\u0438\u0442\u0430\u0435\u0442 \u0440\u0443\u0431\u043b\u0451\u0432\u0443\u044e \u0446\u0435\u043d\u0443 \u0437\u0430\u043f\u0438\u0441\u0438 \u0447\u0435\u0440\u0435\u0437 \u043a\u043e\u043c\u043f\u043e\u043d\u0435\u043d\u0442\u043d\u0443\u044e \u0444\u043e\u0440\u043c\u0443\u043b\u0443.
+        \u041f\u0440\u0438\u043d\u0438\u043c\u0430\u0435\u0442 \u0438 SQLAlchemy Record, \u0438 Pydantic PublicProfileRecord \u2014 \u043d\u0435\u0434\u043e\u0441\u0442\u0430\u044e\u0449\u0438\u0435
+        \u043f\u043e\u043b\u044f \u0434\u0435\u0433\u0440\u0430\u0434\u0438\u0440\u0443\u044e\u0442 \u0434\u043e None \u0447\u0435\u0440\u0435\u0437 getattr."""
         if not record:
             return 0
-        base = record.estimated_price_median or record.estimated_price_min
+        base = getattr(record, "estimated_price_median", None) or getattr(record, "estimated_price_min", None)
         if not base:
             return 0
-        return int(estimate_rub(
-            float(base),
-            record.country,
-            usd_rub_rate,
-            pricing_params,
-            format_type=record.format_type,
-            format_description=record.format_description,
-            discogs_data=record.discogs_data,
-        ))
+        try:
+            return int(estimate_rub(
+                float(base),
+                getattr(record, "country", None),
+                usd_rub_rate,
+                pricing_params,
+                format_type=getattr(record, "format_type", None),
+                format_description=getattr(record, "format_description", None),
+                discogs_data=getattr(record, "discogs_data", None),
+            ))
+        except Exception:
+            return 0
 
     return templates.TemplateResponse("public_profile.html", {
         "request": request,

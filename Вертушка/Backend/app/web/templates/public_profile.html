@@ -822,7 +822,6 @@
                              data-format="{{ (r.format_type or '')|e }}"
                              data-cover="{{ r.cover_image_url or '' }}"
                              data-price="{{ compute_rub(r) or '' }}"
-                             data-catalog="{{ (r.catalog_number or '')|e }}"
                              data-discogs="{{ r.discogs_id or '' }}"
                              onclick="openRecordPreview(this)">
                             <div class="rail-cover">
@@ -854,7 +853,6 @@
                              data-format="{{ (r.format_type or '')|e }}"
                              data-cover="{{ r.cover_image_url or '' }}"
                              data-price="{{ compute_rub(r) or '' }}"
-                             data-catalog="{{ (r.catalog_number or '')|e }}"
                              data-discogs="{{ r.discogs_id or '' }}"
                              data-want="{{ r.discogs_want or '' }}"
                              data-have="{{ r.discogs_have or '' }}"
