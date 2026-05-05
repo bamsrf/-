@@ -13,6 +13,45 @@ from app.models.gift_booking import GiftBooking, GiftStatus
 logger = logging.getLogger(__name__)
 
 
+async def auto_cancel_unverified_bookings():
+    """
+    Отмена непрошедших email-верификацию бронирований.
+    PENDING + expires_at <= now → CANCELLED, cancellation_reason='not_verified',
+    wishlist_item_id обнуляется (пункт снова доступен).
+    Запускается каждые 5 минут (если фича-флаг включён; если выключен — таска просто
+    не находит PENDING-записей и завершается мгновенно).
+    """
+    async with async_session_maker() as db:
+        try:
+            now = datetime.utcnow()
+
+            result = await db.execute(
+                select(GiftBooking).where(
+                    and_(
+                        GiftBooking.status == GiftStatus.PENDING,
+                        GiftBooking.expires_at != None,
+                        GiftBooking.expires_at <= now,
+                    )
+                )
+            )
+            bookings = result.scalars().all()
+
+            for booking in bookings:
+                booking.status = GiftStatus.CANCELLED
+                booking.cancelled_at = now
+                booking.cancellation_reason = "not_verified"
+                booking.wishlist_item_id = None
+                booking.verify_token = None
+                logger.info(f"Авто-cancel неподтверждённой брони: booking_id={booking.id}")
+
+            if bookings:
+                await db.commit()
+                logger.info(f"Авто-отменено {len(bookings)} неподтверждённых бронирований")
+        except Exception as e:
+            await db.rollback()
+            logger.error(f"Ошибка в auto_cancel_unverified_bookings: {e}")
+
+
 async def send_booking_reminders():
     """
     Отправка напоминаний дарителям за 7 дней до истечения брони.
@@ -59,24 +98,48 @@ async def auto_release_expired_bookings():
     Автоматическое освобождение истёкших броней.
     BOOKED + expires_at < now() → CANCELLED, cancellation_reason='expired',
     wishlist_item_id обнуляется (бронь больше не блокирует пластинку).
+    Дарителю уходит письмо «срок брони истёк».
     Запускается каждый час.
     """
+    from sqlalchemy.orm import selectinload
+    from app.models.wishlist import WishlistItem, Wishlist
+
     async with async_session_maker() as db:
         try:
             now = datetime.utcnow()
 
             result = await db.execute(
-                select(GiftBooking).where(
+                select(GiftBooking)
+                .where(
                     and_(
                         GiftBooking.status == GiftStatus.BOOKED,
                         GiftBooking.expires_at != None,
                         GiftBooking.expires_at <= now,
                     )
                 )
+                .options(
+                    selectinload(GiftBooking.wishlist_item).selectinload(WishlistItem.record),
+                    selectinload(GiftBooking.wishlist_item)
+                    .selectinload(WishlistItem.wishlist)
+                    .selectinload(Wishlist.user),
+                )
             )
             bookings = result.scalars().all()
 
+            email_payloads = []
             for booking in bookings:
+                if booking.gifter_email and booking.wishlist_item is not None:
+                    item = booking.wishlist_item
+                    record_title = item.record.title if item.record else None
+                    owner = item.wishlist.user if item.wishlist else None
+                    if record_title and owner:
+                        email_payloads.append({
+                            "gifter_email": booking.gifter_email,
+                            "gifter_name": booking.gifter_name,
+                            "record_title": record_title,
+                            "owner_name": owner.display_name or owner.username,
+                        })
+
                 booking.status = GiftStatus.CANCELLED
                 booking.cancelled_at = now
                 booking.cancellation_reason = "expired"
@@ -85,6 +148,14 @@ async def auto_release_expired_bookings():
 
             await db.commit()
             logger.info(f"Авто-освобождено {len(bookings)} бронирований")
+
+            if email_payloads:
+                from app.services.notifications import send_booking_auto_released_to_gifter
+                for payload in email_payloads:
+                    try:
+                        await send_booking_auto_released_to_gifter(**payload)
+                    except Exception as exc:
+                        logger.warning(f"Не удалось отправить письмо об auto-release: {exc}")
         except Exception as e:
             await db.rollback()
             logger.error(f"Ошибка в auto_release_expired_bookings: {e}")

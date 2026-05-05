@@ -99,7 +99,7 @@ export function AutoRail({
     }, 2500);
   };
 
-  if (!items.length) return null;
+  if (!items || items.length === 0) return null;
   const doubled = [...items, ...items];
 
   return (

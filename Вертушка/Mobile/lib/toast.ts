@@ -3,14 +3,23 @@
  * Используй вместо Alert.alert для success/error/info сообщений.
  * Alert.alert оставляй только для подтверждений деструктивных действий.
  */
+import * as Haptics from 'expo-haptics';
 import Toast from 'react-native-toast-message';
 
-export const toast = {
-  success: (message: string, subtitle?: string) =>
-    Toast.show({ type: 'success', text1: message, text2: subtitle, visibilityTime: 2500 }),
+const haptic = (style: Haptics.NotificationFeedbackType) => {
+  Haptics.notificationAsync(style).catch(() => {});
+};
 
-  error: (message: string, subtitle?: string) =>
-    Toast.show({ type: 'error', text1: message, text2: subtitle, visibilityTime: 3000 }),
+export const toast = {
+  success: (message: string, subtitle?: string) => {
+    haptic(Haptics.NotificationFeedbackType.Success);
+    Toast.show({ type: 'success', text1: message, text2: subtitle, visibilityTime: 2500 });
+  },
+
+  error: (message: string, subtitle?: string) => {
+    haptic(Haptics.NotificationFeedbackType.Error);
+    Toast.show({ type: 'error', text1: message, text2: subtitle, visibilityTime: 3000 });
+  },
 
   info: (message: string, subtitle?: string) =>
     Toast.show({ type: 'info', text1: message, text2: subtitle, visibilityTime: 2500 }),

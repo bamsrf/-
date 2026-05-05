@@ -17,9 +17,11 @@ import {
 } from 'react-native';
 import { toast } from '../lib/toast';
 import { Ionicons } from '@expo/vector-icons';
+import Toast from 'react-native-toast-message';
 import { useCollectionStore } from '../lib/store';
 import { api } from '../lib/api';
 import { Colors, Spacing, Typography, BorderRadius } from '../constants/theme';
+import { toastConfig } from './CustomToast';
 
 const folderPlaceholder = require('../assets/images/folder-placeholder.png');
 
@@ -167,6 +169,7 @@ export function FolderPickerModal({
           )}
         </View>
       </TouchableOpacity>
+      <Toast config={toastConfig} topOffset={56} />
     </Modal>
   );
 }

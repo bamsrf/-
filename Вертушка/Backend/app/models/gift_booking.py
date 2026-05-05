@@ -81,6 +81,25 @@ class GiftBooking(Base):
         nullable=False,
         unique=True
     )
+
+    # Токен подтверждения email (используется при флаге verification, иначе NULL)
+    verify_token: Mapped[str | None] = mapped_column(
+        String(50),
+        nullable=True,
+        unique=True,
+        index=True,
+    )
+
+    # Анти-фрод метки (заполняются на /book)
+    gifter_ip: Mapped[str | None] = mapped_column(
+        String(45),  # IPv6 max length
+        nullable=True,
+        index=True,
+    )
+    gifter_user_agent_hash: Mapped[str | None] = mapped_column(
+        String(64),  # sha256 hex
+        nullable=True,
+    )
     
     # Временные метки
     booked_at: Mapped[datetime] = mapped_column(

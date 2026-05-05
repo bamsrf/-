@@ -43,3 +43,6 @@ htmlcov/
 
 # Jupyter
 .ipynb_checkpoints/
+
+# User uploads (server-side generated content)
+Вертушка/Backend/uploads/

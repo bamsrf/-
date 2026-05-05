@@ -31,6 +31,7 @@ import { Colors } from '../constants/theme';
 import { OfflineBanner } from '../components/OfflineBanner';
 import { OnboardingOverlay } from '../components/OnboardingOverlay';
 import Toast from 'react-native-toast-message';
+import { toastConfig } from '../components/CustomToast';
 
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
@@ -140,7 +141,7 @@ function RootLayout() {
           <Stack.Screen name="social/list" />
         </Stack>
         <OnboardingOverlay />
-        <Toast />
+        <Toast config={toastConfig} topOffset={56} />
       </SafeAreaProvider>
     </GestureHandlerRootView>
   );

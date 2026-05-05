@@ -51,10 +51,19 @@ class Wishlist(Base):
     )
     
     # Настройки отображения
+    # show_gifter_names: видно ли имя дарителя ПУБЛИКЕ (гостям на share-link)
     show_gifter_names: Mapped[bool] = mapped_column(
         Boolean,
         default=True,
         nullable=False
+    )
+    # reveal_gifter_to_owner: хочет ли владелец знать имя дарителя сразу при бронировании.
+    # Дефолт False — анонимность для владельца сохраняется как было.
+    reveal_gifter_to_owner: Mapped[bool] = mapped_column(
+        Boolean,
+        default=False,
+        nullable=False,
+        server_default="false",
     )
     custom_message: Mapped[str | None] = mapped_column(
         Text,

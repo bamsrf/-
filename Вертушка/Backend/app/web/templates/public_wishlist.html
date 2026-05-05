@@ -529,7 +529,8 @@
                     location.reload();
                 } else {
                     const error = await response.json();
-                    alert('Ошибка: ' + (error.detail || 'Не удалось забронировать'));
+                    const detail = error.detail || 'Не удалось забронировать';
+                    alert(response.status === 403 ? detail : 'Ошибка: ' + detail);
                 }
             } catch (error) {
                 alert('Ошибка подключения. Попробуйте позже.');

@@ -73,6 +73,14 @@ class Settings(BaseSettings):
     covers_dir: str = Field(default="uploads/covers", alias="COVERS_DIR")
     covers_max_cache_mb: int = Field(default=5000, alias="COVERS_MAX_CACHE_MB")
     internal_api_token: str = Field(default="", alias="INTERNAL_API_TOKEN")
+
+    # Анти-фрод для бронирования подарков
+    gift_booking_per_ip_limit: int = Field(default=5, alias="GIFT_BOOKING_PER_IP_LIMIT")
+    gift_booking_per_ip_window_minutes: int = Field(default=60, alias="GIFT_BOOKING_PER_IP_WINDOW_MINUTES")
+    gift_booking_per_email_active_limit: int = Field(default=3, alias="GIFT_BOOKING_PER_EMAIL_ACTIVE_LIMIT")
+    # Email-верификация дарителя (под флагом — включать только когда SMTP стабилен)
+    gift_booking_require_email_verification: bool = Field(default=False, alias="GIFT_BOOKING_REQUIRE_EMAIL_VERIFICATION")
+    gift_booking_verification_window_hours: int = Field(default=24, alias="GIFT_BOOKING_VERIFICATION_WINDOW_HOURS")
     
     class Config:
         env_file = ".env"

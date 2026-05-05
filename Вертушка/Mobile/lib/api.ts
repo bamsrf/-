@@ -34,6 +34,7 @@ import {
   GiftBookingCreate,
   GiftBookingResponse,
   GiftGivenItem,
+  GiftReceivedItem,
   CoverScanResponse,
   NotificationSettings,
   SuggestResponse,
@@ -594,6 +595,16 @@ class ApiClient {
     return response.data;
   }
 
+  async getWishlistShareInfo(): Promise<{ share_token: string; share_url: string }> {
+    const response = await this.client.get<{ share_token: string; share_url: string }>('/wishlists/share-info');
+    return response.data;
+  }
+
+  async regenerateWishlistShareToken(): Promise<{ share_token: string; share_url: string }> {
+    const response = await this.client.post<{ share_token: string; share_url: string }>('/wishlists/regenerate-share-token');
+    return response.data;
+  }
+
   // ==================== Public Profile ====================
 
   async getProfileSettings(): Promise<ProfileShareSettings> {
@@ -737,6 +748,15 @@ class ApiClient {
     await this.client.put(`/gifts/${bookingId}/cancel`, null, {
       params: { cancel_token: cancelToken },
     });
+  }
+
+  async getMyReceivedGifts(): Promise<GiftReceivedItem[]> {
+    const response = await this.client.get<GiftReceivedItem[]>('/gifts/me/received');
+    return response.data;
+  }
+
+  async completeGiftBooking(bookingId: string): Promise<void> {
+    await this.client.put(`/gifts/me/received/${bookingId}/complete`);
   }
 }
 
