@@ -660,3 +660,64 @@ async def cancel_booking_page(
         "request": request, "page_status": "confirm",
         "booking": booking, "token": token,
     })
+
+
+@router.get("/confirm/{booking_id}", response_class=HTMLResponse)
+async def confirm_booking_page(
+    request: Request,
+    booking_id: UUID,
+    token: str = "",
+    db: AsyncSession = Depends(get_db)
+):
+    """Страница подтверждения email-верификации бронирования."""
+    result = await db.execute(
+        select(GiftBooking)
+        .where(GiftBooking.id == booking_id)
+        .options(
+            selectinload(GiftBooking.wishlist_item)
+            .selectinload(WishlistItem.record)
+        )
+    )
+    booking = result.scalar_one_or_none()
+
+    if not booking:
+        return templates.TemplateResponse("confirm_booking.html", {
+            "request": request, "page_status": "not_found",
+            "booking": None, "token": "",
+        })
+
+    if not booking.verify_token or booking.verify_token != token:
+        # Возможно уже подтверждено (verify_token обнулён) — даём дружелюбный экран
+        if booking.status == GiftStatus.BOOKED and not booking.verify_token:
+            return templates.TemplateResponse("confirm_booking.html", {
+                "request": request, "page_status": "already_confirmed",
+                "booking": booking, "token": "",
+            })
+        return templates.TemplateResponse("confirm_booking.html", {
+            "request": request, "page_status": "invalid_token",
+            "booking": None, "token": "",
+        })
+
+    if booking.status == GiftStatus.CANCELLED:
+        return templates.TemplateResponse("confirm_booking.html", {
+            "request": request, "page_status": "cancelled",
+            "booking": booking, "token": token,
+        })
+
+    if booking.status == GiftStatus.COMPLETED:
+        return templates.TemplateResponse("confirm_booking.html", {
+            "request": request, "page_status": "completed",
+            "booking": booking, "token": token,
+        })
+
+    if booking.status == GiftStatus.BOOKED:
+        return templates.TemplateResponse("confirm_booking.html", {
+            "request": request, "page_status": "already_confirmed",
+            "booking": booking, "token": token,
+        })
+
+    # PENDING — основной кейс, показываем форму подтверждения
+    return templates.TemplateResponse("confirm_booking.html", {
+        "request": request, "page_status": "confirm",
+        "booking": booking, "token": token,
+    })

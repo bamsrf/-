@@ -15,10 +15,12 @@ import {
 import { toast } from '../lib/toast';
 import { Image } from 'expo-image';
 import { Ionicons } from '@expo/vector-icons';
+import Toast from 'react-native-toast-message';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useCollectionStore } from '../lib/store';
 import { CollectionItem } from '../lib/types';
 import { Colors, Spacing, Typography, BorderRadius } from '../constants/theme';
+import { toastConfig } from './CustomToast';
 
 interface AddRecordsModalProps {
   visible: boolean;
@@ -182,6 +184,7 @@ export function AddRecordsModal({
           </TouchableOpacity>
         </View>
       </View>
+      <Toast config={toastConfig} topOffset={56} />
     </Modal>
   );
 }

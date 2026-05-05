@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Вертушка — Public Profile</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+<style>
+  html, body { margin:0; padding:0; background:#EFECE6; font-family:'Inter Tight', system-ui, sans-serif; color:#1B1D26; -webkit-font-smoothing:antialiased; }
+  * { box-sizing: border-box; }
+
+  /* Tokens */
+  :root {
+    --ink: #1B1D26;
+    --ink-2: #3A3E4D;
+    --mute: #6B7080;
+    --mute-2: #9096A6;
+    --hair: rgba(27,29,38,0.08);
+    --hair-2: rgba(27,29,38,0.06);
+    --pearl: #F7F4EE;
+    --ivory: #EFECE6;
+    --cobalt: #3A4BE0;
+    --cobalt-2: #5A6BFF;
+    --periwinkle: #9AA8FF;
+    --lavender: #C9B8FF;
+    --blush: #F6C7D0;
+    --peach: #F7D4B8;
+    --sky: #BDD4FF;
+  }
+
+  /* Atmosphere — layered gradient backdrop for stage */
+  .stage-bg {
+    background:
+      radial-gradient(1100px 700px at 85% -10%, rgba(154,168,255,0.55), transparent 55%),
+      radial-gradient(900px 600px at 15% 5%, rgba(246,199,208,0.45), transparent 60%),
+      radial-gradient(800px 500px at 70% 90%, rgba(247,212,184,0.30), transparent 65%),
+      linear-gradient(180deg, #F4EEE6 0%, #EFECE6 40%, #EEE9E0 100%);
+  }
+
+  /* Vinyl rotating */
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .vinyl { animation: spin 14s linear infinite; }
+
+  /* CTA shine */
+  @keyframes sheen {
+    0% { transform: translateX(-140%) skewX(-18deg); }
+    55% { transform: translateX(180%) skewX(-18deg); }
+    100% { transform: translateX(180%) skewX(-18deg); }
+  }
+  .sheen::after {
+    content:''; position:absolute; top:0; bottom:0; left:0; width:45%;
+    background: linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.55) 50%, transparent 100%);
+    animation: sheen 3.8s ease-in-out infinite;
+    pointer-events:none;
+  }
+
+  /* Soft card */
+  .card-matte {
+    background: rgba(255,255,255,0.78);
+    backdrop-filter: blur(20px) saturate(120%);
+    -webkit-backdrop-filter: blur(20px) saturate(120%);
+    border: 1px solid rgba(255,255,255,0.9);
+    box-shadow:
+      0 1px 0 rgba(255,255,255,0.8) inset,
+      0 10px 30px -18px rgba(58,75,224,0.22),
+      0 2px 8px -4px rgba(27,29,38,0.06);
+  }
+
+  /* Scrollbars minimal inside phone */
+  .phone-scroll::-webkit-scrollbar { width:0; }
+  .phone-scroll { scrollbar-width: none; }
+
+  .mono { font-family:'JetBrains Mono', ui-monospace, monospace; font-feature-settings:'tnum' 1; }
+  .tnum { font-feature-settings:'tnum' 1, 'lnum' 1; font-variant-numeric: tabular-nums; }
+
+  /* Hairline divider */
+  .hairline { height:1px; background: var(--hair); }
+
+  /* Badge pulse */
+  @keyframes softPulse { 0%,100% { opacity: .85 } 50% { opacity: 1 } }
+  .pulse { animation: softPulse 2.6s ease-in-out infinite; }
+</style>
+</head>
+<body>
+  <div id="root"></div>
+
+  <script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+  <script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+  <script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+
+  <script type="text/babel" src="ios-frame.jsx"></script>
+  <script type="text/babel" src="design-canvas.jsx"></script>
+  <script type="text/babel" src="vertushka-records.jsx"></script>
+  <script type="text/babel" src="vertushka-parts.jsx"></script>
+  <script type="text/babel" src="vertushka-screen.jsx"></script>
+  <script type="text/babel" src="vertushka-desktop.jsx"></script>
+  <script type="text/babel" src="vertushka-system.jsx"></script>
+  <script type="text/babel" src="vertushka-app.jsx"></script>
+</body>
+</html>

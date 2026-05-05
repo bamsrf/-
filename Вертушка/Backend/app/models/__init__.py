@@ -12,6 +12,7 @@ from app.models.search_cache import SearchCache
 from app.models.user_photo import UserRecordPhoto
 from app.models.collection_value_snapshot import CollectionValueSnapshot
 from app.models.waitlist import WaitlistEntry
+from app.models.blocked_contact import BlockedContact, BlockedContactKind
 
 __all__ = [
     "User",
@@ -27,5 +28,7 @@ __all__ = [
     "UserRecordPhoto",
     "CollectionValueSnapshot",
     "WaitlistEntry",
+    "BlockedContact",
+    "BlockedContactKind",
 ]
 

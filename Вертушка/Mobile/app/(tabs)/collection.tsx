@@ -233,9 +233,15 @@ export default function CollectionScreen() {
   };
 
   const handleRemoveFromWishlist = async (item: WishlistItem) => {
+    const isBooked = !!item.is_booked;
+    const title = isBooked ? 'Удалить пункт с активной бронью?' : 'Удалить из списка?';
+    const message = isBooked
+      ? `"${item.record.title}" уже бронирует другой человек. Если удалить — дарителю придёт уведомление, что подарок больше не нужен.`
+      : `"${item.record.title}" будет удалена из списка желаний`;
+
     Alert.alert(
-      'Удалить из списка?',
-      `"${item.record.title}" будет удалена из списка желаний`,
+      title,
+      message,
       [
         { text: 'Отмена', style: 'cancel' },
         {
@@ -314,9 +320,20 @@ export default function CollectionScreen() {
     const count = selectedItems.size;
     const itemType = activeTab === 'collection' ? 'коллекции' : 'списка желаний';
 
+    let bookedNote = '';
+    if (activeTab === 'wishlist') {
+      const bookedCount = wishlistItems
+        .filter((w) => selectedItems.has(w.id))
+        .filter((w) => w.is_booked)
+        .length;
+      if (bookedCount > 0) {
+        bookedNote = `\n\n${bookedCount} из них уже бронируют — дарителям отправим уведомление об отмене.`;
+      }
+    }
+
     Alert.alert(
       'Удалить выбранные?',
-      `Будет удалено ${count} пластинок из ${itemType}`,
+      `Будет удалено ${count} пластинок из ${itemType}${bookedNote}`,
       [
         { text: 'Отмена', style: 'cancel' },
         {

@@ -496,6 +496,16 @@ export interface GiftGivenItem {
   for_user: GiftRecipientInfo;
 }
 
+export interface GiftReceivedItem {
+  id: string;
+  wishlist_item_id?: string | null;
+  status: 'pending' | 'booked' | 'completed' | 'cancelled';
+  booked_at: string;
+  completed_at?: string;
+  cancelled_at?: string;
+  record: PublicProfileRecord;
+}
+
 // ==================== Notifications ====================
 
 export interface NotificationSettings {

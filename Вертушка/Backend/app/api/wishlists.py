@@ -251,28 +251,59 @@ async def remove_from_wishlist(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ):
-    """Удаление пластинки из вишлиста"""
+    """
+    Удаление пластинки из вишлиста.
+    Если есть активная бронь — авто-cancel + письмо дарителю.
+    """
     result = await db.execute(
         select(WishlistItem)
         .where(WishlistItem.id == item_id)
-        .options(selectinload(WishlistItem.wishlist))
+        .options(
+            selectinload(WishlistItem.wishlist),
+            selectinload(WishlistItem.record),
+            selectinload(WishlistItem.gift_booking),
+        )
     )
     item = result.scalar_one_or_none()
-    
+
     if not item:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Элемент не найден"
         )
-    
+
     if item.wishlist.user_id != current_user.id:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Нет доступа"
         )
-    
+
+    # Снимок данных для письма дарителю + авто-cancel активной брони
+    pending_email_payload = None
+    if item.gift_booking and item.gift_booking.status == GiftStatus.BOOKED:
+        booking = item.gift_booking
+        if booking.gifter_email and item.record:
+            pending_email_payload = {
+                "gifter_email": booking.gifter_email,
+                "gifter_name": booking.gifter_name,
+                "record_title": item.record.title,
+                "owner_name": current_user.display_name or current_user.username,
+            }
+        booking.status = GiftStatus.CANCELLED
+        booking.cancelled_at = datetime.utcnow()
+        booking.cancellation_reason = "item_removed_by_owner"
+        booking.wishlist_item_id = None
+        await db.flush()
+
     await db.delete(item)
     await db.commit()
+
+    if pending_email_payload:
+        try:
+            from app.services.notifications import send_wishlist_item_removed_to_gifter
+            await send_wishlist_item_removed_to_gifter(**pending_email_payload)
+        except Exception:
+            pass
 
 
 @router.get("/share/{share_token}", response_model=WishlistPublicResponse)
@@ -360,27 +391,90 @@ async def generate_share_link(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ):
-    """Генерация новой ссылки для шаринга"""
+    """
+    Legacy-ручка: ротирует токен при каждом вызове (для back-compat).
+    Новые клиенты должны использовать /share-info (read) и /regenerate-share-token (rotate).
+    """
     result = await db.execute(
         select(Wishlist).where(Wishlist.user_id == current_user.id)
     )
     wishlist = result.scalar_one_or_none()
-    
+
     if not wishlist:
         wishlist = Wishlist(user_id=current_user.id)
         db.add(wishlist)
     else:
         wishlist.regenerate_share_token()
-    
+
     await db.commit()
     await db.refresh(wishlist)
-    
+
     from app.config import get_settings
     settings = get_settings()
-    
+
     return {
         "share_token": wishlist.share_token,
         "share_url": f"{settings.app_url}/wishlist/{wishlist.share_token}"
+    }
+
+
+def _build_share_url(share_token: str) -> str:
+    from app.config import get_settings
+    settings = get_settings()
+    return f"{settings.app_url}/wishlist/{share_token}"
+
+
+@router.get("/share-info", response_model=dict)
+async def get_share_info(
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Возвращает текущий share-token и url без ротации.
+    Если вишлиста ещё нет — создаёт пустой (с уже сгенерированным токеном).
+    """
+    result = await db.execute(
+        select(Wishlist).where(Wishlist.user_id == current_user.id)
+    )
+    wishlist = result.scalar_one_or_none()
+
+    if not wishlist:
+        wishlist = Wishlist(user_id=current_user.id)
+        db.add(wishlist)
+        await db.commit()
+        await db.refresh(wishlist)
+
+    return {
+        "share_token": wishlist.share_token,
+        "share_url": _build_share_url(wishlist.share_token),
+    }
+
+
+@router.post("/regenerate-share-token", response_model=dict)
+async def regenerate_share_token(
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Явная ротация share-токена. Старая ссылка немедленно перестаёт работать.
+    """
+    result = await db.execute(
+        select(Wishlist).where(Wishlist.user_id == current_user.id)
+    )
+    wishlist = result.scalar_one_or_none()
+
+    if not wishlist:
+        wishlist = Wishlist(user_id=current_user.id)
+        db.add(wishlist)
+    else:
+        wishlist.regenerate_share_token()
+
+    await db.commit()
+    await db.refresh(wishlist)
+
+    return {
+        "share_token": wishlist.share_token,
+        "share_url": _build_share_url(wishlist.share_token),
     }
 
 
@@ -388,6 +482,7 @@ async def generate_share_link(
 async def update_wishlist_settings(
     is_public: bool | None = None,
     show_gifter_names: bool | None = None,
+    reveal_gifter_to_owner: bool | None = None,
     custom_message: str | None = Query(None, max_length=500),
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
@@ -397,22 +492,24 @@ async def update_wishlist_settings(
         select(Wishlist).where(Wishlist.user_id == current_user.id)
     )
     wishlist = result.scalar_one_or_none()
-    
+
     if not wishlist:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Вишлист не найден"
         )
-    
+
     if is_public is not None:
         wishlist.is_public = is_public
     if show_gifter_names is not None:
         wishlist.show_gifter_names = show_gifter_names
+    if reveal_gifter_to_owner is not None:
+        wishlist.reveal_gifter_to_owner = reveal_gifter_to_owner
     if custom_message is not None:
         wishlist.custom_message = custom_message
-    
+
     await db.commit()
-    
+
     return {"status": "ok"}
 
 
@@ -471,8 +568,13 @@ async def move_to_collection(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ):
-    """Атомарный перенос из вишлиста в коллекцию"""
+    """
+    Атомарный перенос из вишлиста в коллекцию.
+    Если у пункта есть активная бронь — она завершается через единый
+    путь complete_gift_booking (письмо дарителю, обнуление связи).
+    """
     from app.models.collection import Collection, CollectionItem
+    from app.services.gifts import complete_gift_booking, send_pending_gift_email
 
     # 1. Находим элемент вишлиста с gift_booking
     result = await db.execute(
@@ -499,54 +601,37 @@ async def move_to_collection(
             Collection.user_id == current_user.id
         )
     )
-    if not result.scalar_one_or_none():
+    target_collection = result.scalar_one_or_none()
+    if not target_collection:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Коллекция не найдена"
         )
 
-    # 3. Сохраняем record ДО удаления item (иначе будет DetachedInstanceError)
-    record = item.record
+    record = item.record  # сохраняем до удаления
 
-    # 4. Если есть бронирование — завершаем его и отвязываем от wishlist_item
-    gift_booking_data = None
-    if item.gift_booking:
-        gift_booking_data = {
-            "gifter_email": item.gift_booking.gifter_email,
-            "gifter_name": item.gift_booking.gifter_name,
-        }
-        item.gift_booking.status = GiftStatus.COMPLETED
-        item.gift_booking.completed_at = datetime.utcnow()
-        item.gift_booking.wishlist_item_id = None
-        await db.flush()
-
-    # 5. Создаем элемент коллекции
-    collection_item = CollectionItem(
-        collection_id=data.collection_id,
-        record_id=item.record_id
-    )
-    db.add(collection_item)
-
-    # 6. Удаляем из вишлиста
-    await db.delete(item)
-
-    # 7. Коммит (атомарно!)
-    await db.commit()
-    await db.refresh(collection_item)
-
-    # 8. Отправляем email дарителю (после коммита, не блокируя ответ)
-    if gift_booking_data:
-        try:
-            from app.services.notifications import send_gift_received_to_gifter
-            owner_name = current_user.display_name or current_user.username
-            await send_gift_received_to_gifter(
-                gifter_email=gift_booking_data["gifter_email"],
-                gifter_name=gift_booking_data["gifter_name"],
-                record_title=record.title,
-                owner_name=owner_name,
-            )
-        except Exception:
-            pass  # Не блокируем основной flow
+    if item.gift_booking and item.gift_booking.status == GiftStatus.BOOKED:
+        # Путь «получили подарок» — единый сервис: создаст CollectionItem,
+        # завершит бронь, удалит пункт, подготовит письмо дарителю.
+        collection_item = await complete_gift_booking(
+            booking=item.gift_booking,
+            owner=current_user,
+            db=db,
+            collection=target_collection,
+        )
+        await db.commit()
+        await db.refresh(collection_item)
+        await send_pending_gift_email(collection_item)
+    else:
+        # Путь «сам купил» — без брони. Просто перенос.
+        collection_item = CollectionItem(
+            collection_id=target_collection.id,
+            record_id=item.record_id,
+        )
+        db.add(collection_item)
+        await db.delete(item)
+        await db.commit()
+        await db.refresh(collection_item)
 
     return CollectionItemResponse(
         id=collection_item.id,
