@@ -1363,7 +1363,6 @@
                 var paused = false;
                 var resumeTimer = null;
                 var last = null;
-                var suppressScrollEvent = false;
 
                 function scheduleResume() {
                     if (resumeTimer) clearTimeout(resumeTimer);
@@ -1379,23 +1378,24 @@
                     if (resumeTimer) { clearTimeout(resumeTimer); resumeTimer = null; }
                 }
 
+                function pauseAndResume() { pauseNow(); scheduleResume(); }
+
                 // Touch — мобилка
                 rail.addEventListener('touchstart', pauseNow, { passive: true });
                 rail.addEventListener('touchend',   scheduleResume, { passive: true });
                 rail.addEventListener('touchcancel', scheduleResume, { passive: true });
 
-                // Pointer — universal (desktop + некоторые сенсорные)
+                // Pointer — desktop drag (на touch-устройствах дублирует touch-события,
+                // но pauseNow/scheduleResume идемпотентны).
                 rail.addEventListener('pointerdown', pauseNow);
                 rail.addEventListener('pointerup',   scheduleResume);
                 rail.addEventListener('pointercancel', scheduleResume);
 
-                // Scroll: ловим юзерский скролл (мышь-колесо или drag),
-                // но игнорим тот, что мы сами генерим через scrollLeft setter.
-                rail.addEventListener('scroll', function() {
-                    if (suppressScrollEvent) { suppressScrollEvent = false; return; }
-                    paused = true;
-                    scheduleResume();
-                }, { passive: true });
+                // Wheel — desktop колёсико. Не используем 'scroll'-event:
+                // наш scrollLeft setter тоже триггерит scroll, причём асинхронно
+                // несколько раз в очередь, и фильтр через флаг ненадёжен —
+                // именно из-за этого прошлая версия падала в постоянную паузу.
+                rail.addEventListener('wheel', pauseAndResume, { passive: true });
 
                 // Desktop hover — пауза пока курсор над рейлом
                 if (window.matchMedia('(hover: hover)').matches) {
@@ -1418,7 +1418,6 @@
                             if (dt > 0.1) dt = 0.1;
                             var next = rail.scrollLeft + SPEED_PX_S * dt;
                             if (next >= loopWidth) next -= loopWidth;
-                            suppressScrollEvent = true;
                             rail.scrollLeft = next;
                         }
                         last = ts;
