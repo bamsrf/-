@@ -716,6 +716,15 @@ export default function ProfileScreen() {
 
           <TouchableOpacity
             style={styles.settingsItem}
+            onPress={() => router.push('/settings/wishlist')}
+          >
+            <Ionicons name="gift-outline" size={24} color={Colors.royalBlue} />
+            <Text style={styles.settingsItemText}>Настройки вишлиста</Text>
+            <Ionicons name="chevron-forward" size={20} color={Colors.textMuted} />
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={styles.settingsItem}
             onPress={() => Linking.openURL('https://timestripe.com/boards/sX8B5Keg/')}
           >
             <Ionicons name="map-outline" size={24} color={Colors.royalBlue} />

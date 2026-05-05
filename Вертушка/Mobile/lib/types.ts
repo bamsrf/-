@@ -255,10 +255,18 @@ export interface Wishlist {
   share_token?: string;
   is_public: boolean;
   show_gifter_names?: boolean;
+  reveal_gifter_to_owner?: boolean;
   custom_message?: string;
   items?: WishlistItem[];
   created_at: string;
   updated_at: string;
+}
+
+export interface WishlistSettingsUpdate {
+  is_public?: boolean;
+  show_gifter_names?: boolean;
+  reveal_gifter_to_owner?: boolean;
+  custom_message?: string;
 }
 
 export interface GiftBookingInfo {
