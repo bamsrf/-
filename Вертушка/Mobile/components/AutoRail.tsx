@@ -1,18 +1,30 @@
 /**
  * AutoRail — горизонтальный авто-скроллящийся рейл с обложками.
  * Используется на публичном профиле и на экране Поиска.
+ *
+ * Авто-движение и ручной свайп идут полностью на UI-треде (Reanimated 3
+ * useFrameCallback + Gesture.Pan worklets), поэтому JS-тред свободен для
+ * тапов в шапке, а сам свайп идёт за пальцем без срывов и поддерживает
+ * инерцию через withDecay.
  */
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   View,
   Text,
   StyleSheet,
-  ScrollView,
   TouchableOpacity,
-  Animated,
-  Easing,
   Platform,
+  LayoutChangeEvent,
 } from 'react-native';
+import Animated, {
+  useSharedValue,
+  useAnimatedStyle,
+  useFrameCallback,
+  withDecay,
+  cancelAnimation,
+  runOnJS,
+} from 'react-native-reanimated';
+import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
 import { resolveMediaUrl } from '../lib/api';
@@ -28,6 +40,8 @@ const PALETTE = {
 
 const HORIZONTAL_PADDING = 20;
 const RAIL_COVER = 108;
+const ITEM_GAP = 12;
+const FULL_LOOP_DURATION_MS = 30000;
 
 interface AutoRailProps {
   title: string;
@@ -46,61 +60,157 @@ export function AutoRail({
   onPick,
   titleColor,
 }: AutoRailProps) {
-  const scrollRef = useRef<ScrollView>(null);
-  const scrollX = useRef(new Animated.Value(0)).current;
-  const [contentW, setContentW] = useState(0);
-  const pausedRef = useRef(false);
-  const currentOffset = useRef(0);
-  const resumeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const halfWidth = contentW / 2;
+  const tx = useSharedValue(0);
+  const startTx = useSharedValue(0);
+  const isPanning = useSharedValue(false);
+  const isPaused = useSharedValue(false);
+  const halfWidthSV = useSharedValue(0);
+
+  const [rowWidth, setRowWidth] = useState(0);
 
   useEffect(() => {
-    if (!halfWidth || !scrollRef.current) return;
-    let raf: number | null = null;
-    const id = scrollX.addListener(({ value }) => {
-      if (value >= halfWidth) {
-        scrollRef.current?.scrollTo({ x: value - halfWidth, animated: false });
-      }
-    });
-    const anim = Animated.loop(
-      Animated.timing(scrollX, {
-        toValue: halfWidth,
-        duration: 30000,
-        easing: Easing.linear,
-        useNativeDriver: false,
-      })
-    );
-    anim.start();
-    const tick = () => {
-      if (!pausedRef.current) {
-        // @ts-ignore
-        const v = scrollX.__getValue?.() ?? 0;
-        scrollRef.current?.scrollTo({ x: v, animated: false });
-      }
-      raf = requestAnimationFrame(tick);
-    };
-    raf = requestAnimationFrame(tick);
-    return () => {
-      anim.stop();
-      scrollX.removeListener(id);
-      if (raf != null) cancelAnimationFrame(raf);
-      if (resumeTimer.current) clearTimeout(resumeTimer.current);
-    };
-  }, [halfWidth, scrollX]);
+    halfWidthSV.value = rowWidth;
+  }, [rowWidth, halfWidthSV]);
 
-  const pauseAndScheduleResume = () => {
-    pausedRef.current = true;
+  const resumeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const scheduleResume = useCallback(() => {
     if (resumeTimer.current) clearTimeout(resumeTimer.current);
     resumeTimer.current = setTimeout(() => {
-      // Перед резюмом синхронизируем Animated.Value с реальной позицией скролла,
-      // чтобы рейл не «прыгнул» на тот участок, куда ушла анимация за время паузы.
-      scrollX.setValue(currentOffset.current);
-      pausedRef.current = false;
+      resumeTimer.current = null;
+      isPaused.value = false;
     }, 2500);
-  };
+  }, [isPaused]);
+
+  useEffect(() => {
+    return () => {
+      if (resumeTimer.current) {
+        clearTimeout(resumeTimer.current);
+        resumeTimer.current = null;
+      }
+    };
+  }, []);
+
+  // UI-thread авто-движение: каждый кадр сдвигаем tx на speed * dt.
+  useFrameCallback((frame) => {
+    if (isPanning.value || isPaused.value) return;
+    const w = halfWidthSV.value;
+    if (!w) return;
+    const dt = frame.timeSincePreviousFrame ?? 16;
+    const speed = w / FULL_LOOP_DURATION_MS;
+    tx.value = tx.value - speed * dt;
+  });
+
+  // Визуальная нормализация в [-w, 0] — даёт бесшовный цикл и работает
+  // одинаково для авто-движения, драга и инерции.
+  const animStyle = useAnimatedStyle(() => {
+    const w = halfWidthSV.value;
+    if (!w) return { transform: [{ translateX: 0 }] };
+    let v = tx.value % w;
+    if (v > 0) v -= w;
+    return { transform: [{ translateX: v }] };
+  });
+
+  const panGesture = useMemo(
+    () =>
+      Gesture.Pan()
+        .activeOffsetX([-6, 6])
+        .failOffsetY([-12, 12])
+        .onBegin(() => {
+          'worklet';
+          isPaused.value = true;
+          cancelAnimation(tx);
+        })
+        .onStart(() => {
+          'worklet';
+          isPanning.value = true;
+          startTx.value = tx.value;
+        })
+        .onUpdate((e) => {
+          'worklet';
+          tx.value = startTx.value + e.translationX;
+        })
+        .onEnd((e) => {
+          'worklet';
+          isPanning.value = false;
+          // Инерция после флика. Пока decay едет — isPaused=true, авто-кадр
+          // не дописывает поверх. Когда инерция закончится, через 2.5с
+          // карусель сама поедет дальше.
+          tx.value = withDecay(
+            {
+              velocity: e.velocityX,
+              deceleration: 0.997,
+            },
+            () => {
+              'worklet';
+              runOnJS(scheduleResume)();
+            },
+          );
+        })
+        .onFinalize((_, success) => {
+          'worklet';
+          if (!success) {
+            // Просто тап / гесчур не активировался — резюмим автокарусель.
+            isPanning.value = false;
+            runOnJS(scheduleResume)();
+          }
+        }),
+    [tx, startTx, isPanning, isPaused, scheduleResume],
+  );
 
   if (!items || items.length === 0) return null;
-  const doubled = [...items, ...items];
+
+  const renderCard = (r: PublicProfileRecord, key: string) => (
+    <TouchableOpacity
+      key={key}
+      activeOpacity={0.85}
+      onPress={() => onPick?.(r)}
+      style={{ width: RAIL_COVER }}
+    >
+      <View style={styles.railCover}>
+        {r.cover_image_url ? (
+          <Image
+            source={resolveMediaUrl(r.cover_image_url)}
+            style={{ width: RAIL_COVER, height: RAIL_COVER }}
+            cachePolicy="disk"
+          />
+        ) : (
+          <LinearGradient
+            colors={[PALETTE.lavender, PALETTE.periwinkle]}
+            style={{ width: RAIL_COVER, height: RAIL_COVER }}
+          />
+        )}
+      </View>
+      <Text
+        numberOfLines={1}
+        style={[
+          styles.railArtist,
+          { color: titleColor === PALETTE.cobalt ? PALETTE.cobalt : PALETTE.mute },
+        ]}
+      >
+        {r.artist}
+      </Text>
+      <Text numberOfLines={1} style={styles.railTitleSmall}>
+        {r.title}
+      </Text>
+      {showYear && r.year ? (
+        <Text style={styles.railYear}>
+          {r.year}
+          {r.format_type ? ` · ${r.format_type}` : ''}
+          {r.discogs_want ? ` · ♥ ${r.discogs_want}` : ''}
+        </Text>
+      ) : null}
+    </TouchableOpacity>
+  );
+
+  const handleRowLayout = (e: LayoutChangeEvent) => {
+    // Ширина одной половины + один gap (между последней карточкой первой
+    // половины и первой второй) — для бесшовного шва.
+    const w = e.nativeEvent.layout.width + ITEM_GAP;
+    if (Math.abs(w - rowWidth) > 0.5) {
+      setRowWidth(w);
+    }
+  };
 
   return (
     <View>
@@ -108,61 +218,18 @@ export function AutoRail({
         <Text style={[styles.railTitle, { color: titleColor }]}>{title.toUpperCase()}</Text>
         <Text style={styles.railSub}>{subtitle}</Text>
       </View>
-      <ScrollView
-        ref={scrollRef}
-        horizontal
-        showsHorizontalScrollIndicator={false}
-        scrollEnabled
-        contentContainerStyle={{ paddingHorizontal: HORIZONTAL_PADDING, gap: 12 }}
-        onContentSizeChange={(w) => setContentW(w)}
-        onTouchStart={pauseAndScheduleResume}
-        onScrollBeginDrag={pauseAndScheduleResume}
-        onScroll={(e) => { currentOffset.current = e.nativeEvent.contentOffset.x; }}
-        scrollEventThrottle={16}
-      >
-        {doubled.map((r, i) => (
-          <TouchableOpacity
-            key={`${r.id}-${i}`}
-            activeOpacity={0.85}
-            onPress={() => onPick?.(r)}
-            style={{ width: RAIL_COVER }}
-          >
-            <View style={styles.railCover}>
-              {r.cover_image_url ? (
-                <Image
-                  source={resolveMediaUrl(r.cover_image_url)}
-                  style={{ width: RAIL_COVER, height: RAIL_COVER }}
-                  cachePolicy="disk"
-                />
-              ) : (
-                <LinearGradient
-                  colors={[PALETTE.lavender, PALETTE.periwinkle]}
-                  style={{ width: RAIL_COVER, height: RAIL_COVER }}
-                />
-              )}
+      <GestureDetector gesture={panGesture}>
+        <View style={styles.viewport}>
+          <Animated.View style={[styles.track, animStyle]}>
+            <View style={styles.row} onLayout={handleRowLayout}>
+              {items.map((r, i) => renderCard(r, `a-${r.id}-${i}`))}
             </View>
-            <Text
-              numberOfLines={1}
-              style={[
-                styles.railArtist,
-                { color: titleColor === PALETTE.cobalt ? PALETTE.cobalt : PALETTE.mute },
-              ]}
-            >
-              {r.artist}
-            </Text>
-            <Text numberOfLines={1} style={styles.railTitleSmall}>
-              {r.title}
-            </Text>
-            {showYear && r.year ? (
-              <Text style={styles.railYear}>
-                {r.year}
-                {r.format_type ? ` · ${r.format_type}` : ''}
-                {r.discogs_want ? ` · ♥ ${r.discogs_want}` : ''}
-              </Text>
-            ) : null}
-          </TouchableOpacity>
-        ))}
-      </ScrollView>
+            <View style={[styles.row, { marginLeft: ITEM_GAP }]}>
+              {items.map((r, i) => renderCard(r, `b-${r.id}-${i}`))}
+            </View>
+          </Animated.View>
+        </View>
+      </GestureDetector>
     </View>
   );
 }
@@ -182,6 +249,17 @@ const styles = StyleSheet.create({
     fontFamily: Platform.select({ ios: 'Menlo', android: 'monospace' }),
   },
   railSub: { fontSize: 11, color: PALETTE.mute },
+  viewport: {
+    overflow: 'hidden',
+  },
+  track: {
+    flexDirection: 'row',
+    paddingHorizontal: HORIZONTAL_PADDING,
+  },
+  row: {
+    flexDirection: 'row',
+    gap: ITEM_GAP,
+  },
   railCover: {
     width: RAIL_COVER,
     height: RAIL_COVER,
