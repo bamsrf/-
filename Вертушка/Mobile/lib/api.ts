@@ -17,6 +17,7 @@ import {
   CollectionStats,
   Wishlist,
   WishlistItem,
+  WishlistSettingsUpdate,
   SearchFilters,
   MasterSearchResponse,
   MasterRelease,
@@ -602,6 +603,11 @@ class ApiClient {
 
   async regenerateWishlistShareToken(): Promise<{ share_token: string; share_url: string }> {
     const response = await this.client.post<{ share_token: string; share_url: string }>('/wishlists/regenerate-share-token');
+    return response.data;
+  }
+
+  async updateWishlistSettings(data: WishlistSettingsUpdate): Promise<{ status: string }> {
+    const response = await this.client.put<{ status: string }>('/wishlists/settings', data);
     return response.data;
   }
 
