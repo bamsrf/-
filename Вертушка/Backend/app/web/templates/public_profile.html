@@ -1395,26 +1395,112 @@
 
                 function pauseAndResume() { pauseNow(); scheduleResume(); }
 
-                // Touch drag — мобилка. Палец двигает track напрямую через touchmove.
+                // Touch drag + momentum — мобилка. Палец ведёт track 1:1, после
+                // отпускания инерция плавно затухает (как withDecay в нативе).
                 var touchStartX = null;
+                var touchStartY = null;
                 var touchStartOffset = 0;
-                rail.addEventListener('touchstart', function(e) {
-                    pauseNow();
-                    if (e.touches.length === 1) {
-                        touchStartX = e.touches[0].clientX;
-                        touchStartOffset = offset;
+                var lastTouchX = 0;
+                var lastTouchTs = 0;
+                var velocity = 0;       // px/ms в offset-пространстве
+                var dragLocked = false; // решили, что это горизонтальный драг
+                var dragRejected = false; // вертикальный скролл выиграл
+                var momentumRaf = null;
+
+                function cancelMomentum() {
+                    if (momentumRaf !== null) {
+                        cancelAnimationFrame(momentumRaf);
+                        momentumRaf = null;
                     }
-                }, { passive: true });
-                rail.addEventListener('touchmove', function(e) {
-                    if (touchStartX !== null && e.touches.length === 1) {
-                        var dx = e.touches[0].clientX - touchStartX;
-                        offset = wrap(touchStartOffset - dx);
+                }
+
+                function startMomentum() {
+                    if (Math.abs(velocity) < 0.05) {
+                        scheduleResume();
+                        return;
+                    }
+                    var v = velocity;
+                    var lastTs = performance.now();
+                    function step(ts) {
+                        var dt = ts - lastTs;
+                        if (dt > 32) dt = 32;
+                        lastTs = ts;
+                        offset = wrap(offset + v * dt);
                         applyTransform();
+                        // экспоненциальное затухание, ~как withDecay deceleration 0.997
+                        v *= Math.pow(0.995, dt);
+                        if (Math.abs(v) > 0.02) {
+                            momentumRaf = requestAnimationFrame(step);
+                        } else {
+                            momentumRaf = null;
+                            scheduleResume();
+                        }
                     }
+                    momentumRaf = requestAnimationFrame(step);
+                }
+
+                rail.addEventListener('touchstart', function(e) {
+                    if (e.touches.length !== 1) return;
+                    pauseNow();
+                    cancelMomentum();
+                    touchStartX = e.touches[0].clientX;
+                    touchStartY = e.touches[0].clientY;
+                    touchStartOffset = offset;
+                    lastTouchX = touchStartX;
+                    lastTouchTs = performance.now();
+                    velocity = 0;
+                    dragLocked = false;
+                    dragRejected = false;
                 }, { passive: true });
+
+                rail.addEventListener('touchmove', function(e) {
+                    if (touchStartX === null || dragRejected || e.touches.length !== 1) return;
+                    var x = e.touches[0].clientX;
+                    var y = e.touches[0].clientY;
+                    var dx = x - touchStartX;
+                    var dy = y - touchStartY;
+                    if (!dragLocked) {
+                        if (Math.abs(dx) > 6 && Math.abs(dx) > Math.abs(dy)) {
+                            // фиксируем как горизонтальный драг —
+                            // обнуляем стартовую точку, чтобы не было прыжка на 6px
+                            dragLocked = true;
+                            touchStartX = x;
+                            touchStartY = y;
+                            touchStartOffset = offset;
+                            lastTouchX = x;
+                            lastTouchTs = performance.now();
+                            return;
+                        }
+                        if (Math.abs(dy) > 6) {
+                            dragRejected = true;
+                        }
+                        return;
+                    }
+                    offset = wrap(touchStartOffset - dx);
+                    applyTransform();
+                    var now = performance.now();
+                    var dt = now - lastTouchTs;
+                    if (dt > 0) {
+                        // offset = -dx, так что скорость в offset-пространстве — обратная
+                        var instV = -(x - lastTouchX) / dt;
+                        velocity = velocity * 0.6 + instV * 0.4;
+                    }
+                    lastTouchX = x;
+                    lastTouchTs = now;
+                }, { passive: true });
+
                 function endTouch() {
+                    if (touchStartX === null) return;
+                    var hadDrag = dragLocked;
                     touchStartX = null;
-                    scheduleResume();
+                    touchStartY = null;
+                    dragLocked = false;
+                    dragRejected = false;
+                    if (hadDrag) {
+                        startMomentum();
+                    } else {
+                        scheduleResume();
+                    }
                 }
                 rail.addEventListener('touchend',    endTouch, { passive: true });
                 rail.addEventListener('touchcancel', endTouch, { passive: true });
