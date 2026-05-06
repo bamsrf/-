@@ -1,7 +1,7 @@
 /**
  * Превью бронирования: обложка, метаданные, цена (для дарителя), кнопка действия
  */
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
   View,
   Text,
@@ -67,14 +67,22 @@ export default function GiftDetailScreen() {
   const { fetchCollectionItems, fetchWishlistItems } = useCollectionStore();
   const [isActing, setIsActing] = useState(false);
 
+  // Локальный кэш gift'а: при удалении из стора (после успешного действия) экран продолжает
+  // показывать данные до router.back(), иначе мелькает fallback «Подарок не найден».
+  const [gift, setGift] = useState<GiftGivenItem | GiftReceivedItem | null>(null);
+
   useEffect(() => {
     if (!isLoaded) loadAll();
   }, [isLoaded, loadAll]);
 
-  const gift = useMemo(() => {
-    if (direction === 'given') return given.find((g) => g.id === params.id) as GiftGivenItem | undefined;
-    return received.find((g) => g.id === params.id) as GiftReceivedItem | undefined;
-  }, [direction, given, received, params.id]);
+  useEffect(() => {
+    // Кешируем gift один раз — последующие изменения стора не должны влиять на отображение.
+    if (gift) return;
+    const found = direction === 'given'
+      ? (given.find((g) => g.id === params.id) as GiftGivenItem | undefined)
+      : (received.find((g) => g.id === params.id) as GiftReceivedItem | undefined);
+    if (found) setGift(found);
+  }, [gift, direction, given, received, params.id]);
 
   const handleCancel = () => {
     if (!gift || direction !== 'given') return;
