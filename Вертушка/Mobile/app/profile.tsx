@@ -23,7 +23,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useAuthStore, useCollectionStore, useOnboardingStore, useFollowStore } from '../lib/store';
+import { useAuthStore, useCollectionStore, useOnboardingStore, useFollowStore, useGiftStore } from '../lib/store';
 import { useTourTarget } from '../lib/useTourTarget';
 import { OnboardingOverlay } from '../components/OnboardingOverlay';
 import { CollectionTab, GiftGivenItem } from '../lib/types';
@@ -45,6 +45,7 @@ export default function ProfileScreen() {
   const { collectionItems, wishlistItems, setActiveTab, fetchCollectionItems, fetchWishlistItems } = useCollectionStore();
   const onboarding = useOnboardingStore();
   const { followers, following, fetchFollowers, fetchFollowing } = useFollowStore();
+  const { given: givenGifts, isLoaded: giftsLoaded, loadAll: loadGifts } = useGiftStore();
 
   const handleClose = () => {
     router.back();
@@ -76,8 +77,6 @@ export default function ProfileScreen() {
 
   const [copied, setCopied] = useState(false);
   const [exporting, setExporting] = useState(false);
-  const [givenGifts, setGivenGifts] = useState<GiftGivenItem[]>([]);
-  const [giftsLoading, setGiftsLoading] = useState(true);
   const [avatarUploading, setAvatarUploading] = useState(false);
 
   const pickImage = useCallback(async (source: 'library' | 'camera') => {
@@ -159,73 +158,22 @@ export default function ProfileScreen() {
     }
   }, [user, setUser, pickImage]);
 
-  const loadGivenGifts = useCallback(async () => {
-    try {
-      const data = await api.getMyGivenGifts();
-      setGivenGifts(data);
-    } catch {
-      // Не блокируем профиль
-    } finally {
-      setGiftsLoading(false);
-    }
-  }, []);
-
   useEffect(() => {
-    loadGivenGifts();
+    if (!giftsLoaded) loadGifts();
     fetchFollowers();
     fetchFollowing();
-  }, [loadGivenGifts, fetchFollowers, fetchFollowing]);
+  }, [giftsLoaded, loadGifts, fetchFollowers, fetchFollowing]);
 
-  const handleCancelGift = useCallback((gift: GiftGivenItem) => {
-    Alert.alert(
-      'Отменить бронирование?',
-      `${gift.record.artist} — ${gift.record.title}`,
-      [
-        { text: 'Нет', style: 'cancel' },
-        {
-          text: 'Отменить',
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              await api.cancelGiftBooking(gift.id, gift.cancel_token);
-              setGivenGifts((prev) => prev.filter((g) => g.id !== gift.id));
-              toast.success('Бронь отменена');
-            } catch {
-              toast.error('Не удалось отменить бронирование');
-            }
-          },
-        },
-      ]
-    );
-  }, []);
+  const handleGivenPress = useCallback(
+    (gift: GiftGivenItem) => {
+      router.push(`/gift/${gift.id}?direction=given` as any);
+    },
+    [router],
+  );
 
-  const handleGivenPress = useCallback((gift: GiftGivenItem) => {
-    const recordTitle = `${gift.record.artist} — ${gift.record.title}`;
-    const options = ['Открыть пластинку'];
-    if (gift.status === 'booked') options.push('Отменить бронь');
-    options.push('Отмена');
-    const cancelButtonIndex = options.length - 1;
-    const destructiveButtonIndex = gift.status === 'booked' ? 1 : undefined;
-
-    if (Platform.OS === 'ios') {
-      ActionSheetIOS.showActionSheetWithOptions(
-        { title: recordTitle, options, cancelButtonIndex, destructiveButtonIndex },
-        (idx) => {
-          if (idx === 0) router.push(`/record/${gift.record.id}`);
-          else if (idx === 1 && gift.status === 'booked') handleCancelGift(gift);
-        },
-      );
-    } else {
-      const buttons: any[] = [
-        { text: 'Открыть пластинку', onPress: () => router.push(`/record/${gift.record.id}`) },
-      ];
-      if (gift.status === 'booked') {
-        buttons.push({ text: 'Отменить бронь', style: 'destructive', onPress: () => handleCancelGift(gift) });
-      }
-      buttons.push({ text: 'Отмена', style: 'cancel' });
-      Alert.alert(recordTitle, undefined, buttons);
-    }
-  }, [router, handleCancelGift]);
+  const handleOpenWishlistsTab = useCallback(() => {
+    router.push('/settings/wishlists?tab=given' as any);
+  }, [router]);
 
   const handleDeleteAccount = useCallback(async () => {
     try {
@@ -414,34 +362,42 @@ export default function ProfileScreen() {
         </View>
 
         {/* Секция «Я дарю» */}
-        {giftsLoading ? (
+        {!giftsLoaded ? (
           <View style={[styles.giftsCard, Shadows.sm]}>
             <ActivityIndicator size="small" color={Colors.royalBlue} style={{ marginVertical: Spacing.md }} />
           </View>
         ) : givenGifts.length === 0 ? (
-          <LinearGradient
-            colors={[Colors.royalBlue + '08', Colors.periwinkle + '12']}
-            style={styles.giftsBanner}
-          >
-            <View style={styles.giftsBannerRow}>
-              <View style={styles.giftsBannerIcon}>
-                <Ionicons name="gift-outline" size={24} color={Colors.royalBlue} />
+          <TouchableOpacity activeOpacity={0.85} onPress={handleOpenWishlistsTab}>
+            <LinearGradient
+              colors={[Colors.royalBlue + '08', Colors.periwinkle + '12']}
+              style={styles.giftsBanner}
+            >
+              <View style={styles.giftsBannerRow}>
+                <View style={styles.giftsBannerIcon}>
+                  <Ionicons name="gift-outline" size={24} color={Colors.royalBlue} />
+                </View>
+                <View style={styles.giftsBannerTextContainer}>
+                  <Text style={styles.giftsBannerTitle}>Дари друзьям музыку</Text>
+                  <Text style={styles.giftsBannerSubtitle}>
+                    Забронируй пластинку из вишлиста друга — он не узнает, кто дарит
+                  </Text>
+                </View>
+                <Ionicons name="chevron-forward" size={18} color={Colors.textMuted} />
               </View>
-              <View style={styles.giftsBannerTextContainer}>
-                <Text style={styles.giftsBannerTitle}>Дари друзьям музыку</Text>
-                <Text style={styles.giftsBannerSubtitle}>
-                  Забронируй пластинку из вишлиста друга — он не узнает, кто дарит
-                </Text>
-              </View>
-            </View>
-          </LinearGradient>
+            </LinearGradient>
+          </TouchableOpacity>
         ) : (
           <View style={[styles.giftsCard, Shadows.sm]}>
-            <View style={styles.giftsCardHeader}>
+            <TouchableOpacity
+              style={styles.giftsCardHeader}
+              activeOpacity={0.7}
+              onPress={handleOpenWishlistsTab}
+            >
               <Ionicons name="gift-outline" size={18} color={Colors.royalBlue} />
               <Text style={styles.giftsCardTitle}>Я дарю</Text>
               <Text style={styles.giftsCardCount}>{givenGifts.length}</Text>
-            </View>
+              <Ionicons name="chevron-forward" size={18} color={Colors.textMuted} />
+            </TouchableOpacity>
             <ScrollView
               horizontal
               showsHorizontalScrollIndicator={false}

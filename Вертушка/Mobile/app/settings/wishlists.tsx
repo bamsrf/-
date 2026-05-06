@@ -1,5 +1,6 @@
 /**
- * Вишлисты: «Я дарю» / «Мне дарят» — список бронирований с управлением статусами
+ * Вишлисты: «Я дарю» / «Мне дарят» — список бронирований
+ * Тап по карточке открывает детальный экран /gift/[id]
  */
 import { useEffect, useState, useCallback } from 'react';
 import {
@@ -9,18 +10,13 @@ import {
   FlatList,
   TouchableOpacity,
   ActivityIndicator,
-  Alert,
-  ActionSheetIOS,
-  Platform,
   RefreshControl,
 } from 'react-native';
 import { Image } from 'expo-image';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { api } from '../../lib/api';
-import { toast } from '../../lib/toast';
-import { useCollectionStore } from '../../lib/store';
+import { useGiftStore } from '../../lib/store';
 import { GiftGivenItem, GiftReceivedItem } from '../../lib/types';
 import { SegmentedControl } from '../../components/ui';
 import { Colors, Typography, Spacing, BorderRadius } from '../../constants/theme';
@@ -74,12 +70,7 @@ function GiftRow({
   return (
     <TouchableOpacity style={styles.row} onPress={onPress} activeOpacity={0.7}>
       {cover ? (
-        <Image
-          source={cover}
-          style={styles.cover}
-          contentFit="cover"
-          cachePolicy="disk"
-        />
+        <Image source={cover} style={styles.cover} contentFit="cover" cachePolicy="disk" />
       ) : (
         <View style={[styles.cover, styles.coverPlaceholder]}>
           <Ionicons name="disc-outline" size={24} color={Colors.textMuted} />
@@ -99,35 +90,16 @@ export default function WishlistsScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const params = useLocalSearchParams<{ tab?: string }>();
-  const { fetchCollectionItems, fetchWishlistItems } = useCollectionStore();
+  const { given, received, isLoaded, isLoading, loadAll } = useGiftStore();
 
   const [activeTab, setActiveTab] = useState<Tab>(
     params.tab === 'received' ? 'received' : 'given',
   );
-  const [givenGifts, setGivenGifts] = useState<GiftGivenItem[]>([]);
-  const [receivedGifts, setReceivedGifts] = useState<GiftReceivedItem[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
-  const loadAll = useCallback(async () => {
-    try {
-      const [given, received] = await Promise.all([
-        api.getMyGivenGifts(),
-        api.getMyReceivedGifts(),
-      ]);
-      setGivenGifts(given);
-      setReceivedGifts(received);
-    } catch {
-      toast.error('Не удалось загрузить подарки');
-    }
-  }, []);
-
   useEffect(() => {
-    (async () => {
-      await loadAll();
-      setIsLoading(false);
-    })();
-  }, [loadAll]);
+    if (!isLoaded) loadAll();
+  }, [isLoaded, loadAll]);
 
   const handleRefresh = useCallback(async () => {
     setRefreshing(true);
@@ -135,116 +107,12 @@ export default function WishlistsScreen() {
     setRefreshing(false);
   }, [loadAll]);
 
-  const showActions = useCallback(
-    (title: string, options: { label: string; onPress?: () => void; destructive?: boolean }[]) => {
-      const labels = [...options.map((o) => o.label), 'Отмена'];
-      const cancelButtonIndex = labels.length - 1;
-      const destructiveButtonIndex = options.findIndex((o) => o.destructive);
-
-      if (Platform.OS === 'ios') {
-        ActionSheetIOS.showActionSheetWithOptions(
-          {
-            title,
-            options: labels,
-            cancelButtonIndex,
-            destructiveButtonIndex: destructiveButtonIndex >= 0 ? destructiveButtonIndex : undefined,
-          },
-          (idx) => {
-            if (idx < options.length) options[idx].onPress?.();
-          },
-        );
-      } else {
-        Alert.alert(title, undefined, [
-          ...options.map((o) => ({
-            text: o.label,
-            style: o.destructive ? ('destructive' as const) : undefined,
-            onPress: o.onPress,
-          })),
-          { text: 'Отмена', style: 'cancel' as const },
-        ]);
-      }
+  const handlePress = useCallback(
+    (id: string, direction: Tab) => {
+      router.push(`/gift/${id}?direction=${direction}` as any);
     },
-    [],
+    [router],
   );
-
-  const handleGivenPress = useCallback((gift: GiftGivenItem) => {
-    const options: { label: string; onPress?: () => void; destructive?: boolean }[] = [
-      {
-        label: 'Открыть пластинку',
-        onPress: () => router.push(`/record/${gift.record.id}`),
-      },
-    ];
-
-    if (gift.status === 'booked') {
-      options.push({
-        label: 'Отменить бронь',
-        destructive: true,
-        onPress: () => {
-          Alert.alert(
-            'Отменить бронирование?',
-            `${gift.record.artist} — ${gift.record.title}`,
-            [
-              { text: 'Нет', style: 'cancel' },
-              {
-                text: 'Отменить',
-                style: 'destructive',
-                onPress: async () => {
-                  try {
-                    await api.cancelGiftBooking(gift.id, gift.cancel_token);
-                    setGivenGifts((prev) => prev.filter((g) => g.id !== gift.id));
-                    toast.success('Бронь отменена');
-                  } catch {
-                    toast.error('Не удалось отменить бронирование');
-                  }
-                },
-              },
-            ],
-          );
-        },
-      });
-    }
-
-    showActions(`${gift.record.artist} — ${gift.record.title}`, options);
-  }, [router, showActions]);
-
-  const handleReceivedPress = useCallback((gift: GiftReceivedItem) => {
-    const options: { label: string; onPress?: () => void; destructive?: boolean }[] = [
-      {
-        label: 'Открыть пластинку',
-        onPress: () => router.push(`/record/${gift.record.id}`),
-      },
-    ];
-
-    if (gift.status === 'booked') {
-      options.unshift({
-        label: 'Подарок получен',
-        onPress: () => {
-          Alert.alert(
-            'Подарок получен?',
-            `${gift.record.artist} — ${gift.record.title}\n\nПластинка добавится в твою коллекцию, дарителю придёт «спасибо».`,
-            [
-              { text: 'Ещё нет', style: 'cancel' },
-              {
-                text: 'Получено!',
-                onPress: async () => {
-                  try {
-                    await api.completeGiftBooking(gift.id);
-                    setReceivedGifts((prev) => prev.filter((g) => g.id !== gift.id));
-                    await Promise.all([fetchCollectionItems(), fetchWishlistItems()]);
-                    toast.success('Спасибо!', 'Пластинка теперь в твоей коллекции');
-                  } catch (error: any) {
-                    toast.error('Ошибка', error?.response?.data?.detail || 'Не удалось отметить подарок');
-                  }
-                },
-              },
-            ],
-          );
-        },
-      });
-    }
-
-    showActions(`${gift.record.artist} — ${gift.record.title}`, options);
-  }, [router, showActions, fetchCollectionItems, fetchWishlistItems]);
 
   const renderGiven = ({ item }: { item: GiftGivenItem }) => (
     <GiftRow
@@ -252,7 +120,7 @@ export default function WishlistsScreen() {
       title={item.record.title}
       subtitle={`${item.record.artist} · для @${item.for_user.username}`}
       status={item.status as GiftStatus}
-      onPress={() => handleGivenPress(item)}
+      onPress={() => handlePress(item.id, 'given')}
     />
   );
 
@@ -262,12 +130,12 @@ export default function WishlistsScreen() {
       title={item.record.title}
       subtitle={item.record.artist}
       status={item.status}
-      onPress={() => handleReceivedPress(item)}
+      onPress={() => handlePress(item.id, 'received')}
     />
   );
 
   const renderEmpty = () => {
-    if (isLoading) return null;
+    if (!isLoaded) return null;
     return (
       <View style={styles.emptyContainer}>
         <View style={styles.emptyIconWrap}>
@@ -307,19 +175,19 @@ export default function WishlistsScreen() {
         />
       </View>
 
-      {isLoading ? (
+      {!isLoaded && isLoading ? (
         <View style={styles.center}>
           <ActivityIndicator size="large" color={Colors.royalBlue} />
         </View>
       ) : activeTab === 'given' ? (
         <FlatList
-          data={givenGifts}
+          data={given}
           keyExtractor={(item) => item.id}
           renderItem={renderGiven}
           ListEmptyComponent={renderEmpty}
           contentContainerStyle={[
             styles.listContent,
-            givenGifts.length === 0 && styles.listContentEmpty,
+            given.length === 0 && styles.listContentEmpty,
             { paddingBottom: insets.bottom + Spacing.xl },
           ]}
           refreshControl={
@@ -328,13 +196,13 @@ export default function WishlistsScreen() {
         />
       ) : (
         <FlatList
-          data={receivedGifts}
+          data={received}
           keyExtractor={(item) => item.id}
           renderItem={renderReceived}
           ListEmptyComponent={renderEmpty}
           contentContainerStyle={[
             styles.listContent,
-            receivedGifts.length === 0 && styles.listContentEmpty,
+            received.length === 0 && styles.listContentEmpty,
             { paddingBottom: insets.bottom + Spacing.xl },
           ]}
           refreshControl={
