@@ -146,6 +146,7 @@ function RootLayout() {
           <Stack.Screen name="user/[username]/index" />
           <Stack.Screen name="collection/value" />
           <Stack.Screen name="settings/notifications" />
+          <Stack.Screen name="settings/wishlists" />
           <Stack.Screen name="social/list" />
         </Stack>
         <OnboardingOverlay />
