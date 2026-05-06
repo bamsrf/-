@@ -4,16 +4,29 @@
  */
 import { useEffect, useState } from 'react';
 import { Platform, StyleSheet, Text, TouchableOpacity, View, ActivityIndicator } from 'react-native';
-import * as AppleAuthentication from 'expo-apple-authentication';
-import {
-  GoogleSignin,
-  statusCodes,
-} from '@react-native-google-signin/google-signin';
 import Constants from 'expo-constants';
 import { Ionicons } from '@expo/vector-icons';
 import { toast } from '../lib/toast';
 import { useAuthStore } from '../lib/store';
 import { Colors, Typography, Spacing, BorderRadius } from '../constants/theme';
+
+// Нативные модули — недоступны в Expo Go, поэтому импорт ленивый
+let AppleAuthentication: any = null;
+try {
+  AppleAuthentication = require('expo-apple-authentication');
+} catch {
+  // Expo Go — Apple Sign In кнопка не покажется
+}
+
+let GoogleSignin: any = null;
+let statusCodes: any = {};
+try {
+  const mod = require('@react-native-google-signin/google-signin');
+  GoogleSignin = mod.GoogleSignin;
+  statusCodes = mod.statusCodes ?? {};
+} catch {
+  // Expo Go — модуль не собран, кнопка просто не покажется
+}
 
 const googleWebClientId =
   (Constants.expoConfig?.extra?.googleWebClientId as string | undefined) ?? '';
@@ -22,7 +35,7 @@ const googleIosClientId =
 
 let googleConfigured = false;
 function ensureGoogleConfigured() {
-  if (googleConfigured || !googleWebClientId) return;
+  if (googleConfigured || !googleWebClientId || !GoogleSignin) return;
   GoogleSignin.configure({
     webClientId: googleWebClientId,
     iosClientId: googleIosClientId || undefined,
@@ -41,13 +54,13 @@ export function SocialAuthButtons({ mode }: Props) {
   const [busy, setBusy] = useState<null | 'apple' | 'google'>(null);
 
   useEffect(() => {
-    if (Platform.OS === 'ios') {
+    if (Platform.OS === 'ios' && AppleAuthentication) {
       AppleAuthentication.isAvailableAsync().then(setAppleAvailable).catch(() => setAppleAvailable(false));
     }
   }, []);
 
   const handleApple = async () => {
-    if (busy) return;
+    if (busy || !AppleAuthentication) return;
     setBusy('apple');
     try {
       const credential = await AppleAuthentication.signInAsync({
@@ -81,6 +94,10 @@ export function SocialAuthButtons({ mode }: Props) {
 
   const handleGoogle = async () => {
     if (busy) return;
+    if (!GoogleSignin) {
+      toast.error('Google Sign In недоступен', 'Нужен dev-build или production-сборка');
+      return;
+    }
     if (!googleWebClientId) {
       toast.error('Google Sign In не настроен', 'Заполните googleWebClientId в app.json');
       return;
@@ -107,8 +124,8 @@ export function SocialAuthButtons({ mode }: Props) {
     }
   };
 
-  const showApple = Platform.OS === 'ios' && appleAvailable;
-  const showGoogle = Boolean(googleWebClientId);
+  const showApple = Platform.OS === 'ios' && appleAvailable && AppleAuthentication;
+  const showGoogle = Boolean(GoogleSignin && googleWebClientId);
 
   if (!showApple && !showGoogle) return null;
 

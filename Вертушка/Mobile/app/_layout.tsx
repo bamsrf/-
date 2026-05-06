@@ -148,6 +148,7 @@ function RootLayout() {
           <Stack.Screen name="settings/notifications" />
           <Stack.Screen name="settings/wishlists" />
           <Stack.Screen name="social/list" />
+          <Stack.Screen name="dev/icons" />
         </Stack>
         <OnboardingOverlay />
         <Toast config={toastConfig} topOffset={56} />

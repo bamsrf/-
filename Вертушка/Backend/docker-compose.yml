@@ -59,7 +59,23 @@ services:
       - ./app:/app/app
     command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
 
+  # Metabase (BI дашборды) — http://localhost:3000
+  metabase:
+    image: metabase/metabase:v0.50.21
+    container_name: vertushka_metabase
+    restart: unless-stopped
+    environment:
+      MB_DB_FILE: /metabase-data/metabase.db
+    volumes:
+      - metabase_data:/metabase-data
+    ports:
+      - "3000:3000"
+    depends_on:
+      db:
+        condition: service_healthy
+
 volumes:
   postgres_data:
   redis_data:
+  metabase_data:
 

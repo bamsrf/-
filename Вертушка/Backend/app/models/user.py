@@ -144,7 +144,17 @@ class User(Base):
         DateTime,
         nullable=True
     )
-    
+    last_seen_at: Mapped[datetime | None] = mapped_column(
+        DateTime,
+        nullable=True,
+        index=True,
+    )
+    signup_source: Mapped[str | None] = mapped_column(
+        String(20),
+        nullable=True,
+        index=True,
+    )
+
     # Отношения
     collections = relationship(
         "Collection",

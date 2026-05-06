@@ -1,8 +1,8 @@
 /**
  * Аналитика — провайдер-агностик обёртка.
  * Провайдер по умолчанию — Amplitude, инициализируется в _layout.tsx через initAmplitude().
+ * Импорт нативного SDK ленивый: в Expo Go модуль просто отсутствует и аналитика становится no-op.
  */
-import * as Amplitude from '@amplitude/analytics-react-native';
 
 type AnalyticsProvider = {
   track: (event: string, properties?: Record<string, unknown>) => void;
@@ -18,6 +18,12 @@ export function setAnalyticsProvider(p: AnalyticsProvider) {
 
 export async function initAmplitude(apiKey: string): Promise<void> {
   if (!apiKey) return;
+  let Amplitude: any;
+  try {
+    Amplitude = require('@amplitude/analytics-react-native');
+  } catch {
+    return; // Expo Go или модуль не собран — пропускаем
+  }
   await Amplitude.init(apiKey, undefined, {
     trackingOptions: { ipAddress: false },
   }).promise;
