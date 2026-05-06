@@ -28,6 +28,8 @@ import {
   FeedItem,
   ScanMode,
   SuggestResponse,
+  GiftGivenItem,
+  GiftReceivedItem,
 } from './types';
 
 const getSearchHistoryKey = () => {
@@ -1187,4 +1189,39 @@ export const useFollowStore = create<FollowState>((set, get) => ({
       throw error;
     }
   },
+}));
+
+// ==================== Gifts (бронирования) ====================
+
+interface GiftStore {
+  given: GiftGivenItem[];
+  received: GiftReceivedItem[];
+  isLoading: boolean;
+  isLoaded: boolean;
+  loadAll: () => Promise<void>;
+  removeGiven: (id: string) => void;
+  removeReceived: (id: string) => void;
+}
+
+export const useGiftStore = create<GiftStore>((set) => ({
+  given: [],
+  received: [],
+  isLoading: false,
+  isLoaded: false,
+
+  loadAll: async () => {
+    set({ isLoading: true });
+    try {
+      const [given, received] = await Promise.all([
+        api.getMyGivenGifts(),
+        api.getMyReceivedGifts(),
+      ]);
+      set({ given, received, isLoaded: true, isLoading: false });
+    } catch {
+      set({ isLoading: false });
+    }
+  },
+
+  removeGiven: (id) => set((state) => ({ given: state.given.filter((g) => g.id !== id) })),
+  removeReceived: (id) => set((state) => ({ received: state.received.filter((g) => g.id !== id) })),
 }));

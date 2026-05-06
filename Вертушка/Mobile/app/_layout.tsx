@@ -147,6 +147,7 @@ function RootLayout() {
           <Stack.Screen name="collection/value" />
           <Stack.Screen name="settings/notifications" />
           <Stack.Screen name="settings/wishlists" />
+          <Stack.Screen name="gift/[id]" />
           <Stack.Screen name="social/list" />
           <Stack.Screen name="dev/icons" />
         </Stack>
