@@ -78,9 +78,6 @@ export default function ProfileScreen() {
   const [exporting, setExporting] = useState(false);
   const [givenGifts, setGivenGifts] = useState<GiftGivenItem[]>([]);
   const [giftsLoading, setGiftsLoading] = useState(true);
-  const [wishlistShareUrl, setWishlistShareUrl] = useState<string | null>(null);
-  const [wishlistShareCopied, setWishlistShareCopied] = useState(false);
-  const [regeneratingShare, setRegeneratingShare] = useState(false);
   const [avatarUploading, setAvatarUploading] = useState(false);
 
   const pickImage = useCallback(async (source: 'library' | 'camera') => {
@@ -173,55 +170,11 @@ export default function ProfileScreen() {
     }
   }, []);
 
-  const loadShareInfo = useCallback(async () => {
-    try {
-      const info = await api.getWishlistShareInfo();
-      setWishlistShareUrl(info.share_url);
-    } catch {
-      // не критично, юзер может перезайти
-    }
-  }, []);
-
   useEffect(() => {
     loadGivenGifts();
-    loadShareInfo();
     fetchFollowers();
     fetchFollowing();
-  }, [loadGivenGifts, loadShareInfo, fetchFollowers, fetchFollowing]);
-
-  const handleCopyShareLink = useCallback(async () => {
-    if (!wishlistShareUrl) return;
-    await Clipboard.setStringAsync(wishlistShareUrl);
-    setWishlistShareCopied(true);
-    setTimeout(() => setWishlistShareCopied(false), 2000);
-  }, [wishlistShareUrl]);
-
-  const handleRegenerateShareLink = useCallback(() => {
-    Alert.alert(
-      'Сменить ссылку на вишлист?',
-      'Старая ссылка перестанет работать у всех, кому ты её отправлял.',
-      [
-        { text: 'Отмена', style: 'cancel' },
-        {
-          text: 'Сменить',
-          style: 'destructive',
-          onPress: async () => {
-            setRegeneratingShare(true);
-            try {
-              const info = await api.regenerateWishlistShareToken();
-              setWishlistShareUrl(info.share_url);
-              toast.success('Готово', 'Новая ссылка скопирована — поделись ей заново');
-              await Clipboard.setStringAsync(info.share_url);
-            } catch {
-              toast.error('Не удалось сменить ссылку');
-            } finally {
-              setRegeneratingShare(false);
-            }
-          },
-        },
-      ]
-    );
-  }, []);
+  }, [loadGivenGifts, fetchFollowers, fetchFollowing]);
 
   const handleCancelGift = useCallback((gift: GiftGivenItem) => {
     Alert.alert(
@@ -459,34 +412,6 @@ export default function ProfileScreen() {
             </TouchableOpacity>
           </View>
         </View>
-
-        {/* Публичная ссылка вишлиста */}
-        {wishlistShareUrl ? (
-          <View style={[styles.linkCard, Shadows.sm]}>
-            <Text style={styles.linkLabel}>Публичная ссылка вишлиста</Text>
-            <Text style={styles.linkUrl} numberOfLines={1} ellipsizeMode="tail">{wishlistShareUrl}</Text>
-            <View style={styles.linkActions}>
-              <TouchableOpacity style={styles.linkButton} onPress={handleCopyShareLink}>
-                <Ionicons name={wishlistShareCopied ? 'checkmark-outline' : 'copy-outline'} size={18} color={Colors.royalBlue} />
-                <Text style={styles.linkButtonText}>{wishlistShareCopied ? 'Скопировано' : 'Скопировать'}</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={styles.linkButton}
-                onPress={handleRegenerateShareLink}
-                disabled={regeneratingShare}
-              >
-                {regeneratingShare ? (
-                  <ActivityIndicator size="small" color={Colors.royalBlue} />
-                ) : (
-                  <>
-                    <Ionicons name="refresh-outline" size={18} color={Colors.royalBlue} />
-                    <Text style={styles.linkButtonText}>Сменить ссылку</Text>
-                  </>
-                )}
-              </TouchableOpacity>
-            </View>
-          </View>
-        ) : null}
 
         {/* Секция «Я дарю» */}
         {giftsLoading ? (
@@ -787,7 +712,7 @@ const styles = StyleSheet.create({
   statCard: {
     width: '48%' as any,
     flexGrow: 1,
-    backgroundColor: Colors.background,
+    backgroundColor: Colors.surface,
     borderRadius: BorderRadius.lg,
     padding: Spacing.md,
     alignItems: 'center',
@@ -805,7 +730,7 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   linkCard: {
-    backgroundColor: Colors.background,
+    backgroundColor: Colors.surface,
     borderRadius: BorderRadius.lg,
     padding: Spacing.lg,
     marginBottom: Spacing.xl,
@@ -855,7 +780,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     padding: Spacing.md,
-    backgroundColor: Colors.background,
+    backgroundColor: Colors.surface,
     borderRadius: BorderRadius.lg,
     gap: Spacing.md,
     ...Shadows.sm,
