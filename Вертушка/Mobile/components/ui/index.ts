@@ -7,3 +7,5 @@ export { Card } from './Card';
 export { SegmentedControl } from './SegmentedControl';
 export { ActionSheet } from './ActionSheet';
 export type { ActionSheetAction } from './ActionSheet';
+export { Icon } from './Icon';
+export type { IconName, IconColor, IconSize, IconVariant, IconWeight, IconProps } from './Icon';

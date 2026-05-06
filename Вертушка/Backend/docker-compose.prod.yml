@@ -94,6 +94,7 @@ services:
       - uploads_data:/app/uploads:ro      # nginx раздаёт обложки как статику
     depends_on:
       - api
+      - metabase
 
   # Certbot для SSL сертификатов
   certbot:
@@ -103,8 +104,32 @@ services:
       - ./certbot/conf:/etc/letsencrypt
       - ./certbot/www:/var/www/certbot
 
+  # Metabase (BI дашборды поверх Postgres)
+  # UI слушает на 127.0.0.1:3000 — открывать через SSH-туннель или nginx-проксирование
+  metabase:
+    image: metabase/metabase:v0.50.21
+    container_name: vertushka_metabase
+    restart: always
+    environment:
+      MB_DB_FILE: /metabase-data/metabase.db
+      MB_SITE_URL: ${METABASE_SITE_URL:-http://localhost:3000}
+      JAVA_TIMEZONE: Europe/Moscow
+    volumes:
+      - metabase_data:/metabase-data
+    ports:
+      - "127.0.0.1:3000:3000"
+    depends_on:
+      db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+
 volumes:
   postgres_data:
   redis_data:
   uploads_data:
   nginx_cache:
+  metabase_data:

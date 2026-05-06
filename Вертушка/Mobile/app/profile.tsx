@@ -586,6 +586,18 @@ export default function ProfileScreen() {
             <Text style={styles.settingsItemText}>Запустить онбординг</Text>
             <Ionicons name="chevron-forward" size={20} color={Colors.textMuted} />
           </TouchableOpacity>
+
+          {/* DEV: галерея иконок B2 — убрать перед релизом */}
+          {__DEV__ && (
+            <TouchableOpacity
+              style={styles.settingsItem}
+              onPress={() => router.push('/dev/icons' as any)}
+            >
+              <Ionicons name="grid-outline" size={24} color={Colors.royalBlue} />
+              <Text style={styles.settingsItemText}>Icons gallery (dev)</Text>
+              <Ionicons name="chevron-forward" size={20} color={Colors.textMuted} />
+            </TouchableOpacity>
+          )}
         </View>
 
         {/* Кнопка выхода */}

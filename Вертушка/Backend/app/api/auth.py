@@ -1,6 +1,7 @@
 """
 API для аутентификации
 """
+import asyncio
 import logging
 import random
 import uuid as uuid_mod
@@ -13,11 +14,11 @@ from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from slowapi import Limiter
 from slowapi.util import get_remote_address
 from jose import jwt as jose_jwt, JWTError, jwk
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings
-from app.database import get_db
+from app.database import get_db, async_session_maker
 from app.models.user import User
 from app.models.wishlist import Wishlist
 from app.models.collection import Collection
@@ -176,6 +177,38 @@ async def _verify_google_id_token(id_token: str) -> dict:
         )
 
 
+_LAST_SEEN_THROTTLE_SEC = 300  # не чаще 1 апдейта на юзера в 5 минут
+
+
+async def _touch_last_seen(user_id: UUID) -> None:
+    """Fire-and-forget апдейт last_seen_at в отдельной сессии."""
+    try:
+        async with async_session_maker() as session:
+            await session.execute(
+                update(User)
+                .where(User.id == user_id)
+                .values(last_seen_at=datetime.utcnow())
+            )
+            await session.commit()
+    except Exception:
+        logger.warning("touch_last_seen failed", exc_info=True)
+
+
+async def _maybe_touch_last_seen(user_id: UUID) -> None:
+    """Throttled через Redis: обновляем last_seen_at не чаще раза в 5 минут."""
+    from app.services.cache import cache
+
+    if cache.available:
+        try:
+            already_marked = await cache.exists("last_seen", str(user_id))
+            if already_marked:
+                return
+            await cache.set("last_seen", str(user_id), 1, ttl=_LAST_SEEN_THROTTLE_SEC)
+        except Exception:
+            pass  # Redis сбойнул — упадём в безусловный апдейт ниже
+    asyncio.create_task(_touch_last_seen(user_id))
+
+
 async def get_current_user(
     credentials: HTTPAuthorizationCredentials = Depends(security),
     db: AsyncSession = Depends(get_db)
@@ -183,30 +216,32 @@ async def get_current_user(
     """Dependency для получения текущего пользователя"""
     token = credentials.credentials
     payload = verify_token_type(token, "access")
-    
+
     if not payload:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Недействительный токен авторизации",
             headers={"WWW-Authenticate": "Bearer"},
         )
-    
+
     user_id = UUID(payload["sub"])
     result = await db.execute(select(User).where(User.id == user_id))
     user = result.scalar_one_or_none()
-    
+
     if not user:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Пользователь не найден",
         )
-    
+
     if not user.is_active:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Аккаунт деактивирован",
         )
-    
+
+    await _maybe_touch_last_seen(user.id)
+
     return user
 
 
@@ -256,6 +291,7 @@ async def register(
         username=user_data.username,
         password_hash=hash_password(user_data.password),
         display_name=user_data.display_name or user_data.username,
+        signup_source="email",
     )
     db.add(user)
     await db.flush()
@@ -460,6 +496,7 @@ async def apple_sign_in(
             apple_id=data.user_identifier,
             display_name=data.full_name or username,
             is_verified=True,  # Apple верифицирует email
+            signup_source="apple",
         )
         db.add(user)
         await db.flush()
@@ -550,6 +587,7 @@ async def google_sign_in(
             google_id=google_sub,
             display_name=name or username,
             is_verified=email_verified,
+            signup_source="google",
         )
         db.add(user)
         await db.flush()
