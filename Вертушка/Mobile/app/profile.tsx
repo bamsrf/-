@@ -16,8 +16,6 @@ import {
   Linking,
 } from 'react-native';
 import { Image } from 'expo-image';
-import ReanimatedSwipeable from 'react-native-gesture-handler/ReanimatedSwipeable';
-import Reanimated, { SharedValue, useAnimatedStyle, interpolate } from 'react-native-reanimated';
 import { File, Paths } from 'expo-file-system';
 import * as Sharing from 'expo-sharing';
 import * as Clipboard from 'expo-clipboard';
@@ -28,7 +26,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuthStore, useCollectionStore, useOnboardingStore, useFollowStore } from '../lib/store';
 import { useTourTarget } from '../lib/useTourTarget';
 import { OnboardingOverlay } from '../components/OnboardingOverlay';
-import { CollectionTab, GiftGivenItem, GiftReceivedItem } from '../lib/types';
+import { CollectionTab, GiftGivenItem } from '../lib/types';
 import { Button } from '../components/ui';
 import { AnimatedGradientText } from '../components/AnimatedGradientText';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -38,20 +36,6 @@ import { toast } from '../lib/toast';
 import Toast from 'react-native-toast-message';
 import { toastConfig } from '../components/CustomToast';
 import { Colors, Typography, Spacing, BorderRadius, Shadows } from '../constants/theme';
-
-function SwipeDeleteAction({ drag, onPress }: { drag: SharedValue<number>; onPress: () => void }) {
-  const animatedStyle = useAnimatedStyle(() => ({
-    opacity: interpolate(Math.abs(drag.value), [0, 60], [0, 1]),
-  }));
-
-  return (
-    <Reanimated.View style={[styles.swipeAction, animatedStyle]}>
-      <TouchableOpacity style={styles.swipeActionButton} onPress={onPress}>
-        <Ionicons name="close-circle" size={22} color={Colors.background} />
-      </TouchableOpacity>
-    </Reanimated.View>
-  );
-}
 
 export default function ProfileScreen() {
   const router = useRouter();
@@ -93,12 +77,7 @@ export default function ProfileScreen() {
   const [copied, setCopied] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [givenGifts, setGivenGifts] = useState<GiftGivenItem[]>([]);
-  const [receivedGifts, setReceivedGifts] = useState<GiftReceivedItem[]>([]);
   const [giftsLoading, setGiftsLoading] = useState(true);
-  const [receivedLoading, setReceivedLoading] = useState(true);
-  const [wishlistShareUrl, setWishlistShareUrl] = useState<string | null>(null);
-  const [wishlistShareCopied, setWishlistShareCopied] = useState(false);
-  const [regeneratingShare, setRegeneratingShare] = useState(false);
   const [avatarUploading, setAvatarUploading] = useState(false);
 
   const pickImage = useCallback(async (source: 'library' | 'camera') => {
@@ -191,91 +170,11 @@ export default function ProfileScreen() {
     }
   }, []);
 
-  const loadReceivedGifts = useCallback(async () => {
-    try {
-      const data = await api.getMyReceivedGifts();
-      // Показываем только активные брони (BOOKED) — завершённые уже в коллекции
-      setReceivedGifts(data.filter((g) => g.status === 'booked'));
-    } catch {
-      // Не блокируем профиль
-    } finally {
-      setReceivedLoading(false);
-    }
-  }, []);
-
-  const loadShareInfo = useCallback(async () => {
-    try {
-      const info = await api.getWishlistShareInfo();
-      setWishlistShareUrl(info.share_url);
-    } catch {
-      // не критично, юзер может перезайти
-    }
-  }, []);
-
   useEffect(() => {
     loadGivenGifts();
-    loadReceivedGifts();
-    loadShareInfo();
     fetchFollowers();
     fetchFollowing();
-  }, [loadGivenGifts, loadReceivedGifts, loadShareInfo, fetchFollowers, fetchFollowing]);
-
-  const handleCopyShareLink = useCallback(async () => {
-    if (!wishlistShareUrl) return;
-    await Clipboard.setStringAsync(wishlistShareUrl);
-    setWishlistShareCopied(true);
-    setTimeout(() => setWishlistShareCopied(false), 2000);
-  }, [wishlistShareUrl]);
-
-  const handleRegenerateShareLink = useCallback(() => {
-    Alert.alert(
-      'Сменить ссылку на вишлист?',
-      'Старая ссылка перестанет работать у всех, кому ты её отправлял.',
-      [
-        { text: 'Отмена', style: 'cancel' },
-        {
-          text: 'Сменить',
-          style: 'destructive',
-          onPress: async () => {
-            setRegeneratingShare(true);
-            try {
-              const info = await api.regenerateWishlistShareToken();
-              setWishlistShareUrl(info.share_url);
-              toast.success('Готово', 'Новая ссылка скопирована — поделись ей заново');
-              await Clipboard.setStringAsync(info.share_url);
-            } catch {
-              toast.error('Не удалось сменить ссылку');
-            } finally {
-              setRegeneratingShare(false);
-            }
-          },
-        },
-      ]
-    );
-  }, []);
-
-  const handleReceivedGiftPress = useCallback((gift: GiftReceivedItem) => {
-    Alert.alert(
-      'Подарок получен?',
-      `${gift.record.artist} — ${gift.record.title}\n\nПластинка добавится в твою коллекцию, дарителю придёт «спасибо».`,
-      [
-        { text: 'Ещё нет', style: 'cancel' },
-        {
-          text: 'Получено!',
-          onPress: async () => {
-            try {
-              await api.completeGiftBooking(gift.id);
-              setReceivedGifts((prev) => prev.filter((g) => g.id !== gift.id));
-              await Promise.all([fetchCollectionItems(), fetchWishlistItems()]);
-              toast.success('Спасибо!', 'Пластинка теперь в твоей коллекции');
-            } catch (error: any) {
-              toast.error('Ошибка', error?.response?.data?.detail || 'Не удалось отметить подарок');
-            }
-          },
-        },
-      ]
-    );
-  }, [fetchCollectionItems, fetchWishlistItems]);
+  }, [loadGivenGifts, fetchFollowers, fetchFollowing]);
 
   const handleCancelGift = useCallback((gift: GiftGivenItem) => {
     Alert.alert(
@@ -289,7 +188,8 @@ export default function ProfileScreen() {
           onPress: async () => {
             try {
               await api.cancelGiftBooking(gift.id, gift.cancel_token);
-              setGivenGifts(prev => prev.filter(g => g.id !== gift.id));
+              setGivenGifts((prev) => prev.filter((g) => g.id !== gift.id));
+              toast.success('Бронь отменена');
             } catch {
               toast.error('Не удалось отменить бронирование');
             }
@@ -298,6 +198,34 @@ export default function ProfileScreen() {
       ]
     );
   }, []);
+
+  const handleGivenPress = useCallback((gift: GiftGivenItem) => {
+    const recordTitle = `${gift.record.artist} — ${gift.record.title}`;
+    const options = ['Открыть пластинку'];
+    if (gift.status === 'booked') options.push('Отменить бронь');
+    options.push('Отмена');
+    const cancelButtonIndex = options.length - 1;
+    const destructiveButtonIndex = gift.status === 'booked' ? 1 : undefined;
+
+    if (Platform.OS === 'ios') {
+      ActionSheetIOS.showActionSheetWithOptions(
+        { title: recordTitle, options, cancelButtonIndex, destructiveButtonIndex },
+        (idx) => {
+          if (idx === 0) router.push(`/record/${gift.record.id}`);
+          else if (idx === 1 && gift.status === 'booked') handleCancelGift(gift);
+        },
+      );
+    } else {
+      const buttons: any[] = [
+        { text: 'Открыть пластинку', onPress: () => router.push(`/record/${gift.record.id}`) },
+      ];
+      if (gift.status === 'booked') {
+        buttons.push({ text: 'Отменить бронь', style: 'destructive', onPress: () => handleCancelGift(gift) });
+      }
+      buttons.push({ text: 'Отмена', style: 'cancel' });
+      Alert.alert(recordTitle, undefined, buttons);
+    }
+  }, [router, handleCancelGift]);
 
   const handleDeleteAccount = useCallback(async () => {
     try {
@@ -407,7 +335,7 @@ export default function ProfileScreen() {
     <View style={[styles.container, { paddingTop: insets.top }]}>
       {/* Editorial header */}
       <View style={styles.header}>
-        <AnimatedGradientText style={Typography.display}>Профиль</AnimatedGradientText>
+        <AnimatedGradientText style={Typography.heroTitle}>Профиль</AnimatedGradientText>
         <TouchableOpacity onPress={handleClose} style={styles.closeButton}>
           <Ionicons name="close" size={28} color={Colors.deepNavy} />
         </TouchableOpacity>
@@ -485,89 +413,6 @@ export default function ProfileScreen() {
           </View>
         </View>
 
-        {/* Публичная ссылка вишлиста */}
-        {wishlistShareUrl ? (
-          <View style={[styles.linkCard, Shadows.sm]}>
-            <Text style={styles.linkLabel}>Публичная ссылка вишлиста</Text>
-            <Text style={styles.linkUrl} numberOfLines={1} ellipsizeMode="tail">{wishlistShareUrl}</Text>
-            <View style={styles.linkActions}>
-              <TouchableOpacity style={styles.linkButton} onPress={handleCopyShareLink}>
-                <Ionicons name={wishlistShareCopied ? 'checkmark-outline' : 'copy-outline'} size={18} color={Colors.royalBlue} />
-                <Text style={styles.linkButtonText}>{wishlistShareCopied ? 'Скопировано' : 'Скопировать'}</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={styles.linkButton}
-                onPress={handleRegenerateShareLink}
-                disabled={regeneratingShare}
-              >
-                {regeneratingShare ? (
-                  <ActivityIndicator size="small" color={Colors.royalBlue} />
-                ) : (
-                  <>
-                    <Ionicons name="refresh-outline" size={18} color={Colors.royalBlue} />
-                    <Text style={styles.linkButtonText}>Сменить ссылку</Text>
-                  </>
-                )}
-              </TouchableOpacity>
-            </View>
-          </View>
-        ) : null}
-
-        {/* Секция «Мне забронировано» — входящие брони */}
-        {receivedLoading ? (
-          <View style={[styles.giftsCard, Shadows.sm]}>
-            <ActivityIndicator size="small" color={Colors.success} style={{ marginVertical: Spacing.md }} />
-          </View>
-        ) : receivedGifts.length === 0 ? null : (
-          <View style={[styles.giftsCard, Shadows.sm]}>
-            <View style={styles.giftsCardHeader}>
-              <Ionicons name="gift" size={18} color={Colors.success} />
-              <Text style={[styles.giftsCardTitle, { color: Colors.success }]}>Мне забронировано</Text>
-              <Text style={styles.giftsCardCount}>{receivedGifts.length}</Text>
-            </View>
-            <Text style={styles.receivedHint}>
-              Кто-то решил подарить — нажми на пластинку, когда получишь её
-            </Text>
-            <ScrollView
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              contentContainerStyle={styles.giftsScrollContent}
-            >
-              {receivedGifts.map((gift) => (
-                <TouchableOpacity
-                  key={gift.id}
-                  style={styles.giftCard}
-                  activeOpacity={0.7}
-                  onPress={() => handleReceivedGiftPress(gift)}
-                >
-                  {gift.record.cover_image_url ? (
-                    <Image
-                      source={gift.record.cover_image_url}
-                      style={styles.giftCardCover}
-                      contentFit="cover"
-                      cachePolicy="disk"
-                    />
-                  ) : (
-                    <View style={[styles.giftCardCover, styles.giftCardCoverPlaceholder]}>
-                      <Ionicons name="disc-outline" size={24} color={Colors.textMuted} />
-                    </View>
-                  )}
-                  <Text style={styles.giftCardTitle} numberOfLines={1}>
-                    {gift.record.title}
-                  </Text>
-                  <Text style={styles.giftCardArtist} numberOfLines={1}>
-                    {gift.record.artist}
-                  </Text>
-                  <View style={[styles.giftCardStatus, styles.giftCardStatusReceived]}>
-                    <View style={[styles.giftCardStatusDot, { backgroundColor: Colors.success }]} />
-                    <Text style={[styles.giftCardStatusText, { color: Colors.success }]}>Получить</Text>
-                  </View>
-                </TouchableOpacity>
-              ))}
-            </ScrollView>
-          </View>
-        )}
-
         {/* Секция «Я дарю» */}
         {giftsLoading ? (
           <View style={[styles.giftsCard, Shadows.sm]}>
@@ -603,67 +448,58 @@ export default function ProfileScreen() {
               contentContainerStyle={styles.giftsScrollContent}
             >
               {givenGifts.map((gift) => (
-                <ReanimatedSwipeable
+                <TouchableOpacity
                   key={gift.id}
-                  friction={2}
-                  rightThreshold={40}
-                  renderRightActions={(_progress: SharedValue<number>, drag: SharedValue<number>) => (
-                    <SwipeDeleteAction drag={drag} onPress={() => handleCancelGift(gift)} />
-                  )}
-                  containerStyle={styles.swipeableContainer}
+                  style={styles.giftCard}
+                  activeOpacity={0.7}
+                  onPress={() => handleGivenPress(gift)}
                 >
-                  <TouchableOpacity
-                    style={styles.giftCard}
-                    activeOpacity={0.7}
-                    onPress={() => router.push(`/record/${gift.record.id}`)}
-                  >
-                    {gift.record.cover_image_url ? (
-                      <Image
-                        source={gift.record.cover_image_url}
-                        style={styles.giftCardCover}
-                        contentFit="cover"
-                        cachePolicy="disk"
-                      />
+                  {gift.record.cover_image_url ? (
+                    <Image
+                      source={gift.record.cover_image_url}
+                      style={styles.giftCardCover}
+                      contentFit="cover"
+                      cachePolicy="disk"
+                    />
+                  ) : (
+                    <View style={[styles.giftCardCover, styles.giftCardCoverPlaceholder]}>
+                      <Ionicons name="disc-outline" size={24} color={Colors.textMuted} />
+                    </View>
+                  )}
+                  <Text style={styles.giftCardTitle} numberOfLines={1}>
+                    {gift.record.title}
+                  </Text>
+                  <Text style={styles.giftCardArtist} numberOfLines={1}>
+                    {gift.record.artist}
+                  </Text>
+                  <View style={styles.giftCardRecipient}>
+                    {gift.for_user.avatar_url ? (
+                      <Image source={resolveMediaUrl(gift.for_user.avatar_url)} style={styles.giftCardAvatar} cachePolicy="disk" />
                     ) : (
-                      <View style={[styles.giftCardCover, styles.giftCardCoverPlaceholder]}>
-                        <Ionicons name="disc-outline" size={24} color={Colors.textMuted} />
+                      <View style={[styles.giftCardAvatar, styles.giftCardAvatarPlaceholder]}>
+                        <Ionicons name="person" size={8} color={Colors.background} />
                       </View>
                     )}
-                    <Text style={styles.giftCardTitle} numberOfLines={1}>
-                      {gift.record.title}
+                    <Text style={styles.giftCardRecipientName} numberOfLines={1}>
+                      для @{gift.for_user.username}
                     </Text>
-                    <Text style={styles.giftCardArtist} numberOfLines={1}>
-                      {gift.record.artist}
-                    </Text>
-                    <View style={styles.giftCardRecipient}>
-                      {gift.for_user.avatar_url ? (
-                        <Image source={resolveMediaUrl(gift.for_user.avatar_url)} style={styles.giftCardAvatar} cachePolicy="disk" />
-                      ) : (
-                        <View style={[styles.giftCardAvatar, styles.giftCardAvatarPlaceholder]}>
-                          <Ionicons name="person" size={8} color={Colors.background} />
-                        </View>
-                      )}
-                      <Text style={styles.giftCardRecipientName} numberOfLines={1}>
-                        для @{gift.for_user.username}
-                      </Text>
-                    </View>
+                  </View>
+                  <View style={[
+                    styles.giftCardStatus,
+                    gift.status === 'completed' && styles.giftCardStatusCompleted,
+                  ]}>
                     <View style={[
-                      styles.giftCardStatus,
-                      gift.status === 'completed' && styles.giftCardStatusCompleted,
+                      styles.giftCardStatusDot,
+                      { backgroundColor: gift.status === 'completed' ? Colors.success : Colors.royalBlue },
+                    ]} />
+                    <Text style={[
+                      styles.giftCardStatusText,
+                      { color: gift.status === 'completed' ? Colors.success : Colors.royalBlue },
                     ]}>
-                      <View style={[
-                        styles.giftCardStatusDot,
-                        { backgroundColor: gift.status === 'completed' ? Colors.success : Colors.royalBlue },
-                      ]} />
-                      <Text style={[
-                        styles.giftCardStatusText,
-                        { color: gift.status === 'completed' ? Colors.success : Colors.royalBlue },
-                      ]}>
-                        {gift.status === 'completed' ? 'Вручено' : 'Активно'}
-                      </Text>
-                    </View>
-                  </TouchableOpacity>
-                </ReanimatedSwipeable>
+                      {gift.status === 'completed' ? 'Вручено' : 'Активно'}
+                    </Text>
+                  </View>
+                </TouchableOpacity>
               ))}
             </ScrollView>
           </View>
@@ -711,6 +547,15 @@ export default function ProfileScreen() {
           >
             <Ionicons name="notifications-outline" size={24} color={Colors.royalBlue} />
             <Text style={styles.settingsItemText}>Уведомления</Text>
+            <Ionicons name="chevron-forward" size={20} color={Colors.textMuted} />
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={styles.settingsItem}
+            onPress={() => router.push('/settings/wishlists')}
+          >
+            <Ionicons name="gift-outline" size={24} color={Colors.royalBlue} />
+            <Text style={styles.settingsItemText}>Вишлисты</Text>
             <Ionicons name="chevron-forward" size={20} color={Colors.textMuted} />
           </TouchableOpacity>
 
@@ -867,7 +712,7 @@ const styles = StyleSheet.create({
   statCard: {
     width: '48%' as any,
     flexGrow: 1,
-    backgroundColor: Colors.background,
+    backgroundColor: Colors.surface,
     borderRadius: BorderRadius.lg,
     padding: Spacing.md,
     alignItems: 'center',
@@ -885,7 +730,7 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   linkCard: {
-    backgroundColor: Colors.background,
+    backgroundColor: Colors.surface,
     borderRadius: BorderRadius.lg,
     padding: Spacing.lg,
     marginBottom: Spacing.xl,
@@ -935,7 +780,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     padding: Spacing.md,
-    backgroundColor: Colors.background,
+    backgroundColor: Colors.surface,
     borderRadius: BorderRadius.lg,
     gap: Spacing.md,
     ...Shadows.sm,
