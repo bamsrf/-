@@ -64,11 +64,15 @@ if (amplitudeApiKey) {
 SplashScreen.preventAutoHideAsync();
 
 function RootLayout() {
-  const { checkAuth, isLoading } = useAuthStore();
+  const { checkAuth, isLoading, isAuthenticated } = useAuthStore();
   const { checkOnboarding, isReady: onboardingReady } = useOnboardingStore();
   const router = useRouter();
   const notificationListener = useRef<Notifications.EventSubscription | null>(null);
   const responseListener = useRef<Notifications.EventSubscription | null>(null);
+  // Запоминаем, был ли пользователь когда-либо авторизован за время сессии,
+  // чтобы редирект на /(auth)/login срабатывал только при потере авторизации,
+  // а не на холодном старте (когда isAuthenticated изначально false).
+  const wasAuthenticatedRef = useRef(false);
 
   const [fontsLoaded] = useFonts({
     Inter_400Regular,
@@ -111,6 +115,19 @@ function RootLayout() {
       SplashScreen.hideAsync().catch(() => {});
     }
   }, [fontsLoaded, isLoading, onboardingReady]);
+
+  // Глобальный auth-watchdog: если пользователь был залогинен и потерял сессию
+  // (refresh-токен невалиден) — уводим на login независимо от текущего экрана.
+  useEffect(() => {
+    if (isAuthenticated) {
+      wasAuthenticatedRef.current = true;
+      return;
+    }
+    if (wasAuthenticatedRef.current && !isLoading) {
+      wasAuthenticatedRef.current = false;
+      router.replace('/(auth)/login');
+    }
+  }, [isAuthenticated, isLoading, router]);
 
   if (!fontsLoaded || isLoading || !onboardingReady) {
     return null;

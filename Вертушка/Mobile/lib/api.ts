@@ -76,8 +76,14 @@ const REFRESH_TOKEN_KEY = 'refresh_token';
 class ApiClient {
   private client: AxiosInstance;
   private isRefreshing = false;
-  private refreshSubscribers: ((token: string) => void)[] = [];
+  private refreshSubscribers: ((token: string | null) => void)[] = [];
   private inflightRequests = new Map<string, Promise<any>>();
+  /**
+   * Колбэк, вызываемый когда refresh-токен невалиден и пользователь должен
+   * быть разлогинен глобально. Регистрируется из useAuthStore чтобы избежать
+   * циклических импортов.
+   */
+  public onAuthFailure: (() => void) | null = null;
 
   constructor() {
     this.client = axios.create({
@@ -105,9 +111,14 @@ class ApiClient {
         // Если 401 и это не запрос на refresh — пробуем обновить токен
         if (error.response?.status === 401 && !originalRequest._retry) {
           if (this.isRefreshing) {
-            // Ждём пока токен обновится
-            return new Promise((resolve) => {
-              this.refreshSubscribers.push((token: string) => {
+            // Ждём пока токен обновится. Если refresh упадёт — резолвимся
+            // с rejected promise, чтобы не висеть бесконечно.
+            return new Promise((resolve, reject) => {
+              this.refreshSubscribers.push((token: string | null) => {
+                if (!token) {
+                  reject(new Error('UnauthorizedError'));
+                  return;
+                }
                 originalRequest.headers.Authorization = `Bearer ${token}`;
                 resolve(this.client(originalRequest));
               });
@@ -125,14 +136,21 @@ class ApiClient {
               originalRequest.headers.Authorization = `Bearer ${newToken}`;
               return this.client(originalRequest);
             }
+            // refreshToken вернул null/undefined — трактуем как провал
+            throw new Error('Refresh token returned no token');
           } catch {
-            // Refresh не удался — разлогиниваем
+            // Refresh не удался — разлогиниваем глобально
             await this.removeTokens();
+            // Освобождаем все ожидающие запросы с ошибкой
+            this.refreshSubscribers.forEach((cb) => cb(null));
+            this.refreshSubscribers = [];
+            // Сообщаем стору, чтобы тот сбросил auth-state и роутер увёл на login
+            this.onAuthFailure?.();
           } finally {
             this.isRefreshing = false;
           }
         }
-        
+
         return Promise.reject(error);
       }
     );

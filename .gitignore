@@ -20,6 +20,38 @@ build/
 .env
 .env.local
 .env.*.local
+.env.prod
+.env.production
+.env.staging
+.env.development
+# Allow committed examples
+!.env.example
+!.env.*.example
+
+# Secrets / signing certs / keys
+*.key
+*.pem
+*.p8
+*.p12
+*.jks
+*.mobileprovision
+
+# Node / JS
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnp.*
+
+# Expo / React Native artifacts
+.expo/
+expo-env.d.ts
+web-build/
+*.ipa
+*.apk
+*.aab
+*.orig.*
+.kotlin/
 
 # IDE
 .idea/

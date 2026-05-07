@@ -9,6 +9,7 @@ logger = logging.getLogger(__name__)
 
 from fastapi import APIRouter, Depends, HTTPException, status, Query, Response
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.services.cache import cache, TTL_MASTER_VERSIONS
@@ -209,61 +210,81 @@ async def get_or_create_record_by_discogs_id(
     """
     Найти или создать Record по discogs_id.
     Используется в других endpoints для получения Record перед добавлением в коллекцию/вишлист.
+
+    Защищён от concurrent INSERT: если два запроса одновременно не нашли запись
+    и оба попытались её создать, проигравший ловит IntegrityError, делает rollback
+    и читает запись, созданную победителем.
     """
     # Проверяем локальную БД
     result = await db.execute(
         select(Record).where(Record.discogs_id == discogs_id)
     )
     record = result.scalar_one_or_none()
-    
+
     if record:
         return record
-    
-    # Запрос в Discogs
+
+    # Запрос в Discogs (отдельный try — отделяем сетевые ошибки от ошибок БД).
     discogs = DiscogsService()
-    
     try:
         record_data = await discogs.get_release(discogs_id)
-        
-        # Создаём запись в БД
-        record = Record(
-            discogs_id=record_data.get("id"),
-            discogs_master_id=record_data.get("master_id"),
-            title=record_data.get("title", "Unknown"),
-            artist=record_data.get("artist", "Unknown"),
-            label=record_data.get("label"),
-            catalog_number=record_data.get("catalog_number"),
-            year=record_data.get("year"),
-            country=record_data.get("country"),
-            genre=record_data.get("genre"),
-            style=record_data.get("style"),
-            format_type=record_data.get("format"),
-            barcode=record_data.get("barcode"),
-            cover_image_url=record_data.get("cover_image"),
-            thumb_image_url=record_data.get("thumb_image"),
-            estimated_price_min=record_data.get("price_min"),
-            estimated_price_max=record_data.get("price_max"),
-            estimated_price_median=record_data.get("price_median"),
-            is_first_press=bool(record_data.get("is_first_press")),
-            is_canon=bool(record_data.get("is_canon")),
-            is_collectible=bool(record_data.get("is_collectible")),
-            is_limited=bool(record_data.get("is_limited")),
-            is_hot=bool(record_data.get("is_hot")),
-            discogs_data=record_data,
-            tracklist=record_data.get("tracklist"),
-        )
-        
-        db.add(record)
-        await db.commit()
-        await db.refresh(record)
-        
-        return record
-        
-    except Exception as e:
+    except Exception:
+        logger.exception("Failed to fetch Discogs release %s", discogs_id)
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail=f"Ошибка при получении данных из Discogs: {str(e)}"
+            detail="Не удалось получить данные из Discogs. Попробуйте позже."
         )
+
+    # Создаём запись в БД
+    record = Record(
+        discogs_id=record_data.get("id"),
+        discogs_master_id=record_data.get("master_id"),
+        title=record_data.get("title", "Unknown"),
+        artist=record_data.get("artist", "Unknown"),
+        label=record_data.get("label"),
+        catalog_number=record_data.get("catalog_number"),
+        year=record_data.get("year"),
+        country=record_data.get("country"),
+        genre=record_data.get("genre"),
+        style=record_data.get("style"),
+        format_type=record_data.get("format"),
+        barcode=record_data.get("barcode"),
+        cover_image_url=record_data.get("cover_image"),
+        thumb_image_url=record_data.get("thumb_image"),
+        estimated_price_min=record_data.get("price_min"),
+        estimated_price_max=record_data.get("price_max"),
+        estimated_price_median=record_data.get("price_median"),
+        is_first_press=bool(record_data.get("is_first_press")),
+        is_canon=bool(record_data.get("is_canon")),
+        is_collectible=bool(record_data.get("is_collectible")),
+        is_limited=bool(record_data.get("is_limited")),
+        is_hot=bool(record_data.get("is_hot")),
+        discogs_data=record_data,
+        tracklist=record_data.get("tracklist"),
+    )
+    db.add(record)
+    try:
+        await db.commit()
+        await db.refresh(record)
+        return record
+    except IntegrityError:
+        # Параллельный запрос вставил Record с тем же discogs_id раньше нас —
+        # откатываем и читаем существующую запись.
+        await db.rollback()
+        result = await db.execute(
+            select(Record).where(Record.discogs_id == discogs_id)
+        )
+        existing = result.scalar_one_or_none()
+        if existing is None:
+            logger.error(
+                "IntegrityError on Record insert but no existing row for discogs_id=%s",
+                discogs_id,
+            )
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Не удалось сохранить пластинку"
+            )
+        return existing
 
 
 @router.get("/search", response_model=RecordSearchResponse)

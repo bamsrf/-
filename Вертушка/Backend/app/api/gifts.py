@@ -10,6 +10,7 @@ logger = logging.getLogger(__name__)
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy import func, or_, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -236,8 +237,18 @@ async def book_gift(
         gifter_user_agent_hash=ua_hash,
     )
     db.add(booking)
-    await db.commit()
-    await db.refresh(booking)
+    try:
+        await db.commit()
+        await db.refresh(booking)
+    except IntegrityError:
+        # Race: параллельный запрос успел забронировать тот же wishlist_item_id
+        # раньше нас. UNIQUE-constraint на колонке защитил от двойной брони,
+        # но клиенту нужно отдать понятную ошибку, а не 500.
+        await db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Этот подарок только что забронировал кто-то другой"
+        )
 
     logger.info(
         "gift_booked",
