@@ -67,22 +67,24 @@ export default function GiftDetailScreen() {
   const { fetchCollectionItems, fetchWishlistItems } = useCollectionStore();
   const [isActing, setIsActing] = useState(false);
 
-  // Локальный кэш gift'а: при удалении из стора (после успешного действия) экран продолжает
-  // показывать данные до router.back(), иначе мелькает fallback «Подарок не найден».
-  const [gift, setGift] = useState<GiftGivenItem | GiftReceivedItem | null>(null);
+  // Локальный «снимок» gift'а: пока он null — рендерим из стора (быстрый путь на mount);
+  // как только засняли — экран показывает снимок, не реагируя на последующие удаления
+  // из стора (иначе после успешного действия до router.back() мелькает «не найден»).
+  const [snapshot, setSnapshot] = useState<GiftGivenItem | GiftReceivedItem | null>(null);
+
+  const giftFromStore = direction === 'given'
+    ? (given.find((g) => g.id === params.id) as GiftGivenItem | undefined)
+    : (received.find((g) => g.id === params.id) as GiftReceivedItem | undefined);
+  const gift = snapshot ?? giftFromStore ?? null;
 
   useEffect(() => {
     if (!isLoaded) loadAll();
   }, [isLoaded, loadAll]);
 
   useEffect(() => {
-    // Кешируем gift один раз — последующие изменения стора не должны влиять на отображение.
-    if (gift) return;
-    const found = direction === 'given'
-      ? (given.find((g) => g.id === params.id) as GiftGivenItem | undefined)
-      : (received.find((g) => g.id === params.id) as GiftReceivedItem | undefined);
-    if (found) setGift(found);
-  }, [gift, direction, given, received, params.id]);
+    // Сохраняем снимок при первом обнаружении gift'а в сторе.
+    if (giftFromStore && !snapshot) setSnapshot(giftFromStore);
+  }, [giftFromStore, snapshot]);
 
   const handleCancel = () => {
     if (!gift || direction !== 'given') return;
@@ -313,7 +315,6 @@ export default function GiftDetailScreen() {
         >
           <Ionicons name="disc-outline" size={20} color={Colors.royalBlue} />
           <Text style={styles.openRecordText}>Открыть карточку пластинки</Text>
-          <Ionicons name="chevron-forward" size={18} color={Colors.textMuted} />
         </TouchableOpacity>
       </ScrollView>
 
