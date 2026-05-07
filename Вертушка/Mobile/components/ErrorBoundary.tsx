@@ -3,7 +3,7 @@
  */
 import React, { Component, ReactNode } from 'react';
 import { View, Text, StyleSheet, Pressable } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
+import { Icon } from '@/components/ui';
 import { Colors, Typography, Spacing, BorderRadius } from '../constants/theme';
 
 interface Props {
@@ -36,7 +36,7 @@ export class ErrorBoundary extends Component<Props, State> {
 
     return (
       <View style={styles.container}>
-        <Ionicons name="alert-circle-outline" size={52} color={Colors.textMuted} />
+        <Icon name="alert-circle-outline" size={52} color={Colors.textMuted} />
         <Text style={styles.title}>{title}</Text>
         <Text style={styles.subtitle}>
           {this.state.error?.message ?? 'Неизвестная ошибка'}

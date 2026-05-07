@@ -14,7 +14,7 @@ import { toast } from '../../lib/toast';
 import { Link } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Ionicons } from '@expo/vector-icons';
+import { Icon } from '@/components/ui';
 import { Button, Input } from '../../components/ui';
 import { SocialAuthButtons } from '../../components/SocialAuthButtons';
 import { useAuthStore } from '../../lib/store';
@@ -97,7 +97,7 @@ export default function RegisterScreen() {
             colors={[Colors.royalBlue, Colors.periwinkle]}
             style={styles.logo}
           >
-            <Ionicons name="disc" size={48} color={Colors.background} />
+            <Icon name="disc" size={48} color={Colors.background} />
           </LinearGradient>
           <Text style={styles.appName}>Вертушка</Text>
         </View>

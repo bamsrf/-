@@ -13,7 +13,7 @@ import {
   Pressable,
 } from 'react-native';
 import { useRouter } from 'expo-router';
-import { Ionicons } from '@expo/vector-icons';
+import { Icon } from '@/components/ui';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useProfileStore, useCollectionStore } from '../../lib/store';
 import { toast } from '../../lib/toast';
@@ -210,7 +210,7 @@ export default function ShareProfileScreen() {
       {/* Header */}
       <View style={styles.header}>
         <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
-          <Ionicons name="arrow-back" size={24} color={Colors.royalBlue} />
+          <Icon name="arrow-back" size={24} color={Colors.royalBlue} />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Настройки профиля</Text>
         <View style={styles.placeholder} />
@@ -291,7 +291,7 @@ export default function ShareProfileScreen() {
             style={styles.highlightsButton}
             onPress={() => setSelectingHighlights(true)}
           >
-            <Ionicons name="star-outline" size={20} color={Colors.royalBlue} />
+            <Icon name="star-outline" size={20} color={Colors.royalBlue} />
             <Text style={styles.highlightsButtonText}>
               Выбрать избранные ({selectedHighlights.size}/4)
             </Text>

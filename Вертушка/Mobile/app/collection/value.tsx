@@ -14,7 +14,7 @@ import {
 import { Image } from 'expo-image';
 import { useRouter } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
-import { Ionicons } from '@expo/vector-icons';
+import { Icon } from '@/components/ui';
 import Animated, {
   useSharedValue,
   useAnimatedStyle,
@@ -257,7 +257,7 @@ export default function CollectionValueScreen() {
                 activeOpacity={0.7}
               >
                 <View style={styles.expensiveBadge}>
-                  <Ionicons name="trophy" size={14} color={Colors.warning} />
+                  <Icon name="trophy" size={14} color={Colors.warning} />
                   <Text style={styles.expensiveBadgeText}>Самая дорогая</Text>
                 </View>
                 <View style={styles.expensiveContent}>
@@ -278,7 +278,6 @@ export default function CollectionValueScreen() {
                       ~{formatRub(stats.most_expensive_price_rub || 0)} ₽
                     </Text>
                   </View>
-                  <Ionicons name="chevron-forward" size={20} color={Colors.textMuted} />
                 </View>
               </TouchableOpacity>
             )}
@@ -291,7 +290,7 @@ export default function CollectionValueScreen() {
         }
         ListEmptyComponent={
           <View style={styles.emptyContainer}>
-            <Ionicons name="pricetag-outline" size={48} color={Colors.textMuted} />
+            <Icon name="pricetag-outline" size={48} color={Colors.textMuted} />
             <Text style={styles.emptyText}>
               Нет пластинок с оценкой стоимости
             </Text>

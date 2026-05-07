@@ -12,7 +12,7 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import { useLocalSearchParams, useRouter, useFocusEffect } from 'expo-router';
-import { Ionicons } from '@expo/vector-icons';
+import { Icon } from '@/components/ui';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Header } from '../../components/Header';
 import { RecordGrid } from '../../components/RecordGrid';
@@ -297,7 +297,7 @@ export default function FolderScreen() {
       <View style={styles.container}>
         <Header title="Ошибка" showBack showProfile={false} />
         <View style={styles.centered}>
-          <Ionicons name="alert-circle-outline" size={64} color={Colors.textMuted} />
+          <Icon name="alert-circle-outline" size={64} color={Colors.textMuted} />
           <Text style={styles.errorText}>Папка не найдена</Text>
         </View>
       </View>
@@ -312,7 +312,7 @@ export default function FolderScreen() {
           style={styles.optionsButton}
           onPress={() => setShowOptions(true)}
         >
-          <Ionicons name="ellipsis-horizontal" size={24} color={Colors.textSecondary} />
+          <Icon name="ellipsis-horizontal" size={24} color={Colors.textSecondary} />
         </TouchableOpacity>
       </View>
       <Text style={styles.itemCount}>
@@ -363,7 +363,7 @@ export default function FolderScreen() {
             onPress={() => setShowFolderPicker(true)}
             disabled={selectedItems.size === 0}
           >
-            <Ionicons
+            <Icon
               name="folder-outline"
               size={24}
               color={selectedItems.size > 0 ? Colors.royalBlue : Colors.textMuted}
@@ -383,7 +383,7 @@ export default function FolderScreen() {
             onPress={handleBulkRemove}
             disabled={selectedItems.size === 0}
           >
-            <Ionicons
+            <Icon
               name="close-circle-outline"
               size={24}
               color={selectedItems.size > 0 ? Colors.error : Colors.textMuted}

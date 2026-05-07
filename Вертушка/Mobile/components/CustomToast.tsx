@@ -1,11 +1,11 @@
 import { StyleSheet, Text, View } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
+import { Icon } from '@/components/ui';
 import type { BaseToastProps } from 'react-native-toast-message';
 import { BorderRadius, Colors, Shadows, Spacing, Typography } from '../constants/theme';
 
 type Variant = 'success' | 'error' | 'info';
 
-const VARIANTS: Record<Variant, { accent: string; tint: string; icon: keyof typeof Ionicons.glyphMap }> = {
+const VARIANTS: Record<Variant, { accent: string; tint: string; icon: string }> = {
   success: {
     accent: Colors.success,
     tint: 'rgba(48, 164, 108, 0.12)',
@@ -31,7 +31,7 @@ function CustomToast({ variant, text1, text2 }: { variant: Variant; text1?: stri
       <View style={styles.card}>
         <View style={[styles.accentBar, { backgroundColor: accent }]} />
         <View style={[styles.iconWrap, { backgroundColor: tint }]}>
-          <Ionicons name={icon} size={22} color={accent} />
+          <Icon name={icon} size={22} color={accent} />
         </View>
         <View style={styles.textWrap}>
           {!!text1 && (

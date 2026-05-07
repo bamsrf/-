@@ -14,7 +14,7 @@ import { toast } from '../../lib/toast';
 import { router } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Ionicons } from '@expo/vector-icons';
+import { Icon } from '@/components/ui';
 import { Button, Input } from '../../components/ui';
 import { api } from '../../lib/api';
 import { Colors, Typography, Spacing } from '../../constants/theme';
@@ -75,7 +75,7 @@ export default function ForgotPasswordScreen() {
             colors={[Colors.royalBlue, Colors.periwinkle]}
             style={styles.logo}
           >
-            <Ionicons name="mail-outline" size={48} color={Colors.background} />
+            <Icon name="mail-outline" size={48} color={Colors.background} />
           </LinearGradient>
         </View>
 

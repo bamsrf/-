@@ -21,7 +21,7 @@ import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
-import { Ionicons } from '@expo/vector-icons';
+import { Icon } from '@/components/ui';
 import { AnimatedGradientText } from '../../components/AnimatedGradientText';
 import { RecordGrid } from '../../components/RecordGrid';
 import { AutoRail } from '../../components/AutoRail';
@@ -540,14 +540,14 @@ export default function SearchScreen() {
                   onPress={() => handleHistoryItemPress(item)}
                   hitSlop={6}
                 >
-                  <Ionicons name="time-outline" size={18} color={Colors.periwinkle} />
+                  <Icon name="time-outline" size={18} color={Colors.periwinkle} />
                   <Text style={styles.historyItemText}>{item}</Text>
                 </Pressable>
                 <Pressable
                   onPress={() => handleRemoveHistoryItem(item)}
                   hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
                 >
-                  <Ionicons name="close" size={18} color={Colors.textMuted} />
+                  <Icon name="close" size={18} color={Colors.textMuted} />
                 </Pressable>
               </View>
             ))}
@@ -560,7 +560,7 @@ export default function SearchScreen() {
                 <Text style={styles.historyExpandText}>
                   {historyExpanded ? 'Свернуть' : `Показать ещё (${historyOverflow})`}
                 </Text>
-                <Ionicons
+                <Icon
                   name={historyExpanded ? 'chevron-up' : 'chevron-down'}
                   size={16}
                   color={Colors.royalBlue}
@@ -608,7 +608,7 @@ export default function SearchScreen() {
           <View style={styles.modalHeader}>
             <Text style={styles.modalTitle}>Фильтры</Text>
             <TouchableOpacity onPress={closeFilters}>
-              <Ionicons name="close" size={24} color={Colors.text} />
+              <Icon name="close" size={24} color={Colors.text} />
             </TouchableOpacity>
           </View>
 
@@ -718,7 +718,7 @@ export default function SearchScreen() {
               colors={[Colors.royalBlue, Colors.periwinkle]}
               style={styles.avatarPlaceholder}
             >
-              <Ionicons name="disc" size={20} color={Colors.background} />
+              <Icon name="disc" size={20} color={Colors.background} />
             </LinearGradient>
           )}
         </Pressable>
@@ -727,7 +727,7 @@ export default function SearchScreen() {
       {/* Search input — pill style */}
       <View style={styles.searchRow}>
         <View style={[styles.searchInputContainer, inputFocused && styles.searchInputFocused]}>
-          <Ionicons name="search" size={20} color={Colors.royalBlue} />
+          <Icon name="search" size={20} color={Colors.royalBlue} />
           <TextInput
             style={styles.searchInput}
             value={searchInput}
@@ -743,7 +743,7 @@ export default function SearchScreen() {
           />
           {searchInput.length > 0 && (
             <TouchableOpacity onPress={handleClear}>
-              <Ionicons name="close-circle" size={20} color={Colors.textMuted} />
+              <Icon name="close-circle" size={20} color={Colors.textMuted} />
             </TouchableOpacity>
           )}
         </View>
@@ -755,7 +755,7 @@ export default function SearchScreen() {
             style={[styles.filterButton, hasActiveFilters && styles.filterButtonActive]}
             onPress={openFilters}
           >
-            <Ionicons name="options-outline" size={20} color={hasActiveFilters ? Colors.background : Colors.text} />
+            <Icon name="options-outline" size={20} color={hasActiveFilters ? Colors.background : Colors.text} />
           </TouchableOpacity>
         )}
       </View>
@@ -778,14 +778,14 @@ export default function SearchScreen() {
                 <Image source={artist.thumb} style={styles.suggestThumb} contentFit="cover" cachePolicy="disk" />
               ) : (
                 <View style={[styles.suggestThumb, styles.suggestThumbPlaceholder]}>
-                  <Ionicons name="person-outline" size={16} color={Colors.textMuted} />
+                  <Icon name="person-outline" size={16} color={Colors.textMuted} />
                 </View>
               )}
               <View style={styles.suggestInfo}>
                 <Text style={styles.suggestName} numberOfLines={1}>{artist.name}</Text>
                 <Text style={styles.suggestType}>Артист</Text>
               </View>
-              <Ionicons name="arrow-forward-outline" size={16} color={Colors.textMuted} />
+              <Icon name="arrow-forward-outline" size={16} color={Colors.textMuted} />
             </TouchableOpacity>
           ))}
           {suggestions.masters.map((master) => (
@@ -811,14 +811,14 @@ export default function SearchScreen() {
                 <Image source={master.thumb} style={styles.suggestThumb} contentFit="cover" cachePolicy="disk" />
               ) : (
                 <View style={[styles.suggestThumb, styles.suggestThumbPlaceholder]}>
-                  <Ionicons name="disc-outline" size={16} color={Colors.textMuted} />
+                  <Icon name="disc-outline" size={16} color={Colors.textMuted} />
                 </View>
               )}
               <View style={styles.suggestInfo}>
                 <Text style={styles.suggestName} numberOfLines={1}>{master.title}</Text>
                 <Text style={styles.suggestType} numberOfLines={1}>{master.artist}{master.year ? ` · ${master.year}` : ''}</Text>
               </View>
-              <Ionicons name="arrow-forward-outline" size={16} color={Colors.textMuted} />
+              <Icon name="arrow-forward-outline" size={16} color={Colors.textMuted} />
             </TouchableOpacity>
           ))}
         </View>
@@ -848,7 +848,7 @@ export default function SearchScreen() {
             />
           ) : (
             <View style={styles.userPlaceholder}>
-              <Ionicons name="person" size={24} color={Colors.textMuted} />
+              <Icon name="person" size={24} color={Colors.textMuted} />
             </View>
           )}
         </View>
@@ -859,7 +859,6 @@ export default function SearchScreen() {
           </Text>
         </View>
         <Text style={styles.userStatText}>{u.collection_count} пластинок</Text>
-        <Ionicons name="chevron-forward" size={24} color={Colors.textMuted} />
       </TouchableOpacity>
     ));
   };
@@ -936,7 +935,7 @@ export default function SearchScreen() {
                   />
                 ) : (
                   <View style={styles.topArtistPlaceholder}>
-                    <Ionicons name="person-outline" size={32} color="rgba(255,255,255,0.7)" />
+                    <Icon name="person-outline" size={32} color="rgba(255,255,255,0.7)" />
                   </View>
                 )}
               </View>
@@ -945,7 +944,6 @@ export default function SearchScreen() {
                 <Text style={styles.topArtistName} numberOfLines={1}>{dedupedArtists[0].name.replace(/\s*\(\d+\)$/, '')}</Text>
               </View>
               <View style={styles.artistArrowBg}>
-                <Ionicons name="chevron-forward" size={20} color="#FFFFFF" />
               </View>
             </LinearGradient>
           </TouchableOpacity>
@@ -969,7 +967,7 @@ export default function SearchScreen() {
                   />
                 ) : (
                   <View style={[styles.topArtistPlaceholder, styles.secondaryArtistPlaceholder]}>
-                    <Ionicons name="person-outline" size={24} color={Colors.textMuted} />
+                    <Icon name="person-outline" size={24} color={Colors.textMuted} />
                   </View>
                 )}
               </View>
@@ -977,7 +975,6 @@ export default function SearchScreen() {
                 <Text style={styles.secondaryArtistLabel}>Артист</Text>
                 <Text style={styles.secondaryArtistName} numberOfLines={1}>{artist.name.replace(/\s*\(\d+\)$/, '')}</Text>
               </View>
-              <Ionicons name="chevron-forward" size={20} color={Colors.textMuted} />
             </TouchableOpacity>
           ))}
 

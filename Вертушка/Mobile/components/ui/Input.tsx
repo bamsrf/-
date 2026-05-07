@@ -10,7 +10,7 @@ import {
   TouchableOpacity,
   ViewStyle,
 } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
+import { Icon } from '@/components/ui';
 import { Colors, Typography, BorderRadius, ComponentSizes, Spacing } from '../../constants/theme';
 
 interface InputProps {
@@ -26,8 +26,8 @@ interface InputProps {
   editable?: boolean;
   multiline?: boolean;
   numberOfLines?: number;
-  leftIcon?: keyof typeof Ionicons.glyphMap;
-  rightIcon?: keyof typeof Ionicons.glyphMap;
+  leftIcon?: string;
+  rightIcon?: string;
   onRightIconPress?: () => void;
   style?: ViewStyle;
 }
@@ -69,7 +69,7 @@ export function Input({
         ]}
       >
         {leftIcon && (
-          <Ionicons
+          <Icon
             name={leftIcon}
             size={20}
             color={Colors.textMuted}
@@ -104,7 +104,7 @@ export function Input({
             onPress={() => setIsPasswordVisible(!isPasswordVisible)}
             style={styles.rightIconButton}
           >
-            <Ionicons
+            <Icon
               name={isPasswordVisible ? 'eye-off-outline' : 'eye-outline'}
               size={20}
               color={Colors.textMuted}
@@ -118,7 +118,7 @@ export function Input({
             style={styles.rightIconButton}
             disabled={!onRightIconPress}
           >
-            <Ionicons name={rightIcon} size={20} color={Colors.textMuted} />
+            <Icon name={rightIcon} size={20} color={Colors.textMuted} />
           </TouchableOpacity>
         )}
       </View>

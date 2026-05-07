@@ -14,7 +14,7 @@ import {
 } from 'react-native';
 import { Image } from 'expo-image';
 import { useRouter, useLocalSearchParams } from 'expo-router';
-import { Ionicons } from '@expo/vector-icons';
+import { Icon } from '@/components/ui';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useGiftStore } from '../../lib/store';
 import { GiftGivenItem, GiftReceivedItem } from '../../lib/types';
@@ -73,7 +73,7 @@ function GiftRow({
         <Image source={cover} style={styles.cover} contentFit="cover" cachePolicy="disk" />
       ) : (
         <View style={[styles.cover, styles.coverPlaceholder]}>
-          <Ionicons name="disc-outline" size={24} color={Colors.textMuted} />
+          <Icon name="disc-outline" size={24} color={Colors.textMuted} />
         </View>
       )}
       <View style={styles.rowContent}>
@@ -81,7 +81,6 @@ function GiftRow({
         <Text style={styles.rowSubtitle} numberOfLines={1}>{subtitle}</Text>
         <StatusPill status={status} />
       </View>
-      <Ionicons name="chevron-forward" size={18} color={Colors.textMuted} />
     </TouchableOpacity>
   );
 }
@@ -139,7 +138,7 @@ export default function WishlistsScreen() {
     return (
       <View style={styles.emptyContainer}>
         <View style={styles.emptyIconWrap}>
-          <Ionicons
+          <Icon
             name={activeTab === 'given' ? 'gift-outline' : 'mail-open-outline'}
             size={36}
             color={Colors.royalBlue}
@@ -161,7 +160,7 @@ export default function WishlistsScreen() {
     <View style={[styles.container, { paddingTop: insets.top }]}>
       <View style={styles.header}>
         <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
-          <Ionicons name="arrow-back" size={24} color={Colors.royalBlue} />
+          <Icon name="arrow-back" size={24} color={Colors.royalBlue} />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Вишлисты</Text>
         <View style={styles.placeholder} />

@@ -15,7 +15,6 @@ import { ScrollView, View, Text, StyleSheet, TouchableOpacity, Pressable } from 
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { Icon, type IconName, type IconColor, type IconSize, type IconVariant, type IconWeight } from '../../components/ui';
-import { RarityCrown, RarityDiamond, RarityFlame } from '../../components/icons/hero';
 import { Colors, Typography, Spacing, BorderRadius } from '../../constants/theme';
 
 // ───────────────────────────────────────────────────────────────────────────
@@ -53,7 +52,7 @@ const GROUPS: Array<{ title: string; names: IconName[] }> = [
   },
   {
     title: '★ Custom hero (B2)',
-    names: ['disc', 'gift', 'trophy', 'scan', 'rarity-crown', 'rarity-diamond', 'rarity-flame', 'vinyl-label'],
+    names: ['disc', 'gift', 'trophy', 'scan', 'vinyl-label'],
   },
 ];
 
@@ -201,30 +200,7 @@ export default function IconsGalleryScreen() {
           </View>
         </View>
 
-        {/* Rarity pairing — маркер тира + ауро-цвет */}
-        <View style={styles.group}>
-          <Text style={styles.groupTitle}>Rarity markers · pairing</Text>
-          <Text style={styles.groupCount}>3 тира</Text>
-          <View style={styles.grid}>
-            {[
-              { Comp: RarityCrown,   tier: 'collectible', color: '#F4D27A' },
-              { Comp: RarityDiamond, tier: 'limited',     color: '#C0C0D8' },
-              { Comp: RarityFlame,   tier: 'hot',         color: '#FF5E3A' },
-            ].map((r) => (
-              <View key={r.tier} style={[styles.cell, { backgroundColor: Colors.surface }]}>
-                {/* Rarity-цвета — отдельная подсистема. Рендерим hero
-                    напрямую, минуя <Icon> token-roles. */}
-                <View style={{ width: 36, height: 36, alignItems: 'center', justifyContent: 'center' }}>
-                  <View style={{ position: 'absolute', width: 36, height: 36, borderRadius: 18, backgroundColor: r.color, opacity: 0.18 }} />
-                  <r.Comp size={20} color={r.color} />
-                </View>
-                <Text style={[styles.cellLabel, { color: Colors.textSecondary }]} numberOfLines={1}>
-                  {r.tier}
-                </Text>
-              </View>
-            ))}
-          </View>
-        </View>
+        {/* Rarity-маркеры удалены — выражаются через RarityAura, не иконками. */}
 
         {/* Footer note */}
         <View style={styles.footer}>

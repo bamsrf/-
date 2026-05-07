@@ -5,7 +5,7 @@
 import { useEffect, useState } from 'react';
 import { Platform, StyleSheet, Text, TouchableOpacity, View, ActivityIndicator } from 'react-native';
 import Constants from 'expo-constants';
-import { Ionicons } from '@expo/vector-icons';
+import { Icon } from '@/components/ui';
 import { toast } from '../lib/toast';
 import { useAuthStore } from '../lib/store';
 import { Colors, Typography, Spacing, BorderRadius } from '../constants/theme';
@@ -164,7 +164,7 @@ export function SocialAuthButtons({ mode }: Props) {
             <ActivityIndicator color={Colors.deepNavy} />
           ) : (
             <>
-              <Ionicons name="logo-google" size={20} color={Colors.deepNavy} />
+              <Icon name="logo-google" size={20} color={Colors.deepNavy} />
               <Text style={styles.googleText}>
                 {mode === 'login' ? 'Войти через Google' : 'Создать через Google'}
               </Text>

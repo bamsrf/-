@@ -16,7 +16,7 @@ import {
   Platform,
 } from 'react-native';
 import { useRouter } from 'expo-router';
-import { Ionicons } from '@expo/vector-icons';
+import { Icon } from '@/components/ui';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuthStore, useOnboardingStore, useProfileStore } from '../../lib/store';
 import api from '../../lib/api';
@@ -231,7 +231,7 @@ export default function EditProfileScreen() {
       {/* Header */}
       <View style={styles.header}>
         <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
-          <Ionicons name="arrow-back" size={24} color={Colors.royalBlue} />
+          <Icon name="arrow-back" size={24} color={Colors.royalBlue} />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Редактировать профиль</Text>
         <TouchableOpacity
@@ -303,10 +303,10 @@ export default function EditProfileScreen() {
                 <ActivityIndicator size="small" color={Colors.royalBlue} />
               )}
               {usernameStatus === 'available' && (
-                <Ionicons name="checkmark-circle" size={20} color={Colors.success} />
+                <Icon name="checkmark-circle" size={20} color={Colors.success} />
               )}
               {(usernameStatus === 'taken' || usernameStatus === 'invalid' || usernameStatus === 'too_short') && (
-                <Ionicons name="close-circle" size={20} color={Colors.error} />
+                <Icon name="close-circle" size={20} color={Colors.error} />
               )}
             </View>
           </View>
@@ -384,7 +384,7 @@ export default function EditProfileScreen() {
                   Снова показать welcome и подсказки по приложению
                 </Text>
               </View>
-              <Ionicons name="refresh-outline" size={22} color={Colors.royalBlue} />
+              <Icon name="refresh-outline" size={22} color={Colors.royalBlue} />
             </TouchableOpacity>
           </View>
 

@@ -16,7 +16,7 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import { toast } from '../lib/toast';
-import { Ionicons } from '@expo/vector-icons';
+import { Icon } from '@/components/ui';
 import Toast from 'react-native-toast-message';
 import { useCollectionStore } from '../lib/store';
 import { api } from '../lib/api';
@@ -121,7 +121,7 @@ export function FolderPickerModal({
           <View style={styles.header}>
             <Text style={styles.title}>Выбрать папку</Text>
             <TouchableOpacity onPress={onClose} hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}>
-              <Ionicons name="close" size={24} color={Colors.textSecondary} />
+              <Icon name="close" size={24} color={Colors.textSecondary} />
             </TouchableOpacity>
           </View>
 
@@ -139,7 +139,7 @@ export function FolderPickerModal({
               {/* New folder button */}
               <TouchableOpacity style={styles.newFolderCard} onPress={handleCreateFolder}>
                 <View style={styles.newFolderIcon}>
-                  <Ionicons name="add" size={32} color={Colors.textMuted} />
+                  <Icon name="add" size={32} color={Colors.textMuted} />
                 </View>
                 <Text style={styles.folderName} numberOfLines={1}>Новая</Text>
               </TouchableOpacity>
@@ -156,7 +156,7 @@ export function FolderPickerModal({
                       <Image source={folderPlaceholder} style={styles.folderImage} />
                       {hasOverlap && (
                         <View style={styles.checkBadge}>
-                          <Ionicons name="checkmark" size={10} color={Colors.background} />
+                          <Icon name="checkmark" size={10} color={Colors.background} />
                         </View>
                       )}
                     </View>

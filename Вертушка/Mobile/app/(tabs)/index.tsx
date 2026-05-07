@@ -15,7 +15,7 @@ import {
 import { toast } from '../../lib/toast';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import { useRouter, useFocusEffect } from 'expo-router';
-import { Ionicons } from '@expo/vector-icons';
+import { Icon } from '@/components/ui';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as ImageManipulator from 'expo-image-manipulator';
 import { Button, SegmentedControl } from '../../components/ui';
@@ -200,7 +200,7 @@ export default function ScannerScreen() {
   if (!permission.granted) {
     return (
       <View style={[styles.centered, { paddingTop: insets.top }]}>
-        <Ionicons name="camera-outline" size={64} color={Colors.textMuted} />
+        <Icon name="camera-outline" size={64} color={Colors.textMuted} />
         <Text style={styles.title}>Доступ к камере</Text>
         <Text style={styles.message}>
           Для сканирования штрихкодов необходим доступ к камере
@@ -307,14 +307,14 @@ export default function ScannerScreen() {
           <View style={styles.resultsHeader}>
             <Text style={styles.resultsTitle}>Найдено</Text>
             <TouchableOpacity onPress={handleCloseResults}>
-              <Ionicons name="close" size={28} color={Colors.royalBlue} />
+              <Icon name="close" size={28} color={Colors.royalBlue} />
             </TouchableOpacity>
           </View>
 
           {/* Баннер распознавания (режим обложки) */}
           {recognizedInfo && (
             <View style={styles.recognizedBanner}>
-              <Ionicons name="sparkles" size={16} color={Colors.royalBlue} />
+              <Icon name="sparkles" size={16} color={Colors.royalBlue} />
               <Text style={styles.recognizedText} numberOfLines={1}>
                 {recognizedInfo.artist}
                 {recognizedInfo.album ? ` — ${recognizedInfo.album}` : ''}

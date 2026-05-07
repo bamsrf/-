@@ -15,7 +15,7 @@ import {
   Linking,
 } from 'react-native';
 import { useRouter } from 'expo-router';
-import { Ionicons } from '@expo/vector-icons';
+import { Icon } from '@/components/ui';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as Notifications from 'expo-notifications';
 import { api } from '../../lib/api';
@@ -218,7 +218,7 @@ export default function NotificationsScreen() {
       {/* Header */}
       <View style={styles.header}>
         <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
-          <Ionicons name="arrow-back" size={24} color={Colors.royalBlue} />
+          <Icon name="arrow-back" size={24} color={Colors.royalBlue} />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Уведомления</Text>
         <View style={styles.placeholder} />
@@ -232,7 +232,7 @@ export default function NotificationsScreen() {
         {osPermission === false && (
           <View style={styles.permissionBanner}>
             <View style={styles.permissionIconContainer}>
-              <Ionicons name="notifications-off-outline" size={24} color={Colors.warning} />
+              <Icon name="notifications-off-outline" size={24} color={Colors.warning} />
             </View>
             <View style={styles.permissionTextContainer}>
               <Text style={styles.permissionTitle}>Уведомления отключены</Text>
@@ -252,7 +252,7 @@ export default function NotificationsScreen() {
         {osPermission === null && (
           <View style={styles.permissionBanner}>
             <View style={styles.permissionIconContainer}>
-              <Ionicons name="notifications-outline" size={24} color={Colors.royalBlue} />
+              <Icon name="notifications-outline" size={24} color={Colors.royalBlue} />
             </View>
             <View style={styles.permissionTextContainer}>
               <Text style={styles.permissionTitle}>Разрешите уведомления</Text>

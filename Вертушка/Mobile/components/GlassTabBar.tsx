@@ -6,7 +6,7 @@ import React from 'react';
 import { View, TouchableOpacity, StyleSheet, Platform, useWindowDimensions } from 'react-native';
 import { BlurView } from 'expo-blur';
 import { LinearGradient } from 'expo-linear-gradient';
-import { Ionicons } from '@expo/vector-icons';
+import { Icon } from '@/components/ui';
 import * as Haptics from 'expo-haptics';
 import Animated, {
   useAnimatedStyle,
@@ -26,10 +26,11 @@ const TAB_TARGET_KEYS: Record<string, TourTargetKey> = {
   collection: 'tab-collection',
 };
 
-const TAB_ICONS: Record<string, { outline: keyof typeof Ionicons.glyphMap; filled: keyof typeof Ionicons.glyphMap }> = {
-  search: { outline: 'search-outline', filled: 'search' },
-  index: { outline: 'scan-outline', filled: 'scan' },
-  collection: { outline: 'disc-outline', filled: 'disc' },
+// Единое имя на таб; визуальная разница inactive ↔ active — через weight в <Icon>.
+const TAB_ICONS: Record<string, string> = {
+  search: 'magnifying-glass',
+  index: 'scan',
+  collection: 'disc',
 };
 
 const ICON_SIZE = 26;
@@ -48,7 +49,7 @@ function TabIcon({
   onPress: () => void;
   onLongPress: () => void;
 }) {
-  const icons = TAB_ICONS[routeName] || TAB_ICONS.search;
+  const iconName = TAB_ICONS[routeName] || TAB_ICONS.search;
   const targetKey = TAB_TARGET_KEYS[routeName];
   const tourTarget = useTourTarget(targetKey ?? 'tab-index');
 
@@ -76,10 +77,11 @@ function TabIcon({
       activeOpacity={0.7}
     >
       <Animated.View style={[animatedIcon, animatedOpacity]}>
-        <Ionicons
-          name={isFocused ? icons.filled : icons.outline}
+        <Icon
+          name={iconName}
           size={ICON_SIZE}
           color={isFocused ? Colors.royalBlue : Colors.textMuted}
+          weight={isFocused ? 'fill' : 'duotone'}
         />
       </Animated.View>
     </TouchableOpacity>

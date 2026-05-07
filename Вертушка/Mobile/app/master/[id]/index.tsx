@@ -12,7 +12,7 @@ import {
 } from 'react-native';
 import { Image } from 'expo-image';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { Ionicons } from '@expo/vector-icons';
+import { Icon } from '@/components/ui';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Header } from '../../../components/Header';
 import { api } from '../../../lib/api';
@@ -98,7 +98,7 @@ export default function MasterScreen() {
       <View style={styles.container}>
         <Header title="Мастер-релиз" showBack />
         <View style={styles.errorContainer}>
-          <Ionicons name="alert-circle-outline" size={64} color={Colors.error} />
+          <Icon name="alert-circle-outline" size={64} color={Colors.error} />
           <Text style={styles.errorText}>{error || 'Мастер-релиз не найден'}</Text>
           {error && (
             <TouchableOpacity style={styles.retryButton} onPress={loadMaster} activeOpacity={0.7}>
@@ -136,7 +136,7 @@ export default function MasterScreen() {
             />
           ) : (
             <View style={styles.coverPlaceholder}>
-              <Ionicons name="disc-outline" size={100} color={Colors.textMuted} />
+              <Icon name="disc-outline" size={100} color={Colors.textMuted} />
             </View>
           )}
         </View>
@@ -162,7 +162,7 @@ export default function MasterScreen() {
             />
           ) : (
             <View style={styles.artistAvatarPlaceholder}>
-              <Ionicons name="person" size={24} color={Colors.textMuted} />
+              <Icon name="person" size={24} color={Colors.textMuted} />
             </View>
           )}
           <Text style={styles.artistName}>{master.artist}</Text>
@@ -188,7 +188,6 @@ export default function MasterScreen() {
               <Text style={styles.allVersionsCount}>({versionsCount})</Text>
             )}
           </View>
-          <Ionicons name="chevron-forward" size={24} color={Colors.text} />
         </TouchableOpacity>
 
         {/* Genres */}

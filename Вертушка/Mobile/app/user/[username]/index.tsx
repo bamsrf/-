@@ -25,7 +25,7 @@ import {
 } from 'react-native';
 import { Image } from 'expo-image';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { Ionicons } from '@expo/vector-icons';
+import { Icon } from '@/components/ui';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { api, resolveMediaUrl } from '../../../lib/api';
@@ -314,7 +314,7 @@ function ViewToggle({ value, onChange }: { value: ViewMode; onChange: (v: ViewMo
             onPress={() => onChange(m)}
             style={[styles.viewToggleBtn, active && styles.viewToggleBtnActive]}
           >
-            <Ionicons
+            <Icon
               name={m === 'grid' ? 'grid-outline' : 'list-outline'}
               size={15}
               color={active ? PP.cobalt : PP.mute}
@@ -743,11 +743,11 @@ export default function UserProfileScreen() {
       {/* Top bar */}
       <View style={styles.topbar}>
         <TouchableOpacity onPress={() => router.back()} style={styles.iconBtn}>
-          <Ionicons name="chevron-back" size={22} color={PP.ink} />
+          <Icon name="chevron-back" size={22} color={PP.ink} />
         </TouchableOpacity>
         <Text style={styles.brand}>ВЕРТУШКА · ПРОФИЛЬ</Text>
         <TouchableOpacity onPress={handleShare} style={styles.iconBtn}>
-          <Ionicons name="share-outline" size={18} color={PP.ink} />
+          <Icon name="share-outline" size={18} color={PP.ink} />
         </TouchableOpacity>
       </View>
 
@@ -793,7 +793,7 @@ export default function UserProfileScreen() {
                 </Text>
                 {monthlyDelta != null ? (
                   <View style={styles.deltaPill}>
-                    <Ionicons
+                    <Icon
                       name={monthlyDelta >= 0 ? 'arrow-up' : 'arrow-down'}
                       size={11} color={PP.cobalt}
                     />
@@ -822,7 +822,7 @@ export default function UserProfileScreen() {
               <ActivityIndicator size="small" color={following ? PP.cobalt : '#fff'} />
             ) : (
               <>
-                <Ionicons
+                <Icon
                   name={following ? 'checkmark' : 'person-add-outline'}
                   size={16} color={following ? PP.cobalt : '#fff'}
                 />
@@ -915,7 +915,7 @@ export default function UserProfileScreen() {
           style={styles.cta}
           onPress={() => router.push('/profile')}
         >
-          <Ionicons name="add-circle-outline" size={18} color="#fff" />
+          <Icon name="add-circle-outline" size={18} color="#fff" />
           <Text style={styles.ctaTxt}>Создать свой профиль</Text>
         </TouchableOpacity>
       </View>
@@ -939,7 +939,7 @@ export default function UserProfileScreen() {
             <View style={styles.modalHeader}>
               <Text style={styles.modalTitle}>Забронировать как подарок</Text>
               <TouchableOpacity onPress={() => setBookingItem(null)}>
-                <Ionicons name="close" size={22} color={PP.ink} />
+                <Icon name="close" size={22} color={PP.ink} />
               </TouchableOpacity>
             </View>
             {bookingItem ? (

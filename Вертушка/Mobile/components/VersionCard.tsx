@@ -9,7 +9,7 @@ import {
   TouchableOpacity,
 } from 'react-native';
 import { Image } from 'expo-image';
-import { Ionicons } from '@expo/vector-icons';
+import { Icon } from '@/components/ui';
 import { Colors, Typography, BorderRadius, Shadows, Spacing } from '../constants/theme';
 import { MasterVersion } from '../lib/types';
 import { RarityAura, TierCoverEffects, TierLabel, pickRarityTier } from './RarityAura';
@@ -41,7 +41,7 @@ export function VersionCard({ version, onPress }: VersionCardProps) {
           />
         ) : (
           <View style={styles.placeholderImage}>
-            <Ionicons name="disc-outline" size={32} color={Colors.textMuted} />
+            <Icon name="disc-outline" size={32} color={Colors.textMuted} />
           </View>
         )}
         <TierCoverEffects tier={rarityTier} radius={0} />
@@ -57,13 +57,13 @@ export function VersionCard({ version, onPress }: VersionCardProps) {
           <View style={styles.meta}>
             {!!version.country && (
               <View style={styles.metaRow}>
-                <Ionicons name="location-outline" size={14} color={Colors.textMuted} />
+                <Icon name="location-outline" size={14} color={Colors.textMuted} />
                 <Text style={styles.metaText}>{version.country}</Text>
               </View>
             )}
             {!!version.year && (
               <View style={styles.metaRow}>
-                <Ionicons name="calendar-outline" size={14} color={Colors.textMuted} />
+                <Icon name="calendar-outline" size={14} color={Colors.textMuted} />
                 <Text style={styles.metaText}>{version.year}</Text>
               </View>
             )}
@@ -72,7 +72,7 @@ export function VersionCard({ version, onPress }: VersionCardProps) {
 
         {version.label && (
           <View style={styles.metaRow}>
-            <Ionicons name="business-outline" size={14} color={Colors.textMuted} />
+            <Icon name="business-outline" size={14} color={Colors.textMuted} />
             <Text style={styles.metaText} numberOfLines={1}>
               {version.label}
               {version.catalog_number && ` • ${version.catalog_number}`}
@@ -82,7 +82,7 @@ export function VersionCard({ version, onPress }: VersionCardProps) {
 
         {version.format && (
           <View style={styles.metaRow}>
-            <Ionicons name="disc" size={14} color={Colors.textMuted} />
+            <Icon name="disc" size={14} color={Colors.textMuted} />
             <Text style={styles.metaText}>{version.format}</Text>
           </View>
         )}
@@ -97,7 +97,6 @@ export function VersionCard({ version, onPress }: VersionCardProps) {
       {/* Иконка перехода */}
       {onPress && (
         <View style={styles.chevron}>
-          <Ionicons name="chevron-forward" size={20} color={Colors.textMuted} />
         </View>
       )}
     </TouchableOpacity>

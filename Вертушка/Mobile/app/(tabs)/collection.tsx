@@ -8,7 +8,7 @@ import { toast } from '../../lib/toast';
 import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
-import { Ionicons } from '@expo/vector-icons';
+import { Icon } from '@/components/ui';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as Haptics from 'expo-haptics';
 import { AnimatedGradientText } from '../../components/AnimatedGradientText';
@@ -490,7 +490,7 @@ export default function CollectionScreen() {
             <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.foldersScroll}>
               <TouchableOpacity style={styles.newFolderCard} onPress={handleCreateFolder}>
                 <View style={styles.newFolderIcon}>
-                  <Ionicons name="add" size={32} color={Colors.textMuted} />
+                  <Icon name="add" size={32} color={Colors.textMuted} />
                 </View>
                 <Text style={styles.newFolderText}>Новая</Text>
               </TouchableOpacity>
@@ -512,7 +512,7 @@ export default function CollectionScreen() {
         {activeTab === 'collection' && folders.length === 0 && (
           <View ref={foldersTarget.ref} onLayout={foldersTarget.onLayout} collapsable={false}>
             <TouchableOpacity style={styles.createFirstFolder} onPress={handleCreateFolder}>
-              <Ionicons name="folder-outline" size={20} color={Colors.textMuted} />
+              <Icon name="folder-outline" size={20} color={Colors.textMuted} />
               <Text style={styles.createFirstFolderText}>Создать папку</Text>
             </TouchableOpacity>
           </View>
@@ -536,7 +536,7 @@ export default function CollectionScreen() {
                 colors={[Colors.royalBlue, Colors.periwinkle] as [string, string]}
                 style={styles.avatarPlaceholder}
               >
-                <Ionicons name="disc" size={20} color={Colors.background} />
+                <Icon name="disc" size={20} color={Colors.background} />
               </LinearGradient>
             )}
           </TouchableOpacity>
@@ -598,10 +598,10 @@ export default function CollectionScreen() {
             >
               <View style={styles.viewToggleIconContainer}>
                 <Animated.View style={[styles.viewToggleIcon, { opacity: gridIconOpacity, transform: [{ scale: gridIconScale }] }]}>
-                  <Ionicons name="grid-outline" size={18} color={Colors.royalBlue} />
+                  <Icon name="grid-outline" size={18} color={Colors.royalBlue} />
                 </Animated.View>
                 <Animated.View style={[styles.viewToggleIcon, styles.viewToggleIconAbsolute, { opacity: listIconOpacity, transform: [{ scale: listIconScale }] }]}>
-                  <Ionicons name="list-outline" size={18} color={Colors.royalBlue} />
+                  <Icon name="list-outline" size={18} color={Colors.royalBlue} />
                 </Animated.View>
               </View>
             </TouchableOpacity>
@@ -617,7 +617,7 @@ export default function CollectionScreen() {
               onPress={() => router.push('/collection/value')}
               activeOpacity={0.7}
             >
-              <Ionicons name="cash-outline" size={18} color={Colors.royalBlue} />
+              <Icon name="cash-outline" size={18} color={Colors.royalBlue} />
             </TouchableOpacity>
           )}
 
@@ -629,7 +629,7 @@ export default function CollectionScreen() {
                 onPress={handleToggleFilterMenu}
                 activeOpacity={0.7}
               >
-                <Ionicons
+                <Icon
                   name="options-outline"
                   size={18}
                   color={activeFilter !== 'all' ? Colors.background : Colors.royalBlue}
@@ -662,7 +662,7 @@ export default function CollectionScreen() {
                   {option.label}
                 </Text>
                 {activeFilter === option.key && (
-                  <Ionicons name="checkmark" size={18} color={Colors.royalBlue} />
+                  <Icon name="checkmark" size={18} color={Colors.royalBlue} />
                 )}
               </TouchableOpacity>
             ))}
@@ -730,7 +730,7 @@ export default function CollectionScreen() {
               onPress={handleBulkMoveToCollection}
               disabled={selectedItems.size === 0}
             >
-              <Ionicons
+              <Icon
                 name="arrow-forward-circle"
                 size={24}
                 color={selectedItems.size > 0 ? Colors.royalBlue : Colors.textMuted}
@@ -752,7 +752,7 @@ export default function CollectionScreen() {
               onPress={() => setShowFolderPicker(true)}
               disabled={selectedItems.size === 0}
             >
-              <Ionicons
+              <Icon
                 name="folder-outline"
                 size={24}
                 color={selectedItems.size > 0 ? Colors.royalBlue : Colors.textMuted}
@@ -773,7 +773,7 @@ export default function CollectionScreen() {
             onPress={handleBulkDelete}
             disabled={selectedItems.size === 0}
           >
-            <Ionicons
+            <Icon
               name="trash-outline"
               size={24}
               color={selectedItems.size > 0 ? Colors.error : Colors.textMuted}

@@ -21,7 +21,7 @@ import * as Sharing from 'expo-sharing';
 import * as Clipboard from 'expo-clipboard';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
-import { Ionicons } from '@expo/vector-icons';
+import { Icon } from '@/components/ui';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuthStore, useCollectionStore, useOnboardingStore, useFollowStore, useGiftStore } from '../lib/store';
 import { useTourTarget } from '../lib/useTourTarget';
@@ -285,7 +285,7 @@ export default function ProfileScreen() {
       <View style={styles.header}>
         <AnimatedGradientText style={Typography.heroTitle}>Профиль</AnimatedGradientText>
         <TouchableOpacity onPress={handleClose} style={styles.closeButton}>
-          <Ionicons name="close" size={28} color={Colors.deepNavy} />
+          <Icon name="close" size={28} color={Colors.deepNavy} />
         </TouchableOpacity>
       </View>
 
@@ -303,7 +303,7 @@ export default function ProfileScreen() {
                 colors={[Colors.royalBlue, Colors.periwinkle]}
                 style={styles.avatarPlaceholder}
               >
-                <Ionicons name="disc" size={48} color={Colors.background} />
+                <Icon name="disc" size={48} color={Colors.background} />
               </LinearGradient>
             )}
             {avatarUploading ? (
@@ -312,7 +312,7 @@ export default function ProfileScreen() {
               </View>
             ) : (
               <View style={styles.avatarEditBadge}>
-                <Ionicons name="pencil" size={14} color={Colors.background} />
+                <Icon name="pencil" size={14} color={Colors.background} />
               </View>
             )}
           </TouchableOpacity>
@@ -333,7 +333,7 @@ export default function ProfileScreen() {
               onPress={stat.onPress}
               activeOpacity={0.7}
             >
-              <Ionicons name={stat.icon} size={22} color={Colors.royalBlue} />
+              <Icon name={stat.icon} size={22} color={Colors.royalBlue} />
               <Text style={styles.statValue}>{stat.value}</Text>
               <Text style={styles.statLabel}>{stat.label}</Text>
             </TouchableOpacity>
@@ -351,11 +351,11 @@ export default function ProfileScreen() {
           <Text style={styles.linkUrl} numberOfLines={1} ellipsizeMode="tail">{profileUrl}</Text>
           <View style={styles.linkActions}>
             <TouchableOpacity style={styles.linkButton} onPress={handleCopyLink}>
-              <Ionicons name={copied ? "checkmark-outline" : "copy-outline"} size={18} color={Colors.royalBlue} />
+              <Icon name={copied ? "checkmark-outline" : "copy-outline"} size={18} color={Colors.royalBlue} />
               <Text style={styles.linkButtonText}>{copied ? 'Скопировано' : 'Копировать'}</Text>
             </TouchableOpacity>
             <TouchableOpacity style={styles.linkButton} onPress={handleShareProfile}>
-              <Ionicons name="share-outline" size={18} color={Colors.royalBlue} />
+              <Icon name="share-outline" size={18} color={Colors.royalBlue} />
               <Text style={styles.linkButtonText}>Поделиться</Text>
             </TouchableOpacity>
           </View>
@@ -374,7 +374,7 @@ export default function ProfileScreen() {
             >
               <View style={styles.giftsBannerRow}>
                 <View style={styles.giftsBannerIcon}>
-                  <Ionicons name="gift-outline" size={24} color={Colors.royalBlue} />
+                  <Icon name="gift-outline" size={24} color={Colors.royalBlue} />
                 </View>
                 <View style={styles.giftsBannerTextContainer}>
                   <Text style={styles.giftsBannerTitle}>Дари друзьям музыку</Text>
@@ -382,7 +382,6 @@ export default function ProfileScreen() {
                     Забронируй пластинку из вишлиста друга — он не узнает, кто дарит
                   </Text>
                 </View>
-                <Ionicons name="chevron-forward" size={18} color={Colors.textMuted} />
               </View>
             </LinearGradient>
           </TouchableOpacity>
@@ -393,10 +392,9 @@ export default function ProfileScreen() {
               activeOpacity={0.7}
               onPress={handleOpenWishlistsTab}
             >
-              <Ionicons name="gift-outline" size={18} color={Colors.royalBlue} />
+              <Icon name="gift-outline" size={18} color={Colors.royalBlue} />
               <Text style={styles.giftsCardTitle}>Я дарю</Text>
               <Text style={styles.giftsCardCount}>{givenGifts.length}</Text>
-              <Ionicons name="chevron-forward" size={18} color={Colors.textMuted} />
             </TouchableOpacity>
             <ScrollView
               horizontal
@@ -419,7 +417,7 @@ export default function ProfileScreen() {
                     />
                   ) : (
                     <View style={[styles.giftCardCover, styles.giftCardCoverPlaceholder]}>
-                      <Ionicons name="disc-outline" size={24} color={Colors.textMuted} />
+                      <Icon name="disc-outline" size={24} color={Colors.textMuted} />
                     </View>
                   )}
                   <Text style={styles.giftCardTitle} numberOfLines={1}>
@@ -433,7 +431,7 @@ export default function ProfileScreen() {
                       <Image source={resolveMediaUrl(gift.for_user.avatar_url)} style={styles.giftCardAvatar} cachePolicy="disk" />
                     ) : (
                       <View style={[styles.giftCardAvatar, styles.giftCardAvatarPlaceholder]}>
-                        <Ionicons name="person" size={8} color={Colors.background} />
+                        <Icon name="person" size={8} color={Colors.background} />
                       </View>
                     )}
                     <Text style={styles.giftCardRecipientName} numberOfLines={1}>
@@ -469,18 +467,16 @@ export default function ProfileScreen() {
             style={styles.settingsItem}
             onPress={() => router.push('/collection/value')}
           >
-            <Ionicons name="cash-outline" size={24} color={Colors.royalBlue} />
+            <Icon name="cash-outline" size={24} color={Colors.royalBlue} />
             <Text style={styles.settingsItemText}>Стоимость коллекции</Text>
-            <Ionicons name="chevron-forward" size={20} color={Colors.textMuted} />
           </TouchableOpacity>
 
           <TouchableOpacity
             style={styles.settingsItem}
             onPress={() => router.push('/settings/edit-profile')}
           >
-            <Ionicons name="person-outline" size={24} color={Colors.royalBlue} />
+            <Icon name="person-outline" size={24} color={Colors.royalBlue} />
             <Text style={styles.settingsItemText}>Редактировать профиль</Text>
-            <Ionicons name="chevron-forward" size={20} color={Colors.textMuted} />
           </TouchableOpacity>
 
           <TouchableOpacity
@@ -491,43 +487,38 @@ export default function ProfileScreen() {
             {exporting ? (
               <ActivityIndicator size="small" color={Colors.royalBlue} />
             ) : (
-              <Ionicons name="download-outline" size={24} color={Colors.royalBlue} />
+              <Icon name="download-outline" size={24} color={Colors.royalBlue} />
             )}
             <Text style={styles.settingsItemText}>Экспорт данных</Text>
-            <Ionicons name="chevron-forward" size={20} color={Colors.textMuted} />
           </TouchableOpacity>
 
           <TouchableOpacity
             style={styles.settingsItem}
             onPress={() => router.push('/settings/notifications')}
           >
-            <Ionicons name="notifications-outline" size={24} color={Colors.royalBlue} />
+            <Icon name="notifications-outline" size={24} color={Colors.royalBlue} />
             <Text style={styles.settingsItemText}>Уведомления</Text>
-            <Ionicons name="chevron-forward" size={20} color={Colors.textMuted} />
           </TouchableOpacity>
 
           <TouchableOpacity
             style={styles.settingsItem}
             onPress={() => router.push('/settings/wishlists')}
           >
-            <Ionicons name="gift-outline" size={24} color={Colors.royalBlue} />
+            <Icon name="gift-outline" size={24} color={Colors.royalBlue} />
             <Text style={styles.settingsItemText}>Вишлисты</Text>
-            <Ionicons name="chevron-forward" size={20} color={Colors.textMuted} />
           </TouchableOpacity>
 
           <TouchableOpacity
             style={styles.settingsItem}
             onPress={() => Linking.openURL('https://timestripe.com/boards/sX8B5Keg/')}
           >
-            <Ionicons name="map-outline" size={24} color={Colors.royalBlue} />
+            <Icon name="map-outline" size={24} color={Colors.royalBlue} />
             <Text style={styles.settingsItemText}>Планы Вертушки</Text>
-            <Ionicons name="chevron-forward" size={20} color={Colors.textMuted} />
           </TouchableOpacity>
 
           <TouchableOpacity style={styles.settingsItem}>
-            <Ionicons name="help-circle-outline" size={24} color={Colors.royalBlue} />
+            <Icon name="help-circle-outline" size={24} color={Colors.royalBlue} />
             <Text style={styles.settingsItemText}>Помощь</Text>
-            <Ionicons name="chevron-forward" size={20} color={Colors.textMuted} />
           </TouchableOpacity>
 
           <TouchableOpacity
@@ -538,9 +529,8 @@ export default function ProfileScreen() {
               router.dismiss();
             }}
           >
-            <Ionicons name="refresh-outline" size={24} color={Colors.warning} />
+            <Icon name="refresh-outline" size={24} color={Colors.warning} />
             <Text style={styles.settingsItemText}>Запустить онбординг</Text>
-            <Ionicons name="chevron-forward" size={20} color={Colors.textMuted} />
           </TouchableOpacity>
 
           {/* DEV: галерея иконок B2 — убрать перед релизом */}
@@ -549,9 +539,8 @@ export default function ProfileScreen() {
               style={styles.settingsItem}
               onPress={() => router.push('/dev/icons' as any)}
             >
-              <Ionicons name="grid-outline" size={24} color={Colors.royalBlue} />
+              <Icon name="grid-outline" size={24} color={Colors.royalBlue} />
               <Text style={styles.settingsItemText}>Icons gallery (dev)</Text>
-              <Ionicons name="chevron-forward" size={20} color={Colors.textMuted} />
             </TouchableOpacity>
           )}
         </View>
@@ -589,7 +578,7 @@ export default function ProfileScreen() {
               );
             }}
           >
-            <Ionicons name="trash-outline" size={20} color={Colors.background} />
+            <Icon name="trash-outline" size={20} color={Colors.background} />
             <Text style={styles.dangerButtonText}>Удалить аккаунт</Text>
           </TouchableOpacity>
         </View>
@@ -612,7 +601,10 @@ const styles = StyleSheet.create({
   header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'flex-end',
+    // Центруем close-кнопку по вертикали относительно «Профиль»-заголовка
+    // (heroTitle 40pt + lineHeight 44). При flex-end она «прилипала» к нижнему
+    // краю текста и читалась как съехавшая.
+    alignItems: 'center',
     paddingHorizontal: Spacing.md,
     paddingVertical: Spacing.sm,
   },
