@@ -15,6 +15,7 @@ from slowapi import Limiter
 from slowapi.util import get_remote_address
 from jose import jwt as jose_jwt, JWTError, jwk
 from sqlalchemy import select, update
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings
@@ -285,7 +286,9 @@ async def register(
             detail="Имя пользователя уже занято"
         )
     
-    # Создание пользователя
+    # Создание пользователя + вишлиста + коллекции одной транзакцией.
+    # get_db() оборачивает запрос в transaction; commit ниже атомарно фиксирует
+    # все три INSERT'а или откатывает всё при любой ошибке.
     user = User(
         email=user_data.email,
         username=user_data.username,
@@ -294,12 +297,21 @@ async def register(
         signup_source="email",
     )
     db.add(user)
-    await db.flush()
-    
+    try:
+        await db.flush()  # получаем user.id, не покидая транзакцию
+    except IntegrityError:
+        # Race с одновременной регистрацией (такой же email/username)
+        # проскочила SELECT-проверку выше, поймана UNIQUE constraint'ом.
+        await db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Пользователь с такими данными уже существует"
+        )
+
     # Создание вишлиста для пользователя
     wishlist = Wishlist(user_id=user.id)
     db.add(wishlist)
-    
+
     # Создание дефолтной коллекции
     collection = Collection(
         user_id=user.id,
@@ -307,8 +319,16 @@ async def register(
         description="Основная коллекция"
     )
     db.add(collection)
-    
-    await db.commit()
+
+    try:
+        await db.commit()
+    except IntegrityError:
+        await db.rollback()
+        logger.exception("Failed to commit registration for %s", user_data.email)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Не удалось создать аккаунт. Попробуйте ещё раз."
+        )
 
     logger.info("user_registered", extra={"user_id": str(user.id), "email": user.email, "username": user.username})
 
@@ -646,7 +666,6 @@ async def forgot_password(
         await db.commit()
 
         # Отправляем email
-        logger.info("DEV: Reset code for %s: %s", data.email, code)
         await send_reset_code_email(data.email, code)
 
     return {"message": "Если аккаунт существует, код отправлен на email"}

@@ -78,11 +78,11 @@ LEFT JOIN (
 ) g ON g.user_id = u.id
 LEFT JOIN (
     SELECT following_id AS user_id, COUNT(*) AS followers_count
-    FROM follow GROUP BY following_id
+    FROM follows GROUP BY following_id
 ) f1 ON f1.user_id = u.id
 LEFT JOIN (
     SELECT follower_id AS user_id, COUNT(*) AS following_count
-    FROM follow GROUP BY follower_id
+    FROM follows GROUP BY follower_id
 ) f2 ON f2.user_id = u.id
 LEFT JOIN profile_shares ps ON ps.user_id = u.id;
 """
@@ -228,11 +228,11 @@ SELECT
 FROM users u
 LEFT JOIN (
     SELECT following_id AS user_id, COUNT(*) AS followers_count
-    FROM follow GROUP BY following_id
+    FROM follows GROUP BY following_id
 ) f1 ON f1.user_id = u.id
 LEFT JOIN (
     SELECT follower_id AS user_id, COUNT(*) AS following_count
-    FROM follow GROUP BY follower_id
+    FROM follows GROUP BY follower_id
 ) f2 ON f2.user_id = u.id
 WHERE u.deleted_at IS NULL;
 """

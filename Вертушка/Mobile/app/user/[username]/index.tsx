@@ -576,11 +576,15 @@ export default function UserProfileScreen() {
     } catch {}
   }, [username]);
 
+  const isBookingRef = useRef(false);
   const handleBookGift = useCallback(async () => {
     if (!bookingItem || !bookingName.trim() || !bookingEmail.trim()) {
       toast.error('Заполните имя и email');
       return;
     }
+    // Защита от двойных тапов (synchronous guard — disabled-prop догоняет позже)
+    if (isBookingRef.current) return;
+    isBookingRef.current = true;
     setIsBooking(true);
     try {
       await api.bookGift({
@@ -599,6 +603,7 @@ export default function UserProfileScreen() {
       toast.error('Ошибка', error?.response?.data?.detail || 'Не удалось забронировать');
     } finally {
       setIsBooking(false);
+      isBookingRef.current = false;
     }
   }, [bookingItem, bookingName, bookingEmail, bookingMessage, loadWishlist]);
 

@@ -172,12 +172,17 @@
     </div>
 
     <script>
+    var BOOKING_ID = {{ booking.id|tojson }};
+    var CANCEL_TOKEN = {{ token|tojson }};
+
     async function doCancel() {
         var btn = document.getElementById('cancelBtn');
         btn.disabled = true;
         btn.textContent = 'Отменяем...';
         try {
-            var res = await fetch('/api/gifts/{{ booking.id }}/cancel?cancel_token={{ token }}', {
+            var url = '/api/gifts/' + encodeURIComponent(BOOKING_ID) + '/cancel?'
+                + new URLSearchParams({ cancel_token: CANCEL_TOKEN }).toString();
+            var res = await fetch(url, {
                 method: 'PUT'
             });
             document.getElementById('confirmView').style.display = 'none';

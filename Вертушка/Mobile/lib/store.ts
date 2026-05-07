@@ -6,6 +6,25 @@ import { toast } from './toast';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { api } from './api';
 import { analytics } from './analytics';
+
+// ==================== In-flight action deduplication ====================
+/**
+ * Защита от двойных тапов на пользовательские мутации (добавить в коллекцию,
+ * забронировать и т.п.). Ключ = "<action>:<id>". Пока действие летит — повторные
+ * вызовы с тем же ключом возвращают тот же Promise, не плодят дубль-запросов
+ * к бэкенду.
+ */
+const inFlightActions = new Map<string, Promise<unknown>>();
+
+function dedupeAction<T>(key: string, fn: () => Promise<T>): Promise<T> {
+  const existing = inFlightActions.get(key) as Promise<T> | undefined;
+  if (existing) return existing;
+  const promise = fn().finally(() => {
+    inFlightActions.delete(key);
+  });
+  inFlightActions.set(key, promise);
+  return promise;
+}
 import {
   User,
   VinylRecord,
@@ -152,13 +171,18 @@ interface AuthState {
   user: User | null;
   isLoading: boolean;
   isAuthenticated: boolean;
-  
+
   // Actions
   login: (login: string, password: string) => Promise<void>;
   register: (email: string, username: string, password: string) => Promise<void>;
   loginWithApple: (data: import('./types').AppleSignInRequest) => Promise<void>;
   loginWithGoogle: (idToken: string) => Promise<void>;
   logout: () => Promise<void>;
+  /**
+   * Локальный logout без сетевого вызова. Используется когда refresh-токен
+   * невалиден на сервере и долбиться запросом /logout бессмысленно.
+   */
+  forceLogout: () => void;
   checkAuth: () => Promise<void>;
   setUser: (user: User | null) => void;
 }
@@ -230,7 +254,13 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     await api.logout();
     set({ user: null, isAuthenticated: false });
     analytics.logout();
-    useSearchStore.getState().clearHistory();
+    resetUserStores();
+  },
+
+  forceLogout: () => {
+    set({ user: null, isAuthenticated: false, isLoading: false });
+    analytics.logout();
+    resetUserStores();
   },
 
   checkAuth: async () => {
@@ -612,37 +642,41 @@ export const useCollectionStore = create<CollectionState>((set, get) => ({
   },
 
   addToCollection: async (discogsId) => {
-    let { defaultCollection, collections, fetchCollectionItems, fetchWishlistItems } = get();
-
-    if (!defaultCollection) {
-      if (collections.length === 0) {
-        await api.createCollection({ name: 'Моя коллекция' });
-        await get().fetchCollections();
-        defaultCollection = get().defaultCollection;
-      }
+    return dedupeAction(`addToCollection:${discogsId}`, async () => {
+      let { defaultCollection, collections, fetchCollectionItems, fetchWishlistItems } = get();
 
       if (!defaultCollection) {
-        throw new Error('Не удалось создать коллекцию');
+        if (collections.length === 0) {
+          await api.createCollection({ name: 'Моя коллекция' });
+          await get().fetchCollections();
+          defaultCollection = get().defaultCollection;
+        }
+
+        if (!defaultCollection) {
+          throw new Error('Не удалось создать коллекцию');
+        }
       }
-    }
 
-    await api.addToCollection(defaultCollection.id, discogsId);
-    // Инвалидируем кэш поиска — счётчики коллекции могли измениться
-    useCacheStore.getState().invalidateAll();
+      await api.addToCollection(defaultCollection.id, discogsId);
+      // Инвалидируем кэш поиска — счётчики коллекции могли измениться
+      useCacheStore.getState().invalidateAll();
 
-    await Promise.all([
-      fetchCollectionItems(),
-      fetchWishlistItems()
-    ]);
+      await Promise.all([
+        fetchCollectionItems(),
+        fetchWishlistItems()
+      ]);
+    });
   },
 
   addToWishlist: async (discogsId) => {
     if (!discogsId) {
       throw new Error('Не указан ID пластинки');
     }
-    await api.addToWishlist(discogsId);
-    useCacheStore.getState().invalidateAll();
-    await get().fetchWishlistItems();
+    return dedupeAction(`addToWishlist:${discogsId}`, async () => {
+      await api.addToWishlist(discogsId);
+      useCacheStore.getState().invalidateAll();
+      await get().fetchWishlistItems();
+    });
   },
 
   removeFromCollection: async (itemId, skipRefetch = false) => {
@@ -1225,3 +1259,84 @@ export const useGiftStore = create<GiftStore>((set) => ({
   removeGiven: (id) => set((state) => ({ given: state.given.filter((g) => g.id !== id) })),
   removeReceived: (id) => set((state) => ({ received: state.received.filter((g) => g.id !== id) })),
 }));
+
+// ==================== Глобальный сброс stores при logout ====================
+/**
+ * Сбрасывает все user-specific stores к initial state. Используется при logout
+ * (по кнопке) и forceLogout (по протуханию refresh-токена), чтобы под новым
+ * пользователем не светились данные предыдущего.
+ *
+ * Не трогает useOnboardingStore (про UX, не про user data) и useAuthStore
+ * (его сбрасывает сам caller — login/logout reducer).
+ */
+export function resetUserStores(): void {
+  useSearchStore.setState({
+    query: '',
+    filters: {},
+    results: [],
+    artistResults: [],
+    isLoading: false,
+    page: 1,
+    artistPage: 1,
+    totalResults: 0,
+    totalArtistResults: 0,
+    hasMore: false,
+    hasMoreArtists: false,
+    searchHistory: [],
+    correctedQuery: null,
+  });
+  useCollectionStore.setState({
+    activeTab: 'collection',
+    collections: [],
+    defaultCollection: null,
+    folders: [],
+    collectionItems: [],
+    collectionPage: 1,
+    collectionHasMore: false,
+    isLoadingMore: false,
+    wishlistItems: [],
+    isLoading: false,
+    stats: null,
+    isLoadingStats: false,
+    sortBy: 'added_at',
+  });
+  useScannerStore.setState({
+    scanMode: 'barcode',
+    scannedBarcode: null,
+    scanResults: [],
+    recognizedInfo: null,
+    isScanning: false,
+    isLoading: false,
+  });
+  useProfileStore.setState({ settings: null, isLoading: false, isSaving: false });
+  useUserSearchStore.setState({
+    query: '',
+    results: [],
+    isLoading: false,
+    page: 1,
+    hasMore: false,
+  });
+  useSuggestStore.setState({ suggestions: null, isLoading: false, query: '' });
+  useSectionsStore.setState({ collapsedSections: {} });
+  useFollowStore.setState({
+    following: [],
+    followers: [],
+    feed: [],
+    isLoadingFollowing: false,
+    isLoadingFollowers: false,
+    isLoadingFeed: false,
+    feedPage: 1,
+    hasMoreFeed: false,
+  });
+  useGiftStore.setState({ given: [], received: [], isLoading: false, isLoaded: false });
+  // Кэш Discogs — формально не user-specific, но безопаснее почистить
+  useCacheStore.getState().invalidateAll();
+}
+
+// ==================== API ↔ Auth bridge ====================
+// Регистрируем глобальный обработчик: когда refresh-токен невалиден,
+// API клиент дёрнет это, и мы сбросим auth-state. RootLayout уже
+// слушает isAuthenticated и сделает router.replace на /(auth)/login.
+api.onAuthFailure = () => {
+  useAuthStore.getState().forceLogout();
+};
