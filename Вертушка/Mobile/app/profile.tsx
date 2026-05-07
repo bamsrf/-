@@ -285,7 +285,7 @@ export default function ProfileScreen() {
       <View style={styles.header}>
         <AnimatedGradientText style={Typography.heroTitle}>Профиль</AnimatedGradientText>
         <TouchableOpacity onPress={handleClose} style={styles.closeButton}>
-          <Icon name="close" size={28} color={Colors.deepNavy} />
+          <Icon name="close" size={28} color="brand" />
         </TouchableOpacity>
       </View>
 

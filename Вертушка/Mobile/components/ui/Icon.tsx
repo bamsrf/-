@@ -27,8 +27,9 @@
 import React from 'react';
 import { useColorScheme, View, type StyleProp, type ViewStyle } from 'react-native';
 
-// Phosphor — core set (44 имени). Все импорты — через `*Icon` суффикс
-// (Phosphor 3.x: старые имена без суффикса deprecated).
+// Phosphor — основной icon set (используем `fill` weight + внешний halo
+// wrapper). Для двух имён (`x`, `dots-three-vertical` и их пары) пользователь
+// предпочитает кастомные V2-шейпы из b2v2-icons.jsx — оставляем их.
 import {
   PlusIcon,
   PlusCircleIcon,
@@ -57,13 +58,9 @@ import {
   MusicNotesIcon,
   EnvelopeOpenIcon,
   ChatCircleIcon,
-  XIcon,
-  XCircleIcon,
   CloudSlashIcon,
   CurrencyCircleDollarIcon,
   DownloadSimpleIcon,
-  DotsThreeIcon,
-  DotsThreeVerticalIcon,
   FolderIcon,
   GiftIcon,
   GlobeIcon,
@@ -93,17 +90,11 @@ import {
   type Icon as PhosphorIcon,
 } from 'phosphor-react-native';
 
-import {
-  DiscGrooves,
-  TrophyDisc,
-  VinylLabel,
-} from '../icons/hero';
+// V2 custom-шейпы — точечно для двух иконок, которые юзер
+// согласовал отдельно: cross + vertical-dots.
+import { XV2, XCircleV2, DotsThreeV2, DotsThreeVerticalV2 } from '../icons/v2';
 
-// Polish Vertushka v4 — единый стиль: Phosphor `fill` + halo wrapper. Custom
-// SVG-иконки сохранены в `components/icons/custom/index.tsx` как референс,
-// но в registry больше не подключены — иначе ломается визуальная консистентность
-// с остальным набором (plus, x, pencil, trash, arrow-*, и т.д.). Disc оставляем
-// как DiscGrooves по решению пользователя.
+import { DiscGrooves, TrophyDisc, VinylLabel } from '../icons/hero';
 
 import { T } from '../../constants/theme';
 
@@ -177,8 +168,8 @@ const REGISTRY = {
   'plus-circle':         PlusCircleIcon,
   'check':               CheckIcon,
   'check-circle':        CheckCircleIcon,
-  'x':                   XIcon,
-  'x-circle':            XCircleIcon,
+  'x':                   XV2,                // ★ V2 — согласован пользователем
+  'x-circle':            XCircleV2,          // ★ V2
   'pencil':              PencilIcon,
   'trash':               TrashIcon,
   'camera':              CameraIcon,
@@ -221,8 +212,8 @@ const REGISTRY = {
   'keyhole':             KeyholeIcon,
 
   // UI Control
-  'dots-three':          DotsThreeIcon,
-  'dots-three-vertical': DotsThreeVerticalIcon,
+  'dots-three':          DotsThreeV2,         // ★ V2
+  'dots-three-vertical': DotsThreeVerticalV2, // ★ V2
   'squares-four':        SquaresFourIcon,
   'list':                ListIcon,
   'sliders':             SlidersIcon,
@@ -246,18 +237,25 @@ const REGISTRY = {
   // Brand
   'google-logo':         GoogleLogoIcon,
 
-  // HERO set — кастомные SVG, единственные неунифицированные иконки.
-  'disc':                DiscGrooves,    // ★ HERO — Phosphor VinylRecord (юзер:
-                                          //   «не меняй иконку винила»)
-  'gift':                GiftIcon,       // Phosphor — единый язык с остальными.
-                                          //   ВАЖНО: НЕ использовать в вишлист-сценариях
-                                          //   (юзеру не нравится). Для вишлиста — `heart`.
+  // HERO set
+  'disc':                DiscGrooves,    // ★ HERO — Phosphor VinylRecord (force duotone)
+  'gift':                GiftIcon,       // ВАЖНО: НЕ использовать в вишлист-сценариях.
   'trophy':              TrophyDisc,     // ★ HERO
-  'scan':                ScanIcon,       // Phosphor — единый язык.
+  'scan':                ScanIcon,
   'vinyl-label':         VinylLabel,     // ★ HERO центр VinylSpinner
   // 'rarity-*' (crown / diamond / flame) удалены по решению пользователя — rarity
   // выражается аурой через RarityAura.tsx, иконных маркеров не нужно.
 } satisfies Record<string, IconComponent>;
+
+// Имена, которые рендерятся V2-компонентами (с встроенным halo через
+// FeGaussianBlur в SVG). Для них не нужен внешний halo wrapper, иначе
+// получим double-glow. Все остальные иконки — Phosphor + внешний halo.
+const V2_NAMES = new Set<string>(['x', 'x-circle', 'dots-three', 'dots-three-vertical']);
+
+// Имена, для которых дефолтный weight = `regular` (outline) вместо `fill`.
+// Используется для иконок, где solid-силуэт смотрится тяжело и теряет
+// семантику: лупа без полого «стекла», scan без inner-square.
+const OUTLINE_NAMES = new Set<string>(['magnifying-glass', 'scan']);
 
 export type IconName = keyof typeof REGISTRY;
 
@@ -431,11 +429,34 @@ export const Icon: React.FC<IconProps> = ({
     variant === 'disabled' ? 'disabled' : color;
   const resolvedColor = resolveColor(effectiveColor, mode);
 
-  // Resolve weight: явный override > variant-маппинг.
-  // Default weight = `fill` (твёрдый silhouette) — пользовательский выбор после
-  // duotone-итерации. Filled читается контрастнее на rendered экранах.
-  const resolvedWeight: IconWeight =
-    weightOverride ?? (variant === 'disabled' ? 'duotone' : 'fill');
+  // Two render paths:
+  //  • V2-иконки (x / x-circle / dots-three / dots-three-vertical) — встроенный
+  //    halo через `<FeGaussianBlur>` внутри SVG; default weight = `regular`,
+  //    `fill` отключает их внутренний halo (active state).
+  //  • Phosphor — нет встроенного halo. Рендерим Phosphor `fill` + наш
+  //    внешний halo wrapper (масштабированная копия + iOS shadow blur).
+  //
+  // Для светлых цветов (white-on-cobalt) halo всегда отключаем — белый
+  // glow на синем фоне = размытое пятно вместо иконки.
+  const isV2 = V2_NAMES.has(resolvedName);
+  const isLightColor = isLightHex(resolvedColor);
+
+  let resolvedWeight: IconWeight;
+  if (isV2) {
+    resolvedWeight = isLightColor
+      ? 'fill'
+      : weightOverride ?? (variant === 'disabled' ? 'fill' : 'regular');
+  } else {
+    resolvedWeight =
+      weightOverride ??
+      (OUTLINE_NAMES.has(resolvedName) ? 'regular' : 'fill');
+  }
+  // OUTLINE_NAMES никогда не заливаем solid `fill` — даже если
+  // вызывающий явно его передал (tab bar в активном состоянии). Лупа и
+  // scan-frame визуально работают как outline-силуэт + halo glow.
+  if (OUTLINE_NAMES.has(resolvedName) && resolvedWeight === 'fill') {
+    resolvedWeight = 'regular';
+  }
 
   // Auto hitSlop: пресет → таблица; число → высчитать так, чтобы общий
   // touch target был ≥ 44pt.
@@ -445,37 +466,7 @@ export const Icon: React.FC<IconProps> = ({
       ? HIT_SLOP_MAP[size]
       : Math.max(0, Math.ceil((44 - resolvedSize) / 2)));
 
-  // `as any` cast: REGISTRY-values имеют Phosphor's IconProps, но в локальном
-  // scope этого файла наш собственный `IconProps` shadowит Phosphor's, и JSX
-  // type-check падает на name conflict. Cast безопасен: REGISTRY типизирован
-  // через `satisfies Record<string, IconComponent>` выше.
   const Component = REGISTRY[resolvedName] as React.ComponentType<any>;
-
-  // ── Halo glow (Polish Vertushka v4 — единый визуальный маркер набора) ──
-  //
-  // Под каждой иконкой рендерится её же копия большего размера и пониженной
-  // прозрачностью, плюс iOS-shadow на этом слое. На iOS shadow-radius
-  // даёт настоящий гауссовский blur вокруг alpha-канала SVG; на Android
-  // получаем «layered halo» (масштабированная копия за иконкой).
-  //
-  // Halo показывается на всех «контентных» размерах. Порог 14pt отсекает
-  // совсем мелкие inline-маркеры (badge dots, ≤12pt), где glow смазывает форму.
-  //
-  // Дополнительно подавляем halo для СВЕТЛЫХ цветов (white-ish иконки
-  // на тёмном фоне — например, dots/X внутри cobalt-кнопки): белый halo
-  // на белой иконке расплывается в кашу и слипает близкорасположенные
-  // элементы (3 точки, например). Считаем перцептивную светлоту через
-  // относительную яркость sRGB; > 0.78 → пропускаем halo.
-  const isLightColor = isLightHex(resolvedColor);
-  const showHalo =
-    resolvedSize >= 14 && variant !== 'disabled' && !isLightColor;
-  // Halo по референсу Polish v4 (cobalt X / dots с мягкой violet-аурой).
-  // scale 1.16 + opacity 0.28; iOS shadow на backdrop-слое (ниже) даёт
-  // gaussian blur. Светлые цвета halo пропускают (см. isLightColor выше),
-  // потому что белый-на-белом halo превращает 3 точки в одно пятно.
-  const haloScale = 1.16;
-  const haloOpacity = 0.28;
-  const haloSize = Math.round(resolvedSize * haloScale);
 
   const containerStyle: ViewStyle = {
     width: resolvedSize,
@@ -483,6 +474,16 @@ export const Icon: React.FC<IconProps> = ({
     alignItems: 'center',
     justifyContent: 'center',
   };
+
+  // Внешний halo рендерится только для Phosphor-иконок и только когда:
+  //  - размер ≥ 14pt (мелкие inline-маркеры остаются крепкими)
+  //  - не disabled-variant
+  //  - цвет не светлый (см. выше про white-on-cobalt)
+  const showExternalHalo =
+    !isV2 && resolvedSize >= 14 && variant !== 'disabled' && !isLightColor;
+  const haloScale = 1.16;
+  const haloOpacity = 0.28;
+  const haloSize = Math.round(resolvedSize * haloScale);
 
   return (
     <View
@@ -499,7 +500,7 @@ export const Icon: React.FC<IconProps> = ({
       }
       testID={testID}
     >
-      {showHalo ? (
+      {showExternalHalo ? (
         <View
           pointerEvents="none"
           style={{
@@ -507,14 +508,11 @@ export const Icon: React.FC<IconProps> = ({
             opacity: haloOpacity,
             shadowColor: resolvedColor,
             shadowOffset: { width: 0, height: 0 },
-            // Целевой look — мягкий gaussian aura, как на референсе.
-            // shadowOpacity 0.75 + radius ≈ 0.32×size = заметная корона
-            // вокруг alpha-канала SVG, но всё ещё лёгкая.
             shadowOpacity: 0.75,
             shadowRadius: Math.max(5, resolvedSize * 0.32),
           }}
         >
-          <Component size={haloSize} color={resolvedColor} weight="fill" />
+          <Component size={haloSize} color={resolvedColor} weight={resolvedWeight} />
         </View>
       ) : null}
       <Component
