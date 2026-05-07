@@ -104,8 +104,15 @@ export default function GiftDetailScreen() {
               removeGiven(gift.id);
               toast.success('Бронь отменена');
               router.back();
-            } catch {
-              toast.error('Не удалось отменить бронирование');
+            } catch (error: any) {
+              const isTimeout = error?.code === 'ECONNABORTED';
+              const detail = error?.response?.data?.detail;
+              toast.error(
+                isTimeout ? 'Сервер не отвечает' : 'Не удалось отменить',
+                isTimeout
+                  ? 'Попробуй ещё раз через минуту'
+                  : detail || 'Что-то пошло не так',
+              );
             } finally {
               setIsActing(false);
             }
@@ -133,7 +140,14 @@ export default function GiftDetailScreen() {
               toast.success('Спасибо!', 'Пластинка теперь в твоей коллекции');
               router.back();
             } catch (error: any) {
-              toast.error('Ошибка', error?.response?.data?.detail || 'Не удалось отметить подарок');
+              const isTimeout = error?.code === 'ECONNABORTED';
+              const detail = error?.response?.data?.detail;
+              toast.error(
+                isTimeout ? 'Сервер не отвечает' : 'Не удалось',
+                isTimeout
+                  ? 'Попробуй ещё раз через минуту'
+                  : detail || 'Что-то пошло не так',
+              );
             } finally {
               setIsActing(false);
             }
