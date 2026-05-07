@@ -759,8 +759,11 @@ class ApiClient {
   }
 
   async cancelGiftBooking(bookingId: string, cancelToken: string): Promise<void> {
+    // Короткий timeout 15s — для UI-действия 60s слишком долго.
+    // Если бэк подвис на отправке email — пользователь увидит ошибку быстро.
     await this.client.put(`/gifts/${bookingId}/cancel`, null, {
       params: { cancel_token: cancelToken },
+      timeout: 15000,
     });
   }
 
@@ -770,7 +773,9 @@ class ApiClient {
   }
 
   async completeGiftBooking(bookingId: string): Promise<void> {
-    await this.client.put(`/gifts/me/received/${bookingId}/complete`);
+    await this.client.put(`/gifts/me/received/${bookingId}/complete`, undefined, {
+      timeout: 15000,
+    });
   }
 }
 
