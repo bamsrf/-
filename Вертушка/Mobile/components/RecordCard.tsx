@@ -12,7 +12,7 @@ import {
 } from 'react-native';
 import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
-import { Ionicons } from '@expo/vector-icons';
+import { Icon } from '@/components/ui';
 import Animated, {
   useSharedValue,
   useAnimatedStyle,
@@ -175,7 +175,7 @@ function RecordCardComponent({
         {isSelectionMode && (
           <View style={styles.checkboxContainer}>
             <View style={[styles.checkbox, isSelected && styles.checkboxSelected]}>
-              {isSelected && <Ionicons name="checkmark" size={16} color={Colors.background} />}
+              {isSelected && <Icon name="checkmark" size={16} color={Colors.background} />}
             </View>
           </View>
         )}
@@ -184,7 +184,7 @@ function RecordCardComponent({
           <Image source={imageUrl} style={styles.compactImage} contentFit="cover" cachePolicy="disk" />
         ) : (
           <View style={styles.compactPlaceholder}>
-            <Ionicons name="disc-outline" size={48} color={Colors.periwinkle} />
+            <Icon name="disc-outline" size={48} color={Colors.periwinkle} />
           </View>
         )}
 
@@ -209,7 +209,7 @@ function RecordCardComponent({
             end={{ x: 1, y: 0 }}
             style={styles.bookedBadge}
           >
-            <Ionicons name="gift-outline" size={12} color={Colors.background} />
+            <Icon name="gift-outline" size={12} color={Colors.background} />
             <Text style={styles.bookedBadgeText}>Забронировано</Text>
           </LinearGradient>
         )}
@@ -262,7 +262,7 @@ function RecordCardComponent({
         {isSelectionMode && (
           <View style={styles.listCheckboxContainer}>
             <View style={[styles.checkbox, isSelected && styles.checkboxSelected]}>
-              {isSelected && <Ionicons name="checkmark" size={16} color={Colors.background} />}
+              {isSelected && <Icon name="checkmark" size={16} color={Colors.background} />}
             </View>
           </View>
         )}
@@ -272,13 +272,13 @@ function RecordCardComponent({
             <Image source={imageUrl} style={styles.listImage} contentFit="cover" cachePolicy="disk" />
           ) : (
             <View style={styles.listPlaceholder}>
-              <Ionicons name="disc-outline" size={28} color={Colors.periwinkle} />
+              <Icon name="disc-outline" size={28} color={Colors.periwinkle} />
             </View>
           )}
           <TierCoverEffects tier={auraTier} radius={10} />
           {isBooked && !isSelectionMode && (
             <View style={styles.listBookedBadge}>
-              <Ionicons name="gift-outline" size={10} color={Colors.background} />
+              <Icon name="gift-outline" size={10} color={Colors.background} />
             </View>
           )}
         </View>
@@ -319,7 +319,6 @@ function RecordCardComponent({
           </View>
         </View>
 
-        <Ionicons name="chevron-forward" size={16} color={Colors.textMuted} style={styles.listChevron} />
       </AnimatedPressable>
     );
 
@@ -358,7 +357,7 @@ function RecordCardComponent({
       {isSelectionMode && (
         <View style={styles.checkboxContainer}>
           <View style={[styles.checkbox, isSelected && styles.checkboxSelected]}>
-            {isSelected && <Ionicons name="checkmark" size={16} color={Colors.background} />}
+            {isSelected && <Icon name="checkmark" size={16} color={Colors.background} />}
           </View>
         </View>
       )}
@@ -368,7 +367,7 @@ function RecordCardComponent({
           <Image source={imageUrl} style={styles.expandedImage} contentFit="cover" cachePolicy="disk" />
         ) : (
           <View style={styles.expandedPlaceholder}>
-            <Ionicons name="disc-outline" size={48} color={Colors.periwinkle} />
+            <Icon name="disc-outline" size={48} color={Colors.periwinkle} />
           </View>
         )}
         <TierCoverEffects tier={auraTier} radius={0} />
@@ -379,7 +378,7 @@ function RecordCardComponent({
             end={{ x: 1, y: 0 }}
             style={styles.bookedBadge}
           >
-            <Ionicons name="gift-outline" size={12} color={Colors.background} />
+            <Icon name="gift-outline" size={12} color={Colors.background} />
             <Text style={styles.bookedBadgeText}>Забронировано</Text>
           </LinearGradient>
         )}
@@ -427,17 +426,17 @@ function RecordCardComponent({
         <View style={styles.actions}>
           {onAddToCollection && (
             <Pressable style={styles.actionButton} onPress={onAddToCollection}>
-              <Ionicons name="add-circle-outline" size={24} color={Colors.royalBlue} />
+              <Icon name="add-circle-outline" size={24} color={Colors.royalBlue} />
             </Pressable>
           )}
           {onAddToWishlist && (
             <Pressable style={styles.actionButton} onPress={onAddToWishlist}>
-              <Ionicons name="heart-outline" size={24} color={Colors.softPink} />
+              <Icon name="heart-outline" size={24} color={Colors.softPink} />
             </Pressable>
           )}
           {onRemove && (
             <Pressable style={styles.actionButton} onPress={onRemove}>
-              <Ionicons name="trash-outline" size={24} color={Colors.error} />
+              <Icon name="trash-outline" size={24} color={Colors.error} />
             </Pressable>
           )}
         </View>

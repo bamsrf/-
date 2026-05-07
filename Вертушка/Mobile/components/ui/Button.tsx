@@ -11,7 +11,7 @@ import {
   TextStyle,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
-import { Colors, Typography, BorderRadius, ComponentSizes, Spacing, Shadows } from '../../constants/theme';
+import { Colors, Typography, ComponentSizes, Spacing } from '../../constants/theme';
 
 interface ButtonProps {
   title: string;
@@ -62,21 +62,22 @@ export function Button({
       <TouchableOpacity
         onPress={onPress}
         disabled={isDisabled}
-        activeOpacity={0.8}
+        activeOpacity={0.85}
         style={[
           fullWidth && styles.fullWidth,
           isDisabled && styles.disabled,
+          styles.primaryGlow,
           style,
         ]}
       >
         <LinearGradient
-          colors={[Colors.royalBlue, Colors.electricBlue]}
+          // Polish Vertushka v4 — 3-stop cobalt gradient (135deg, deep → mid → soft).
+          colors={['#1B2E78', '#2A4BD7', '#5C7AE8']}
           start={{ x: 0, y: 0 }}
-          end={{ x: 1, y: 0 }}
+          end={{ x: 1, y: 1 }}
           style={[
             styles.base,
             size === 'small' && styles.small,
-            Shadows.md,
           ]}
         >
           {content}
@@ -108,10 +109,33 @@ const styles = StyleSheet.create({
   base: {
     height: ComponentSizes.buttonHeight,
     paddingHorizontal: Spacing.lg,
-    borderRadius: 16,
+    borderRadius: 18,
     alignItems: 'center',
     justifyContent: 'center',
     flexDirection: 'row',
+    overflow: 'hidden',
+  },
+
+  // Polish v4 glow для primary.
+  //
+  // Тонкости:
+  // 1. Свой `backgroundColor` на shadow-обёртке обязателен — иначе iOS не
+  //    знает, какой shape использовать для тени, и фолбэчит на bounding-rect
+  //    с резкими углами. Цвет совпадает с серединой градиента, поэтому он
+  //    не виден из-под LinearGradient (который сидит сверху и closeup-перекрыт
+  //    через `overflow: hidden`).
+  // 2. `shadowOffset.height = 8` + `shadowRadius = 22` — диффузный glow,
+  //    почти симметричный сверху и снизу. На `height = 4 / radius = 16`
+  //    сверху появлялась чёткая горизонтальная линия отсечения.
+  // 3. `shadowOpacity` снижен до 0.28 — общий эффект мягче, без «штампа».
+  primaryGlow: {
+    borderRadius: 18,
+    backgroundColor: '#2A4BD7',
+    shadowColor: '#2A4BD7',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.28,
+    shadowRadius: 22,
+    elevation: 10,
   },
 
   // Варианты (primary handled via LinearGradient)

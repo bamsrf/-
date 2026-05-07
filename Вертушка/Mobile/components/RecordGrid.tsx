@@ -12,7 +12,7 @@ import {
   TouchableOpacity,
 } from 'react-native';
 import Animated, { FadeInUp } from 'react-native-reanimated';
-import { Ionicons } from '@expo/vector-icons';
+import { Icon } from '@/components/ui';
 import { LinearGradient } from 'expo-linear-gradient';
 import { RecordCard } from './RecordCard';
 import { RecordSearchResult, VinylRecord, CollectionItem, WishlistItem, MasterSearchResult, ReleaseSearchResult } from '../lib/types';
@@ -21,7 +21,7 @@ import { RarityContext } from './RarityAura';
 
 export interface EmptyAction {
   label: string;
-  icon: keyof typeof Ionicons.glyphMap;
+  icon: string;
   onPress: () => void;
 }
 
@@ -41,7 +41,7 @@ interface RecordGridProps<T extends RecordItem = RecordItem> {
   onEndReached?: () => void;
   emptyMessage?: string;
   emptyTitle?: string;
-  emptyIcon?: keyof typeof Ionicons.glyphMap;
+  emptyIcon?: string;
   emptyActions?: EmptyAction[];
   ListHeaderComponent?: React.ReactElement;
   isSelectionMode?: boolean;
@@ -145,7 +145,7 @@ function RecordGridComponent<T extends RecordItem = RecordItem>({
       <View style={styles.emptyContainer}>
         {emptyIcon && (
           <View style={styles.emptyIconRing}>
-            <Ionicons name={emptyIcon} size={36} color={Colors.royalBlue} />
+            <Icon name={emptyIcon} size={36} color={Colors.royalBlue} />
           </View>
         )}
         {emptyTitle && <Text style={styles.emptyTitle}>{emptyTitle}</Text>}
@@ -167,7 +167,7 @@ function RecordGridComponent<T extends RecordItem = RecordItem>({
                       end={{ x: 1, y: 0 }}
                       style={[styles.emptyPrimaryBtn, Shadows.sm]}
                     >
-                      <Ionicons name={action.icon} size={18} color={Colors.background} />
+                      <Icon name={action.icon} size={18} color={Colors.background} />
                       <Text style={styles.emptyPrimaryText}>{action.label}</Text>
                     </LinearGradient>
                   </TouchableOpacity>
@@ -180,7 +180,7 @@ function RecordGridComponent<T extends RecordItem = RecordItem>({
                   onPress={action.onPress}
                   activeOpacity={0.7}
                 >
-                  <Ionicons name={action.icon} size={18} color={Colors.royalBlue} />
+                  <Icon name={action.icon} size={18} color={Colors.royalBlue} />
                   <Text style={styles.emptySecondaryText}>{action.label}</Text>
                 </TouchableOpacity>
               );

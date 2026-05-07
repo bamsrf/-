@@ -5,7 +5,7 @@ import { useEffect, useMemo } from 'react';
 import { View, Text, StyleSheet, Pressable, Dimensions, Platform } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { BlurView } from 'expo-blur';
-import { Ionicons } from '@expo/vector-icons';
+import { Icon } from '@/components/ui';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
@@ -27,7 +27,7 @@ import { Colors } from '../constants/theme';
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
 interface WelcomeStep {
-  icon: keyof typeof Ionicons.glyphMap;
+  icon: string;
   eyebrow: string;
   title: string;
   body: string;
@@ -203,7 +203,7 @@ export default function OnboardingScreen() {
                 <BlurViewCompat>
                   <View style={styles.card}>
                     <View style={styles.iconRing}>
-                      <Ionicons name={s.icon} size={56} color="#fff" />
+                      <Icon name={s.icon} size={56} color="#fff" />
                     </View>
                     <Text style={styles.eyebrow}>{s.eyebrow}</Text>
                     <Text style={styles.title}>{s.title}</Text>

@@ -11,7 +11,7 @@ import {
 import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Ionicons } from '@expo/vector-icons';
+import { Icon } from '@/components/ui';
 import { useRouter } from 'expo-router';
 import { GradientText } from './GradientText';
 import { Colors, Typography, Spacing } from '../constants/theme';
@@ -50,7 +50,7 @@ export function Header({
         <View style={styles.leftSection}>
           {showBack && (
             <TouchableOpacity style={styles.backButton} onPress={handleBackPress}>
-              <Ionicons name="arrow-back" size={24} color={Colors.deepNavy} />
+              <Icon name="arrow-back" size={24} color={Colors.deepNavy} />
             </TouchableOpacity>
           )}
           {showBack && title ? (
@@ -69,7 +69,7 @@ export function Header({
                     colors={[Colors.royalBlue, Colors.periwinkle]}
                     style={styles.avatarPlaceholder}
                   >
-                    <Ionicons name="disc" size={20} color={Colors.background} />
+                    <Icon name="disc" size={20} color={Colors.background} />
                   </LinearGradient>
                 )}
               </TouchableOpacity>

@@ -14,7 +14,7 @@ import {
 } from 'react-native';
 import { Image } from 'expo-image';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { Ionicons } from '@expo/vector-icons';
+import { Icon } from '@/components/ui';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Header } from '../../components/Header';
 import { RecordCard } from '../../components/RecordCard';
@@ -102,7 +102,7 @@ function FilterChip({ label, isActive, onPress }: FilterChipProps) {
           {label}
         </Animated.Text>
         {isActive && (
-          <Ionicons name="close" size={14} color={Colors.background} style={styles.filterCloseIcon} />
+          <Icon name="close" size={14} color={Colors.background} style={styles.filterCloseIcon} />
         )}
       </Animated.View>
     </Pressable>
@@ -310,7 +310,7 @@ export default function ArtistDetailScreen() {
           />
         ) : (
           <View style={styles.placeholderImage}>
-            <Ionicons name="person-outline" size={100} color={Colors.textMuted} />
+            <Icon name="person-outline" size={100} color={Colors.textMuted} />
           </View>
         )}
       </View>
@@ -340,7 +340,7 @@ export default function ArtistDetailScreen() {
               onPress={() => setShowSortMenu(!showSortMenu)}
               activeOpacity={0.7}
             >
-              <Ionicons name="swap-vertical-outline" size={18} color={Colors.royalBlue} />
+              <Icon name="swap-vertical-outline" size={18} color={Colors.royalBlue} />
             </TouchableOpacity>
           </View>
         </View>
@@ -358,7 +358,7 @@ export default function ArtistDetailScreen() {
                   {option.label}
                 </Text>
                 {sortMode === option.key && (
-                  <Ionicons name="checkmark" size={16} color={Colors.royalBlue} />
+                  <Icon name="checkmark" size={16} color={Colors.royalBlue} />
                 )}
               </TouchableOpacity>
             ))}
@@ -395,7 +395,7 @@ export default function ArtistDetailScreen() {
     const isEmptyProfile = !error && !activeFilter && masters.length === 0 && !hasMore;
     return (
       <View style={styles.emptyContainer}>
-        <Ionicons
+        <Icon
           name={error ? 'cloud-offline-outline' : isEmptyProfile ? 'person-remove-outline' : 'musical-notes-outline'}
           size={48}
           color={error ? Colors.error : Colors.textMuted}
@@ -414,7 +414,7 @@ export default function ArtistDetailScreen() {
             onPress={() => { setError(null); loadMasters(masters.length === 0); }}
             activeOpacity={0.7}
           >
-            <Ionicons name="refresh" size={18} color={Colors.royalBlue} />
+            <Icon name="refresh" size={18} color={Colors.royalBlue} />
             <Text style={styles.retryText}>Повторить</Text>
           </TouchableOpacity>
         )}
@@ -439,7 +439,7 @@ export default function ArtistDetailScreen() {
       <View style={styles.container}>
         <Header title="Артист" showBack />
         <View style={styles.errorContainer}>
-          <Ionicons name="alert-circle-outline" size={64} color={Colors.error} />
+          <Icon name="alert-circle-outline" size={64} color={Colors.error} />
           <Text style={styles.errorText}>{error || 'Артист не найден'}</Text>
         </View>
       </View>

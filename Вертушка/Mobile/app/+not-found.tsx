@@ -3,7 +3,7 @@
  */
 import { Link, Stack } from 'expo-router';
 import { StyleSheet, View, Text } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
+import { Icon } from '@/components/ui';
 import { Colors, Typography, Spacing } from '../constants/theme';
 
 export default function NotFoundScreen() {
@@ -11,7 +11,7 @@ export default function NotFoundScreen() {
     <>
       <Stack.Screen options={{ title: 'Ошибка' }} />
       <View style={styles.container}>
-        <Ionicons name="disc-outline" size={64} color={Colors.textMuted} />
+        <Icon name="disc-outline" size={64} color={Colors.textMuted} />
         <Text style={styles.title}>Страница не найдена</Text>
         <Text style={styles.subtitle}>Такой страницы не существует</Text>
 

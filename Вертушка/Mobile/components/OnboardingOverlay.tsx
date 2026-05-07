@@ -15,7 +15,7 @@ import {
 import { BlurView } from 'expo-blur';
 import { router } from 'expo-router';
 import * as Haptics from 'expo-haptics';
-import { Ionicons } from '@expo/vector-icons';
+import { Icon } from '@/components/ui';
 import Animated, {
   useSharedValue,
   useAnimatedStyle,
@@ -339,7 +339,6 @@ function TooltipCard({ stepIndex, total, title, body, onSkip, onNext, isLast }: 
         </Pressable>
         <Pressable onPress={onNext} style={({ pressed }) => [styles.tipNext, pressed && styles.tipNextPressed]}>
           <Text style={styles.tipNextText}>{isLast ? 'Готово!' : 'Дальше'}</Text>
-          <Ionicons name="chevron-forward" size={14} color="#fff" />
         </Pressable>
       </View>
     </Wrap>

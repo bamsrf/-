@@ -14,7 +14,7 @@ import {
 } from 'react-native';
 import { Image } from 'expo-image';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { Ionicons } from '@expo/vector-icons';
+import { Icon } from '@/components/ui';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { api } from '../../lib/api';
 import { toast } from '../../lib/toast';
@@ -170,13 +170,13 @@ export default function GiftDetailScreen() {
       <View style={[styles.container, { paddingTop: insets.top }]}>
         <View style={styles.header}>
           <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
-            <Ionicons name="arrow-back" size={24} color={Colors.royalBlue} />
+            <Icon name="arrow-back" size={24} color={Colors.royalBlue} />
           </TouchableOpacity>
           <Text style={styles.headerTitle}>Подарок</Text>
           <View style={styles.placeholder} />
         </View>
         <View style={styles.center}>
-          <Ionicons name="gift-outline" size={48} color={Colors.textMuted} />
+          <Icon name="gift-outline" size={48} color={Colors.textMuted} />
           <Text style={styles.notFoundText}>Подарок не найден</Text>
         </View>
       </View>
@@ -225,7 +225,7 @@ export default function GiftDetailScreen() {
     <View style={[styles.container, { paddingTop: insets.top }]}>
       <View style={styles.header}>
         <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
-          <Ionicons name="arrow-back" size={24} color={Colors.royalBlue} />
+          <Icon name="arrow-back" size={24} color={Colors.royalBlue} />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Подарок</Text>
         <View style={styles.placeholder} />
@@ -249,7 +249,7 @@ export default function GiftDetailScreen() {
             />
           ) : (
             <View style={[styles.cover, styles.coverPlaceholder]}>
-              <Ionicons name="disc-outline" size={64} color={Colors.textMuted} />
+              <Icon name="disc-outline" size={64} color={Colors.textMuted} />
             </View>
           )}
         </View>
@@ -294,27 +294,27 @@ export default function GiftDetailScreen() {
         <View style={[styles.metaCard, Shadows.sm]}>
           {isGiven && givenGift ? (
             <View style={styles.metaRow}>
-              <Ionicons name="person-outline" size={18} color={Colors.textSecondary} />
+              <Icon name="person-outline" size={18} color={Colors.textSecondary} />
               <Text style={styles.metaLabel}>Дарю</Text>
               <Text style={styles.metaValue}>@{givenGift.for_user.username}</Text>
             </View>
           ) : (
             <View style={styles.metaRow}>
-              <Ionicons name="gift-outline" size={18} color={Colors.success} />
+              <Icon name="gift-outline" size={18} color={Colors.success} />
               <Text style={styles.metaLabel}>От</Text>
               <Text style={styles.metaValue}>тайного дарителя</Text>
             </View>
           )}
 
           <View style={styles.metaRow}>
-            <Ionicons name="calendar-outline" size={18} color={Colors.textSecondary} />
+            <Icon name="calendar-outline" size={18} color={Colors.textSecondary} />
             <Text style={styles.metaLabel}>Забронировано</Text>
             <Text style={styles.metaValue}>{formatDate(gift.booked_at)}</Text>
           </View>
 
           {!!gift.completed_at && (
             <View style={styles.metaRow}>
-              <Ionicons name="checkmark-circle-outline" size={18} color={Colors.success} />
+              <Icon name="checkmark-circle-outline" size={18} color={Colors.success} />
               <Text style={styles.metaLabel}>Доставлено</Text>
               <Text style={styles.metaValue}>{formatDate(gift.completed_at)}</Text>
             </View>
@@ -327,7 +327,7 @@ export default function GiftDetailScreen() {
           activeOpacity={0.7}
           onPress={() => router.push(`/record/${gift.record.id}`)}
         >
-          <Ionicons name="disc-outline" size={20} color={Colors.royalBlue} />
+          <Icon name="disc-outline" size={20} color={Colors.royalBlue} />
           <Text style={styles.openRecordText}>Открыть карточку пластинки</Text>
         </TouchableOpacity>
       </ScrollView>

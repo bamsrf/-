@@ -16,7 +16,7 @@ import { toast } from '../../lib/toast';
 import { router, useLocalSearchParams } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Ionicons } from '@expo/vector-icons';
+import { Icon } from '@/components/ui';
 import { Button } from '../../components/ui';
 import { api } from '../../lib/api';
 import { Colors, Typography, Spacing, BorderRadius } from '../../constants/theme';
@@ -132,7 +132,7 @@ export default function VerifyCodeScreen() {
             colors={[Colors.royalBlue, Colors.periwinkle]}
             style={styles.logo}
           >
-            <Ionicons name="keypad-outline" size={48} color={Colors.background} />
+            <Icon name="keypad-outline" size={48} color={Colors.background} />
           </LinearGradient>
         </View>
 

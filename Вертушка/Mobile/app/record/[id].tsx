@@ -14,7 +14,7 @@ import {
 import { toast } from '../../lib/toast';
 import { Image } from 'expo-image';
 import { useLocalSearchParams, useRouter, useFocusEffect } from 'expo-router';
-import { Ionicons } from '@expo/vector-icons';
+import { Icon } from '@/components/ui';
 import Animated, {
   Easing,
   useAnimatedStyle,
@@ -49,7 +49,7 @@ function getFormatDisplayInfo(format?: string): { label: string; verb: string } 
   return { label: 'Винил', verb: 'добавлен' };
 }
 
-const AnimatedIonicons = Animated.createAnimatedComponent(Ionicons);
+const AnimatedIcon = Animated.createAnimatedComponent(Icon);
 
 function OtherVersionsButton({ onPress }: { onPress: () => void }) {
   const draw = useSharedValue(0);
@@ -78,7 +78,7 @@ function OtherVersionsButton({ onPress }: { onPress: () => void }) {
       activeOpacity={0.7}
     >
       <Text style={styles.otherVersionsText}>Смотреть другие версии релиза</Text>
-      <AnimatedIonicons
+      <AnimatedIcon
         name="chevron-forward"
         size={18}
         color={Colors.text}
@@ -405,7 +405,7 @@ export default function RecordDetailScreen() {
       <View style={styles.container}>
         <Header title="Ошибка" showBack showProfile={false} />
         <View style={styles.centered}>
-          <Ionicons name="alert-circle-outline" size={64} color={Colors.textMuted} />
+          <Icon name="alert-circle-outline" size={64} color={Colors.textMuted} />
           <Text style={styles.errorText}>{error || 'Винил не найден'}</Text>
           <Button title="Назад" onPress={() => router.back()} variant="outline" />
         </View>
@@ -429,7 +429,7 @@ export default function RecordDetailScreen() {
             <Image source={imageUrl} style={styles.cover} contentFit="cover" cachePolicy="disk" />
           ) : (
             <View style={[styles.cover, styles.coverPlaceholder]}>
-              <Ionicons name="disc-outline" size={80} color={Colors.textMuted} />
+              <Icon name="disc-outline" size={80} color={Colors.textMuted} />
             </View>
           )}
         </View>
@@ -461,7 +461,7 @@ export default function RecordDetailScreen() {
                 />
               ) : (
                 <View style={styles.artistAvatarPlaceholder}>
-                  <Ionicons name="person" size={24} color={Colors.textMuted} />
+                  <Icon name="person" size={24} color={Colors.textMuted} />
                 </View>
               )}
             </LinearGradient>
@@ -471,19 +471,19 @@ export default function RecordDetailScreen() {
           <View style={styles.metaRow}>
             {record.year ? (
               <View style={styles.metaItem}>
-                <Ionicons name="calendar-outline" size={16} color={Colors.textSecondary} />
+                <Icon name="calendar-outline" size={16} color={Colors.textSecondary} />
                 <Text style={styles.metaText}>{record.year}</Text>
               </View>
             ) : null}
             {record.format_type ? (
               <View style={styles.metaItem}>
-                <Ionicons name="disc-outline" size={16} color={Colors.textSecondary} />
+                <Icon name="disc-outline" size={16} color={Colors.textSecondary} />
                 <Text style={styles.metaText}>{getFormatDisplayInfo(record.format_type).label}</Text>
               </View>
             ) : null}
             {record.country ? (
               <View style={styles.metaItem}>
-                <Ionicons name="globe-outline" size={16} color={Colors.textSecondary} />
+                <Icon name="globe-outline" size={16} color={Colors.textSecondary} />
                 <Text style={styles.metaText}>{record.country}</Text>
               </View>
             ) : null}
@@ -639,7 +639,7 @@ export default function RecordDetailScreen() {
             <BlurView intensity={60} tint="light" style={[styles.actionsContainer, { paddingBottom: insets.bottom + Spacing.md }]}>
               <View style={styles.addedButtonContainer}>
                 <View style={styles.addedButton}>
-                  <Ionicons name="checkmark-circle" size={20} color={Colors.textSecondary} />
+                  <Icon name="checkmark-circle" size={20} color={Colors.textSecondary} />
                   <Text style={styles.addedButtonText}>
                     {recordStatus.copiesCount > 1
                       ? `Добавлено (${recordStatus.copiesCount})`
@@ -651,7 +651,7 @@ export default function RecordDetailScreen() {
                   style={styles.moreButton}
                   onPress={() => setShowActionSheet(true)}
                 >
-                  <Ionicons name="ellipsis-vertical" size={24} color={Colors.background} />
+                  <Icon name="ellipsis-vertical" size={24} color={Colors.background} />
                 </TouchableOpacity>
               </View>
             </BlurView>

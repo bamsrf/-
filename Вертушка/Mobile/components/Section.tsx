@@ -12,7 +12,7 @@ import {
   LayoutAnimation,
   UIManager,
 } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
+import { Icon } from '@/components/ui';
 import { Colors } from '../constants/theme';
 import { useSectionsStore } from '../lib/store';
 
@@ -64,7 +64,7 @@ export function Section({
           disabled={!collapsible}
         >
           {collapsible && (
-            <Ionicons
+            <Icon
               name={collapsed ? 'chevron-forward' : 'chevron-down'}
               size={16}
               color={Colors.textSecondary}

@@ -4,7 +4,7 @@
 import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
 import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
-import { Ionicons } from '@expo/vector-icons';
+import { Icon } from '@/components/ui';
 import { Colors, Typography, Spacing, BorderRadius } from '../constants/theme';
 import { resolveMediaUrl } from '../lib/api';
 
@@ -25,7 +25,7 @@ export function UserListItem({ username, displayName, avatarUrl, onPress }: User
           colors={[Colors.royalBlue, Colors.periwinkle]}
           style={styles.avatar}
         >
-          <Ionicons name="person" size={18} color={Colors.background} />
+          <Icon name="person" size={18} color={Colors.background} />
         </LinearGradient>
       )}
       <View style={styles.textContainer}>

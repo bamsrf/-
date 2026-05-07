@@ -25,7 +25,7 @@
  */
 
 import React from 'react';
-import { useColorScheme, type StyleProp, type ViewStyle } from 'react-native';
+import { useColorScheme, View, type StyleProp, type ViewStyle } from 'react-native';
 
 // Phosphor — core set (44 имени). Все импорты — через `*Icon` суффикс
 // (Phosphor 3.x: старые имена без суффикса deprecated).
@@ -35,40 +35,55 @@ import {
   WarningCircleIcon,
   ArrowLeftIcon,
   ArrowRightIcon,
+  BellIcon,
+  BellSlashIcon,
   BuildingsIcon,
   CalendarIcon,
   CameraIcon,
-  CurrencyCircleDollarIcon,
   CheckIcon,
   CheckCircleIcon,
   CaretLeftIcon,
   CaretRightIcon,
+  CaretUpIcon,
+  CaretDownIcon,
+  ArrowUpIcon,
+  ArrowDownIcon,
+  EyeIcon,
+  EyeSlashIcon,
+  CopyIcon,
+  UsersIcon,
+  UserPlusIcon,
+  UserMinusIcon,
+  MusicNotesIcon,
+  EnvelopeOpenIcon,
+  ChatCircleIcon,
   XIcon,
   XCircleIcon,
   CloudSlashIcon,
+  CurrencyCircleDollarIcon,
   DownloadSimpleIcon,
   DotsThreeIcon,
   DotsThreeVerticalIcon,
   FolderIcon,
+  GiftIcon,
   GlobeIcon,
   SquaresFourIcon,
   HeartIcon,
   QuestionIcon,
   KeyholeIcon,
   ListIcon,
+  MagnifyingGlassIcon,
   MapPinIcon,
   LockOpenIcon,
   GoogleLogoIcon,
   EnvelopeIcon,
   MapTrifoldIcon,
-  BellSlashIcon,
-  BellIcon,
+  ScanIcon,
   SlidersIcon,
   PencilIcon,
   UserIcon,
   TagIcon,
   ArrowClockwiseIcon,
-  MagnifyingGlassIcon,
   ShareNetworkIcon,
   SparkleIcon,
   StarIcon,
@@ -80,14 +95,15 @@ import {
 
 import {
   DiscGrooves,
-  GiftVinyl,
   TrophyDisc,
-  ScanTarget,
-  RarityCrown,
-  RarityDiamond,
-  RarityFlame,
   VinylLabel,
 } from '../icons/hero';
+
+// Polish Vertushka v4 — единый стиль: Phosphor `fill` + halo wrapper. Custom
+// SVG-иконки сохранены в `components/icons/custom/index.tsx` как референс,
+// но в registry больше не подключены — иначе ломается визуальная консистентность
+// с остальным набором (plus, x, pencil, trash, arrow-*, и т.д.). Disc оставляем
+// как DiscGrooves по решению пользователя.
 
 import { T } from '../../constants/theme';
 
@@ -117,13 +133,28 @@ export type IconVariant = 'default' | 'active' | 'disabled';
 export type IconWeight = 'regular' | 'duotone' | 'fill';
 
 export interface IconProps {
-  name: IconName;
+  /**
+   * Имя иконки. Принимает либо новое registry-имя (`'plus'`, `'magnifying-glass'`,
+   * `'disc'`, …), либо легаси Ionicon-имя (`'add'`, `'search'`, `'disc-outline'`, …)
+   * через alias-таблицу `IONICON_ALIASES` ниже. Это упрощает миграцию: можно
+   * просто заменить `<Ionicons>` → `<Icon>` без правки `name`.
+   *
+   * Также принимает любую `string` — для совместимости с динамическими
+   * `name={cond ? 'a' : 'b'}` патернами и legacy `keyof typeof Ionicons.glyphMap`
+   * сигнатурами. Если имя не известно — fallback на `'plus'`.
+   */
+  name: IconName | IoniconAlias | (string & {});
   size?: IconSize | number;
-  color?: IconColor;
+  /**
+   * Цвет. Принимает либо семантическую роль (`'brand'`, `'error'`, …), либо
+   * raw-строку (hex / rgb). Hex-fallback нужен для постепенной миграции с
+   * `Colors.royalBlue` → `color="brand"`. Финальная цель — все вызовы на роли.
+   */
+  color?: IconColor | string;
   variant?: IconVariant;
   /**
    * Прямой override visual weight. Если не задан — резолвится из variant
-   * (default → regular, active → fill, disabled → regular).
+   * (default → duotone, active → fill).
    */
   weight?: IconWeight;
   hitSlop?: number;
@@ -135,10 +166,10 @@ export interface IconProps {
 // Registry — kebab-case → Phosphor / hero component
 // ───────────────────────────────────────────────────────────────────────────
 
-// IconComponent — общий interface Phosphor + hero-icon обёрток. Hero сейчас
-// прокси на Phosphor (`React.FC<PhosphorIconProps>`), поэтому типы совпадают
-// с Phosphor's `Icon = React.FC<IconProps>`.
-type IconComponent = PhosphorIcon;
+// IconComponent — общий interface Phosphor + hero/custom иконок. Custom set
+// из `components/icons/custom` принимает совместимые props (size/color/weight),
+// поэтому достаточно широкого ComponentType.
+type IconComponent = PhosphorIcon | React.ComponentType<any>;
 
 const REGISTRY = {
   // Action
@@ -162,6 +193,19 @@ const REGISTRY = {
   'arrow-right':         ArrowRightIcon,
   'caret-left':          CaretLeftIcon,
   'caret-right':         CaretRightIcon,
+  'caret-up':            CaretUpIcon,
+  'caret-down':          CaretDownIcon,
+  'arrow-up':            ArrowUpIcon,
+  'arrow-down':          ArrowDownIcon,
+  'eye':                 EyeIcon,
+  'eye-slash':           EyeSlashIcon,
+  'copy':                CopyIcon,
+  'users':               UsersIcon,
+  'user-plus':           UserPlusIcon,
+  'user-minus':          UserMinusIcon,
+  'music-notes':         MusicNotesIcon,
+  'envelope-open':       EnvelopeOpenIcon,
+  'chat-circle':         ChatCircleIcon,
   'magnifying-glass':    MagnifyingGlassIcon,
   'user':                UserIcon,
 
@@ -202,18 +246,122 @@ const REGISTRY = {
   // Brand
   'google-logo':         GoogleLogoIcon,
 
-  // CUSTOM hero set — 8 SVG из components/icons/hero/.
-  'disc':                DiscGrooves,    // ★ замещает Ionicons disc / disc-outline
-  'gift':                GiftVinyl,      // ★ замещает gift / gift-outline
-  'trophy':              TrophyDisc,     // ★
-  'scan':                ScanTarget,     // ★ домен Сканер
-  'rarity-crown':        RarityCrown,    // ★ маркер тира
-  'rarity-diamond':      RarityDiamond,  // ★
-  'rarity-flame':        RarityFlame,    // ★
-  'vinyl-label':         VinylLabel,     // ★ центр VinylSpinner
+  // HERO set — кастомные SVG, единственные неунифицированные иконки.
+  'disc':                DiscGrooves,    // ★ HERO — Phosphor VinylRecord (юзер:
+                                          //   «не меняй иконку винила»)
+  'gift':                GiftIcon,       // Phosphor — единый язык с остальными.
+                                          //   ВАЖНО: НЕ использовать в вишлист-сценариях
+                                          //   (юзеру не нравится). Для вишлиста — `heart`.
+  'trophy':              TrophyDisc,     // ★ HERO
+  'scan':                ScanIcon,       // Phosphor — единый язык.
+  'vinyl-label':         VinylLabel,     // ★ HERO центр VinylSpinner
+  // 'rarity-*' (crown / diamond / flame) удалены по решению пользователя — rarity
+  // выражается аурой через RarityAura.tsx, иконных маркеров не нужно.
 } satisfies Record<string, IconComponent>;
 
 export type IconName = keyof typeof REGISTRY;
+
+// ───────────────────────────────────────────────────────────────────────────
+// Ionicon legacy aliases — миграция Phase 3.
+// Каждое старое имя из @expo/vector-icons маппится на текущее registry-имя.
+// Источник — B2 v1 migration table (52 имени из инвентаря Mobile/).
+// Дубликаты пар (`disc` + `disc-outline`, `gift` + `gift-outline` etc.)
+// унифицированы в одну hero-иконку.
+// ───────────────────────────────────────────────────────────────────────────
+
+const IONICON_ALIASES = {
+  // Action
+  'add':                    'plus',
+  'add-circle-outline':     'plus-circle',
+  'checkmark':              'check',
+  'checkmark-circle':       'check-circle',
+  'checkmark-circle-outline': 'check-circle',
+  'close':                  'x',
+  'close-circle':           'x-circle',
+  'close-circle-outline':   'x-circle',
+  'pencil':                 'pencil',
+  'trash-outline':          'trash',
+  'camera-outline':         'camera',
+  'mail-outline':           'envelope',
+  'download-outline':       'download',
+  'share-outline':          'share',
+  'refresh':                'arrow-clockwise',
+  'refresh-outline':        'arrow-clockwise',
+  'heart-outline':          'heart',
+  'checkmark-outline':      'check',
+  'copy-outline':           'copy',
+  'eye-outline':            'eye',
+  'eye-off-outline':        'eye-slash',
+  'mail-open-outline':      'envelope-open',
+  'musical-notes-outline':  'music-notes',
+  'chatbubble-outline':     'chat-circle',
+  'chatbubbles-outline':    'chat-circle',
+
+  // Navigation
+  'arrow-back':             'arrow-left',
+  'arrow-forward-outline':  'arrow-right',
+  'arrow-forward-circle':   'arrow-right',
+  'chevron-back':           'caret-left',
+  'chevron-forward':        'caret-right',
+  'chevron-up':             'caret-up',
+  'chevron-down':           'caret-down',
+  'arrow-up':               'arrow-up',
+  'arrow-down':             'arrow-down',
+  'search':                 'magnifying-glass',
+  'search-outline':         'magnifying-glass',
+  'scan-outline':           'scan',
+  'person':                 'user',
+  'person-outline':         'user',
+  'people-outline':         'users',
+  'person-add-outline':     'user-plus',
+  'person-remove-outline':  'user-minus',
+
+  // State
+  'alert-circle-outline':   'warning-circle',
+
+  // System
+  'notifications-outline':  'bell',
+  'notifications-off-outline': 'bell-slash',
+  'cloud-offline-outline':  'cloud-slash',
+  'lock-open-outline':      'lock-open',
+  'help-circle-outline':    'question',
+  'keypad-outline':         'keyhole',
+
+  // UI Control
+  'ellipsis-horizontal':    'dots-three',
+  'ellipsis-vertical':      'dots-three-vertical',
+  'grid-outline':           'squares-four',
+  'list-outline':           'list',
+  'options-outline':        'sliders',
+  'swap-vertical-outline':  'arrows-down-up',
+
+  // Domain
+  'calendar-outline':       'calendar',
+  'time-outline':           'clock',
+  'globe-outline':          'globe',
+  'business-outline':       'buildings',
+  'folder-outline':         'folder',
+  'pricetag-outline':       'tag',
+  'location-outline':       'map-pin',
+  'map-outline':            'map-trifold',
+  'cash-outline':           'currency-circle-dollar',
+  'star-outline':           'star',
+
+  // Decorative
+  'sparkles':               'sparkle',
+
+  // Brand
+  'logo-google':            'google-logo',
+
+  // Hero (унификация дубликатов)
+  'disc':                   'disc',
+  'disc-outline':           'disc',
+  'gift':                   'gift',
+  'gift-outline':           'gift',
+  'trophy':                 'trophy',
+} satisfies Record<string, IconName>;
+
+export type IoniconAlias = keyof typeof IONICON_ALIASES;
 
 // ───────────────────────────────────────────────────────────────────────────
 // Maps — size, hit-slop, color resolution
@@ -222,11 +370,35 @@ export type IconName = keyof typeof REGISTRY;
 const SIZE_MAP: Record<IconSize, number> = T.icon.sizes as any;
 const HIT_SLOP_MAP: Record<IconSize, number> = T.icon.hitSlop as any;
 
+const COLOR_ROLES: Set<string> = new Set(Object.keys(T.icon.colors));
+
 // Resolve семантической роли → palette token → hex (per mode).
-const resolveColor = (role: IconColor, mode: 'light' | 'dark'): string => {
-  const tokenKey = T.icon.colors[role];
+// Если color — не семантическая роль, а raw-строка (hex/rgb) — отдаём как есть.
+const resolveColor = (color: IconColor | string, mode: 'light' | 'dark'): string => {
+  if (!COLOR_ROLES.has(color)) return color; // raw hex/rgb passthrough
+  const tokenKey = T.icon.colors[color as IconColor];
   const swatch = T.palette[tokenKey as keyof typeof T.palette];
   return swatch[mode];
+};
+
+// Перцептивная светлота: sRGB relative luminance, кат-офф 0.78. Используется
+// для отключения halo на белых/околобелых иконках (см. Icon component).
+const isLightHex = (input: string): boolean => {
+  if (!input || input[0] !== '#') return false;
+  let hex = input.slice(1);
+  if (hex.length === 3) {
+    hex = hex
+      .split('')
+      .map((c) => c + c)
+      .join('');
+  }
+  if (hex.length !== 6) return false;
+  const r = parseInt(hex.slice(0, 2), 16) / 255;
+  const g = parseInt(hex.slice(2, 4), 16) / 255;
+  const b = parseInt(hex.slice(4, 6), 16) / 255;
+  if ([r, g, b].some(Number.isNaN)) return false;
+  const lum = 0.2126 * r + 0.7152 * g + 0.0722 * b;
+  return lum > 0.78;
 };
 
 // ───────────────────────────────────────────────────────────────────────────
@@ -248,12 +420,22 @@ export const Icon: React.FC<IconProps> = ({
 
   const resolvedSize = typeof size === 'number' ? size : SIZE_MAP[size];
 
-  const effectiveColor: IconColor = variant === 'disabled' ? 'disabled' : color;
+  // Resolve name через alias-таблицу если передано legacy Ionicon-имя.
+  const resolvedName: IconName =
+    name in REGISTRY
+      ? (name as IconName)
+      : (IONICON_ALIASES[name as IoniconAlias] ?? ('plus' as IconName));
+
+  // disabled-variant перебивает color на 'disabled'-роль.
+  const effectiveColor: IconColor | string =
+    variant === 'disabled' ? 'disabled' : color;
   const resolvedColor = resolveColor(effectiveColor, mode);
 
   // Resolve weight: явный override > variant-маппинг.
+  // Default weight = `fill` (твёрдый silhouette) — пользовательский выбор после
+  // duotone-итерации. Filled читается контрастнее на rendered экранах.
   const resolvedWeight: IconWeight =
-    weightOverride ?? (variant === 'active' ? 'fill' : 'regular');
+    weightOverride ?? (variant === 'disabled' ? 'duotone' : 'fill');
 
   // Auto hitSlop: пресет → таблица; число → высчитать так, чтобы общий
   // touch target был ≥ 44pt.
@@ -267,16 +449,79 @@ export const Icon: React.FC<IconProps> = ({
   // scope этого файла наш собственный `IconProps` shadowит Phosphor's, и JSX
   // type-check падает на name conflict. Cast безопасен: REGISTRY типизирован
   // через `satisfies Record<string, IconComponent>` выше.
-  const Component = REGISTRY[name] as React.ComponentType<any>;
+  const Component = REGISTRY[resolvedName] as React.ComponentType<any>;
+
+  // ── Halo glow (Polish Vertushka v4 — единый визуальный маркер набора) ──
+  //
+  // Под каждой иконкой рендерится её же копия большего размера и пониженной
+  // прозрачностью, плюс iOS-shadow на этом слое. На iOS shadow-radius
+  // даёт настоящий гауссовский blur вокруг alpha-канала SVG; на Android
+  // получаем «layered halo» (масштабированная копия за иконкой).
+  //
+  // Halo показывается на всех «контентных» размерах. Порог 14pt отсекает
+  // совсем мелкие inline-маркеры (badge dots, ≤12pt), где glow смазывает форму.
+  //
+  // Дополнительно подавляем halo для СВЕТЛЫХ цветов (white-ish иконки
+  // на тёмном фоне — например, dots/X внутри cobalt-кнопки): белый halo
+  // на белой иконке расплывается в кашу и слипает близкорасположенные
+  // элементы (3 точки, например). Считаем перцептивную светлоту через
+  // относительную яркость sRGB; > 0.78 → пропускаем halo.
+  const isLightColor = isLightHex(resolvedColor);
+  const showHalo =
+    resolvedSize >= 14 && variant !== 'disabled' && !isLightColor;
+  // Halo по референсу Polish v4 (cobalt X / dots с мягкой violet-аурой).
+  // scale 1.16 + opacity 0.28; iOS shadow на backdrop-слое (ниже) даёт
+  // gaussian blur. Светлые цвета halo пропускают (см. isLightColor выше),
+  // потому что белый-на-белом halo превращает 3 точки в одно пятно.
+  const haloScale = 1.16;
+  const haloOpacity = 0.28;
+  const haloSize = Math.round(resolvedSize * haloScale);
+
+  const containerStyle: ViewStyle = {
+    width: resolvedSize,
+    height: resolvedSize,
+    alignItems: 'center',
+    justifyContent: 'center',
+  };
 
   return (
-    <Component
-      size={resolvedSize}
-      color={resolvedColor}
-      weight={resolvedWeight}
-      hitSlop={computedHitSlop}
+    <View
+      style={[containerStyle, style]}
+      hitSlop={
+        computedHitSlop
+          ? {
+              top: computedHitSlop,
+              bottom: computedHitSlop,
+              left: computedHitSlop,
+              right: computedHitSlop,
+            }
+          : undefined
+      }
       testID={testID}
-      style={style as any}
-    />
+    >
+      {showHalo ? (
+        <View
+          pointerEvents="none"
+          style={{
+            position: 'absolute',
+            opacity: haloOpacity,
+            shadowColor: resolvedColor,
+            shadowOffset: { width: 0, height: 0 },
+            // Целевой look — мягкий gaussian aura, как на референсе.
+            // shadowOpacity 0.75 + radius ≈ 0.32×size = заметная корона
+            // вокруг alpha-канала SVG, но всё ещё лёгкая.
+            shadowOpacity: 0.75,
+            shadowRadius: Math.max(5, resolvedSize * 0.32),
+          }}
+        >
+          <Component size={haloSize} color={resolvedColor} weight="fill" />
+        </View>
+      ) : null}
+      <Component
+        size={resolvedSize}
+        color={resolvedColor}
+        weight={resolvedWeight}
+      />
+    </View>
   );
 };

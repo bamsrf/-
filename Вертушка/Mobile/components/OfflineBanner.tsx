@@ -4,7 +4,7 @@
 import { useEffect, useState } from 'react';
 import { View, Text, StyleSheet } from 'react-native';
 import NetInfo from '@react-native-community/netinfo';
-import { Ionicons } from '@expo/vector-icons';
+import { Icon } from '@/components/ui';
 import { Colors, Typography, Spacing } from '../constants/theme';
 
 export function OfflineBanner() {
@@ -21,7 +21,7 @@ export function OfflineBanner() {
 
   return (
     <View style={styles.banner}>
-      <Ionicons name="cloud-offline-outline" size={16} color={Colors.background} />
+      <Icon name="cloud-offline-outline" size={16} color={Colors.background} />
       <Text style={styles.text}>Нет подключения к интернету</Text>
     </View>
   );

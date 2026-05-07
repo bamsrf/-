@@ -14,7 +14,7 @@ import {
 } from 'react-native';
 import { toast } from '../lib/toast';
 import { Image } from 'expo-image';
-import { Ionicons } from '@expo/vector-icons';
+import { Icon } from '@/components/ui';
 import Toast from 'react-native-toast-message';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useCollectionStore } from '../lib/store';
@@ -86,7 +86,7 @@ export function AddRecordsModal({
           <Image source={coverUrl} style={styles.cover} contentFit="cover" cachePolicy="disk" />
         ) : (
           <View style={[styles.cover, styles.coverPlaceholder]}>
-            <Ionicons name="disc-outline" size={20} color={Colors.textMuted} />
+            <Icon name="disc-outline" size={20} color={Colors.textMuted} />
           </View>
         )}
 
@@ -108,11 +108,11 @@ export function AddRecordsModal({
         <View style={styles.checkContainer}>
           {isInFolder ? (
             <View style={styles.inFolderBadge}>
-              <Ionicons name="checkmark" size={14} color={Colors.textMuted} />
+              <Icon name="checkmark" size={14} color={Colors.textMuted} />
             </View>
           ) : (
             <View style={[styles.checkbox, isSelected && styles.checkboxSelected]}>
-              {isSelected && <Ionicons name="checkmark" size={14} color={Colors.background} />}
+              {isSelected && <Icon name="checkmark" size={14} color={Colors.background} />}
             </View>
           )}
         </View>
@@ -134,7 +134,7 @@ export function AddRecordsModal({
             onPress={handleClose}
             hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
           >
-            <Ionicons name="close" size={24} color={Colors.textSecondary} />
+            <Icon name="close" size={24} color={Colors.textSecondary} />
           </TouchableOpacity>
           <Text style={styles.headerTitle}>Добавить пластинки</Text>
           <View style={{ width: 24 }} />
@@ -147,7 +147,7 @@ export function AddRecordsModal({
           </View>
         ) : collectionItems.length === 0 ? (
           <View style={styles.centered}>
-            <Ionicons name="disc-outline" size={48} color={Colors.textMuted} />
+            <Icon name="disc-outline" size={48} color={Colors.textMuted} />
             <Text style={styles.emptyText}>Коллекция пуста</Text>
           </View>
         ) : (

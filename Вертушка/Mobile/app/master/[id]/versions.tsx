@@ -12,7 +12,7 @@ import {
   TouchableOpacity,
 } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { Ionicons } from '@expo/vector-icons';
+import { Icon } from '@/components/ui';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Header } from '../../../components/Header';
 import { VersionCard } from '../../../components/VersionCard';
@@ -143,7 +143,7 @@ export default function VersionsScreen() {
         ListEmptyComponent={
           !isLoading ? (
             <View style={styles.emptyContainer}>
-              <Ionicons name="disc-outline" size={64} color={Colors.textMuted} />
+              <Icon name="disc-outline" size={64} color={Colors.textMuted} />
               <Text style={styles.emptyText}>
                 {activeFilter === 'all' ? 'Версии не найдены' : 'Нет версий в этом формате'}
               </Text>

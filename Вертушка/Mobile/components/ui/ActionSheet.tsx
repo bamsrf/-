@@ -11,13 +11,13 @@ import {
   TouchableWithoutFeedback,
   Animated,
 } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
+import { Icon } from '@/components/ui';
 import { Colors, Typography, Spacing, BorderRadius } from '../../constants/theme';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 export interface ActionSheetAction {
   label: string;
-  icon: keyof typeof Ionicons.glyphMap;
+  icon: string;
   onPress: () => void;
   destructive?: boolean;
 }
@@ -90,7 +90,7 @@ export function ActionSheet({ visible, actions, onClose }: ActionSheetProps) {
                   onPress={() => handleActionPress(action)}
                   activeOpacity={0.7}
                 >
-                  <Ionicons
+                  <Icon
                     name={action.icon}
                     size={22}
                     color={action.destructive ? Colors.error : Colors.text}

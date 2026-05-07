@@ -10,7 +10,7 @@ import {
   Dimensions,
 } from 'react-native';
 import { Image } from 'expo-image';
-import { Ionicons } from '@expo/vector-icons';
+import { Icon } from '@/components/ui';
 import { Colors, Typography, BorderRadius, Shadows, Spacing } from '../constants/theme';
 import { ArtistSearchResult } from '../lib/types';
 
@@ -44,7 +44,7 @@ function ArtistCardComponent({ artist, onPress }: ArtistCardProps) {
           />
         ) : (
           <View style={styles.placeholderImage}>
-            <Ionicons name="person-outline" size={48} color={Colors.textMuted} />
+            <Icon name="person-outline" size={48} color={Colors.textMuted} />
           </View>
         )}
       </View>

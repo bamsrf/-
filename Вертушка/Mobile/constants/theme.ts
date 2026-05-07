@@ -175,10 +175,10 @@ export const T = {
     library: 'phosphor-react-native' as const,
     customPath: 'Mobile/components/icons/hero/' as const,
 
-    // Стиль: outline default, filled только для active state.
-    // Strokes scaled per size для оптического баланса.
+    // Стиль: duotone default (Phosphor two-tone — мягкий характер), fill только
+    // для active state. Решение принято после frosted-glass revision-итераций.
     style: {
-      weight: 'regular' as const,
+      weight: 'duotone' as const,
       strokeWidth: 2,
       linecap: 'round' as const,
       linejoin: 'round' as const,
@@ -214,28 +214,15 @@ export const T = {
       'star-active',   // разблокированная ачивка
     ] as const,
 
-    // Rarity markers (вторичный канал; primary остаётся аура из RarityAura).
-    rarity: {
-      markerSize: 16,
-      markerOffset: 8,
-      featureSize: 20,
-      tiers: {
-        collectible: { icon: 'rarity-crown'   as const, color: '#F4D27A', timing: 8000 },
-        limited:     { icon: 'rarity-diamond' as const, color: '#C0C0D8', timing: 4000 },
-        hot:         { icon: 'rarity-flame'   as const, color: '#FF5E3A', timing: 2000 },
-      },
-    },
+    // Rarity-маркеры удалены — пользователь не использует иконные маркеры,
+    // тиры выражаются исключительно через RarityAura.tsx (свечение + пульсация).
 
-    // Custom hero set — 8 SVG (placeholder реализация в components/icons/hero/).
-    // Финальные SVG приходят отдельной поставкой от дизайнера.
+    // Custom hero set — 5 иконок-обёрток в components/icons/hero/index.tsx.
     customSet: [
       { name: 'disc-grooves',   sizes: [16, 24, 48], use: 'Tab bar, empty state, onboarding' },
-      { name: 'gift-vinyl',     sizes: [20, 24],     use: 'Profile, GiftGivenItem, booked badge' },
+      { name: 'gift-vinyl',     sizes: [20, 24],     use: 'Profile, GiftGivenItem, booked badge. НЕ использовать в вишлист-сценариях.' },
       { name: 'trophy-disc',    sizes: [20, 32, 48], use: 'Achievements, top collector' },
       { name: 'scan-target',    sizes: [24, 48],     use: 'Tab bar Сканер' },
-      { name: 'rarity-crown',   sizes: [12, 16],     use: 'Маркер тира Коллекционка' },
-      { name: 'rarity-diamond', sizes: [12, 16],     use: 'Маркер тира Лимитка' },
-      { name: 'rarity-flame',   sizes: [12, 16],     use: 'Маркер тира HOT' },
       { name: 'vinyl-label',    sizes: [24, 32],     use: 'Центр VinylSpinner' },
     ] as const,
   },
@@ -245,33 +232,47 @@ export const T = {
 // Legacy aliases — мигрируются в B3/H1
 // ───────────────────────────────────────────────────────────────────────────
 
+// Legacy `Colors` экспорт — pristine Blue Gradient Edition (commit 0fe5f85).
+// Это финальные значения для существующих компонентов и экранов: тёплая
+// сине-розовая палитра (royalBlue / lavender / softPink + синяя cardShadow),
+// благодаря которой фон #FAFBFF читается как голубоватый, а не белый.
+//
+// НОВАЯ B1 v2 палитра (navy/cobalt/ember/ivory) живёт в `T.palette` выше и
+// используется через Icon API и будущую миграцию (B3/H1). Мигрировать
+// существующие компоненты на T.* — задача B3, не сейчас.
 export const Colors = {
-  deepNavy:     L(T.palette['brand.navy']),         // '#0B1438'
-  royalBlue:    L(T.palette['brand.cobalt']),       // '#2A4BD7'
-  electricBlue: L(T.palette['brand.cobaltSoft']),   // '#5C7AE8'
-  periwinkle:   L(T.palette['brand.cobaltSoft']),
-  lavender:     L(T.palette['accent.ivory']),       // '#F4EEE6'
-  softPink:     L(T.palette['accent.ember']),       // '#E85A2A'
-  blushPink:    L(T.palette['accent.ivorySoft']),   // '#FBF5EA'
+  // Основная градиентная палитра — Blue Gradient v1
+  deepNavy:     '#0A0B3B',
+  royalBlue:    '#3B4BF5',
+  electricBlue: '#5B6AF5',
+  periwinkle:   '#8B9CF7',
+  lavender:     '#C5B8F2',
+  softPink:     '#F0C4D8',
+  blushPink:    '#F8E4EE',
 
-  background:   L(T.palette['bg']),                  // '#FAFBFF' — фон экранов, индикаторы сегментов
-  surface:      L(T.palette['bg.elevated']),         // '#F0F2FA' — карточки, контейнеры сегментов, inputs
-  surfaceHover: L(T.palette['surface.hover']),       // '#E8EBFA'
+  // Нейтральные
+  background:   '#FAFBFF',
+  surface:      '#F0F2FA',
+  surfaceHover: '#E8EBFA',
 
-  text:          L(T.palette['text']),               // '#0E121C'
-  textSecondary: L(T.palette['text.secondary']),     // '#4D5263'
-  textMuted:     L(T.palette['text.muted']),         // '#6B7080'
+  // Текст
+  text:          '#0A0B3B',
+  textSecondary: '#5A5F8A',
+  textMuted:     '#9A9EBF',
 
-  error:   L(T.palette['state.error']),
-  success: L(T.palette['state.success']),
-  warning: L(T.palette['state.warning']),
+  // Состояния
+  error:   '#E5484D',
+  success: '#30A46C',
+  warning: '#F5A623',
 
-  border:  L(T.palette['border']),
-  divider: L(T.palette['divider']),
+  // Границы и разделители
+  border:  '#E0E3F0',
+  divider: '#ECEEF7',
 
-  overlay:     L(T.palette['fx.overlay']),
-  cardShadow:  L(T.palette['fx.cardShadow']),
-  glassBg:     L(T.palette['fx.glassBg']),
+  // Специальные
+  overlay:    'rgba(10, 11, 59, 0.5)',
+  cardShadow: 'rgba(59, 75, 245, 0.08)',
+  glassBg:    'rgba(250, 251, 255, 0.85)',
 };
 
 export const Spacing = {
@@ -291,11 +292,12 @@ export const BorderRadius = {
   full: 9999,
 };
 
+// Gradients — pristine Blue Gradient (royalBlue / electricBlue / lavender / softPink).
 export const Gradients = {
-  blue:     [L(T.palette['brand.cobalt']), L(T.palette['brand.cobaltSoft'])] as const,
-  bluePink: [L(T.palette['brand.cobalt']), L(T.palette['brand.cobaltSoft']), L(T.palette['accent.ember'])] as const,
-  blueLight:[L(T.palette['brand.cobaltSoft']), L(T.palette['accent.ivory'])] as const,
-  overlay:  ['transparent', L(T.palette['fx.overlay'])] as const,
+  blue:     ['#3B4BF5', '#5B6AF5'] as const,
+  bluePink: ['#3B4BF5', '#8B9CF7', '#F0C4D8'] as const,
+  blueLight:['#5B6AF5', '#8B9CF7'] as const,
+  overlay:  ['transparent', 'rgba(10, 11, 59, 0.7)'] as const,
 };
 
 // Type scale legacy. heroTitle — RubikMonoOne (был Inter Bold).
@@ -387,11 +389,11 @@ export const Typography = {
   },
 };
 
-// shadowColor должен быть solid hex (RN-iOS умножает на shadowOpacity).
-// rgba-строка из fx.cardShadow для теней не подходит — даёт почти невидимый результат.
-const SHADOW_COLOR = L(T.palette['brand.navy']);     // '#0B1438' solid navy
-const GLOW_COLOR = L(T.palette['brand.cobalt']);
-const GLOW_EMBER_COLOR = L(T.palette['accent.ember']);
+// Shadow color — pristine Blue Gradient (royalBlue), не navy. Вместе с тёплой
+// Colors-палитрой даёт характерный сине-фиолетовый shadow вокруг карточек.
+const SHADOW_COLOR = '#3B4BF5';                         // royalBlue
+const GLOW_COLOR = '#3B4BF5';                           // тоже royalBlue для glow
+const GLOW_EMBER_COLOR = L(T.palette['accent.ember']);  // ember остаётся для B2 hot-rarity
 
 export const Shadows = {
   xs: {
@@ -457,32 +459,33 @@ export const ComponentSizes = {
   iconLg: 32,
 };
 
+// AnimatedGradientPalette — pristine Blue Gradient (royal/lavender/pink-rose loop).
 export const AnimatedGradientPalette = {
   colors: [
-    L(T.palette['brand.cobaltDeep']),
-    L(T.palette['brand.cobalt']),
-    L(T.palette['brand.cobaltSoft']),
-    '#8AA0F0',
-    L(T.palette['accent.ivory']),
-    L(T.palette['accent.ivorySoft']),
-    L(T.palette['accent.ember']),
+    '#2D3E8F',  // Тёмно-синий
+    '#4A6FDB',  // Насыщенный синий
+    '#6B9EF5',  // Средне-синий
+    '#93C4FF',  // Светло-синий
+    '#C8D9F7',  // Очень светло-синий
+    '#E8CEEB',  // Светло-розово-фиолетовый
+    '#F5B5D8',  // Светло-розовый
   ] as const,
   presets: [
-    [L(T.palette['brand.cobaltDeep']), L(T.palette['brand.cobalt']), L(T.palette['brand.cobaltSoft'])],
-    [L(T.palette['brand.cobalt']), L(T.palette['brand.cobaltSoft']), '#8AA0F0'],
-    [L(T.palette['brand.cobaltSoft']), '#8AA0F0', L(T.palette['accent.ivory'])],
-    ['#8AA0F0', L(T.palette['accent.ivory']), L(T.palette['accent.ivorySoft'])],
-    [L(T.palette['accent.ivory']), L(T.palette['accent.ivorySoft']), L(T.palette['accent.ember'])],
-    [L(T.palette['accent.ivorySoft']), L(T.palette['accent.ember']), L(T.palette['brand.cobaltSoft'])],
-    [L(T.palette['accent.ember']), L(T.palette['brand.cobalt']), L(T.palette['brand.cobaltDeep'])],
+    ['#2D3E8F', '#4A6FDB', '#6B9EF5'],
+    ['#4A6FDB', '#6B9EF5', '#93C4FF'],
+    ['#6B9EF5', '#93C4FF', '#C8D9F7'],
+    ['#93C4FF', '#C8D9F7', '#E8CEEB'],
+    ['#C8D9F7', '#E8CEEB', '#F5B5D8'],
+    ['#E8CEEB', '#F5B5D8', '#93C4FF'],
+    ['#F5B5D8', '#6B9EF5', '#2D3E8F'],
   ] as const,
   darkPresets: [
-    [L(T.palette['brand.cobaltDeep']), L(T.palette['brand.cobalt']), '#5B3FA0'],
-    [L(T.palette['brand.cobalt']), '#5B3FA0', '#8B4DA8'],
+    ['#2D3E8F', '#4A6FDB', '#6B5EC2'],
+    ['#4A6FDB', '#6B5EC2', '#5B3FA0'],
+    ['#6B5EC2', '#5B3FA0', '#8B4DA8'],
     ['#5B3FA0', '#8B4DA8', '#C75895'],
-    ['#8B4DA8', '#C75895', L(T.palette['accent.ember'])],
-    ['#C75895', L(T.palette['accent.ember']), L(T.palette['brand.cobalt'])],
-    [L(T.palette['accent.ember']), L(T.palette['brand.cobalt']), L(T.palette['brand.cobaltDeep'])],
+    ['#8B4DA8', '#C75895', '#4A6FDB'],
+    ['#C75895', '#4A6FDB', '#2D3E8F'],
   ] as const,
 };
 
