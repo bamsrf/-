@@ -74,9 +74,13 @@ if [ "$HEALTHY" != "true" ]; then
     exit 1
 fi
 
-# Очистка старых образов
-echo "🧹 Очищаю старые Docker образы..."
+# Очистка старых образов и build cache.
+# image prune -f — снимает dangling-образы (старая версия backend-api после пересборки).
+# builder prune — режет аккумулированный кэш слоёв старше 72h, верхний потолок 500 МБ.
+# Без --volumes / --all — данные пользователей не трогаются.
+echo "🧹 Очищаю старые Docker образы и build cache..."
 docker image prune -f
+docker builder prune -f --filter "until=72h" --keep-storage 500MB
 
 echo -e "${GREEN}✅ Деплой завершён успешно!${NC}"
 
