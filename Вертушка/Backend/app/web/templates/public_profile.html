@@ -1535,9 +1535,11 @@
                     pauseAndResume();
                 }, { passive: true });
 
-                // Desktop hover — пауза пока курсор над рейлом
+                // Desktop — пауза только по клику (mousedown), а не по hover.
+                // Скролл "сквозь" рейл колёсиком теперь не останавливает его.
+                // Mouseleave чистит запланированный resume и продолжает движение.
                 if (window.matchMedia('(hover: hover)').matches) {
-                    rail.addEventListener('mouseenter', pauseNow);
+                    rail.addEventListener('mousedown', pauseNow);
                     rail.addEventListener('mouseleave', scheduleResume);
                 }
 
