@@ -198,16 +198,10 @@
            плюс гарантированная высота под 2 строки, чтобы факт не резался по низу.
            Мобильная версия (≤720px) остаётся без изменений. */
         @media (min-width: 721px) {
-            /* На десктопе hero-text не растягивается на всю ширину — пластинка
-               подъезжает вплотную к плашке, без огромной пустоты в середине. */
-            .hero { justify-content: flex-start; gap: 56px; }
-            .hero-text { flex: 0 1 auto; max-width: 720px; }
-
             .stats-card {
-                padding: 22px 28px 24px;
+                padding: 22px 26px 24px;
                 min-height: 112px;
-                max-width: 720px;
-                min-width: 460px;
+                max-width: 560px;
             }
             .stat-label { font-size: 11px; letter-spacing: 0.10em; }
             .stat-value { font-size: 44px; }
@@ -220,10 +214,6 @@
             .fun-stat { align-items: center; gap: 12px; }
             .fun-stat .icon { width: 30px; height: 30px; font-size: 15px; border-radius: 10px; }
             .fun-stat .text { font-size: 15px; line-height: 1.4; }
-        }
-        @media (min-width: 1024px) {
-            .hero { gap: 72px; }
-            .stats-card { min-width: 560px; max-width: 720px; }
         }
 
         .stats-row {
@@ -1545,33 +1535,10 @@
                     pauseAndResume();
                 }, { passive: true });
 
-                // Desktop hover — пауза только после удержания курсора 200ms,
-                // чтобы скролл колёсиком "сквозь" рейл не останавливал его резко.
-                // Клик мышью — мгновенная пауза без задержки.
+                // Desktop hover — пауза пока курсор над рейлом
                 if (window.matchMedia('(hover: hover)').matches) {
-                    var HOVER_PAUSE_MS = 200;
-                    var hoverPauseTimer = null;
-                    rail.addEventListener('mouseenter', function() {
-                        if (hoverPauseTimer) clearTimeout(hoverPauseTimer);
-                        hoverPauseTimer = setTimeout(function() {
-                            hoverPauseTimer = null;
-                            pauseNow();
-                        }, HOVER_PAUSE_MS);
-                    });
-                    rail.addEventListener('mouseleave', function() {
-                        if (hoverPauseTimer) {
-                            clearTimeout(hoverPauseTimer);
-                            hoverPauseTimer = null;
-                        }
-                        scheduleResume();
-                    });
-                    rail.addEventListener('mousedown', function() {
-                        if (hoverPauseTimer) {
-                            clearTimeout(hoverPauseTimer);
-                            hoverPauseTimer = null;
-                        }
-                        pauseNow();
-                    });
+                    rail.addEventListener('mouseenter', pauseNow);
+                    rail.addEventListener('mouseleave', scheduleResume);
                 }
 
                 // Не двигаем фоном

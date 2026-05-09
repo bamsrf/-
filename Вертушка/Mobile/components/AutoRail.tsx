@@ -107,17 +107,6 @@ export function AutoRail({
     isPaused.value = false;
   }, [isPaused]);
 
-  const handleMouseDown = useCallback(() => {
-    if (!IS_WEB) return;
-    // Клик по витрине — мгновенная пауза, без 200ms hover-задержки.
-    // resume произойдёт по mouse-leave.
-    if (hoverPauseTimer.current) {
-      clearTimeout(hoverPauseTimer.current);
-      hoverPauseTimer.current = null;
-    }
-    isPaused.value = true;
-  }, [isPaused]);
-
   useEffect(() => {
     return () => {
       if (resumeTimer.current) {
@@ -271,11 +260,7 @@ export function AutoRail({
         <View
           style={styles.viewport}
           {...(IS_WEB
-            ? ({
-                onMouseEnter: handleMouseEnter,
-                onMouseLeave: handleMouseLeave,
-                onMouseDown: handleMouseDown,
-              } as object)
+            ? ({ onMouseEnter: handleMouseEnter, onMouseLeave: handleMouseLeave } as object)
             : null)}
         >
           <Animated.View style={[styles.track, animStyle]}>
