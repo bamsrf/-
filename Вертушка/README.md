@@ -128,6 +128,22 @@
 
 ---
 
+## Принципы работы с Discogs API
+
+Discogs hard-cap: **60 req/min** для аутентифицированных запросов. Чтобы UI не упирался в этот потолок, придерживаемся следующих правил:
+
+1. **Никогда не делать N+1 запросов в синхронной части эндпоинта.** Если экран показывает список из N релизов, эндпоинт обязан укладываться в O(1)–O(2) Discogs-запросов. Всё, что требует обращения к `/releases/{id}` per-item, уезжает в `BackgroundTasks`.
+2. **Использовать всё, что Discogs уже отдаёт в ответе.** В `/masters/{id}/versions` лежат `stats.community.in_collection / in_wantlist` и `major_formats` — этого хватает на `is_hot` и `is_limited` без доп. запросов.
+3. **Дешёвые флаги — сразу, дорогие — фоном.** `is_canon` из `master.main_release_id`, `is_limited` из format-токенов, `is_hot` из `stats.community` отдаются юзеру за < 3 сек. `is_collectible` (требует marketplace `price_stats`) досчитывается в фоне и пишется в `master_versions_enriched` Redis-кэш.
+4. **Single-flight на фоновое обогащение.** Redis `set_nx`-lock не даёт двум запросам на один и тот же мастер запустить enrichment параллельно — иначе сжигаем rate-limit вдвое быстрее без пользы.
+5. **Watchdog везде.** `asyncio.wait_for(timeout=25)` на синхронной части (быстрый 503 вместо 60s axios timeout) и `timeout=120` на фоновом обогащении (не висим вечно при медленном Discogs).
+6. **Многослойный кэш.** Сырые ответы Discogs (`release` 7д, `master` 7д, `master_versions` 3д) + enriched-ответы по эндпоинтам (`master_versions_enriched` 3д). Локальная БД `Record` — самый быстрый источник для виденных релизов.
+7. **Token-bucket с приоритетами.** `SEARCH > DETAIL > SCAN > ENRICHMENT > BATCH` — пользователь, ждущий поиска прямо сейчас, не стоит за фоновым backfill'ом.
+
+Подробности: [`Backend/app/services/rate_limiter.py`](Backend/app/services/rate_limiter.py), [`Backend/app/services/cache.py`](Backend/app/services/cache.py), [`Backend/app/api/records.py`](Backend/app/api/records.py).
+
+---
+
 ## Запуск локально
 
 ### Backend
@@ -259,6 +275,7 @@ docker compose stop metabase  # когда закончил
 **Инфра**
 - Скрипт зеркалирования БД в Supabase для аналитики, view'ы.
 - ROADMAP.md (M1–M10) + auto-sync changelog через GitHub Actions.
+- Уход от N+1 в `/masters/{id}/versions`: `is_hot` теперь считается из `stats.community` master-versions response, `is_collectible` обогащается фоном через `BackgroundTasks` + single-flight Redis-lock. Холодный путь 60+ сек → < 3 сек.
 
 ---
 
