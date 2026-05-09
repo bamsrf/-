@@ -110,6 +110,22 @@ class RedisCache:
         except Exception:
             return False
 
+    async def set_nx(self, namespace: str, key: str, value: Any, ttl: int) -> bool:
+        """SET if Not eXists с TTL. Возвращает True если ключ создан, False
+        если уже существовал. Используется как single-flight lock.
+        Если Redis недоступен — возвращает True (фоновые таски просто
+        не имеют защиты от дублирования; это лучше, чем не работать).
+        """
+        if not self._available:
+            return True
+        try:
+            raw = orjson.dumps(value)
+            result = await self._pool.set(self._key(namespace, key), raw, ex=ttl, nx=True)
+            return bool(result)
+        except Exception:
+            logger.warning("Redis SET NX error: %s:%s", namespace, key, exc_info=True)
+            return True
+
     async def health(self) -> dict:
         """Статус Redis для /health endpoint."""
         if not self._available:

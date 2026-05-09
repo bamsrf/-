@@ -892,6 +892,19 @@ class DiscogsService:
 
             major_formats = item.get("major_formats", [])
 
+            # is_hot из stats.community прямо в master-versions response
+            # (without N+1 на /releases/{id}). Discogs отдаёт in_collection
+            # и in_wantlist по каждой версии.
+            stats = item.get("stats") or {}
+            community = stats.get("community") or {}
+            have = int(community.get("in_collection") or 0)
+            want = int(community.get("in_wantlist") or 0)
+            is_hot = (
+                have >= self.HOT_MIN_HAVE
+                and have > 0
+                and (want / have) >= self.HOT_WANT_HAVE_RATIO
+            )
+
             results.append(MasterVersion(
                 release_id=str(item.get("id", "")),
                 title=item.get("title", ""),
@@ -903,6 +916,7 @@ class DiscogsService:
                 major_formats=major_formats if major_formats else [],
                 thumb_image_url=item.get("thumb"),
                 cover_image_url=self._thumb_to_cover(item.get("thumb")),
+                is_hot=is_hot,
             ))
 
         pagination = data.get("pagination", {})
