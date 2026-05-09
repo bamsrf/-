@@ -42,6 +42,8 @@ const HORIZONTAL_PADDING = 20;
 const RAIL_COVER = 108;
 const ITEM_GAP = 12;
 const FULL_LOOP_DURATION_MS = 30000;
+const HOVER_PAUSE_DELAY_MS = 200;
+const IS_WEB = Platform.OS === 'web';
 
 interface AutoRailProps {
   title: string;
@@ -73,6 +75,7 @@ export function AutoRail({
   }, [rowWidth, halfWidthSV]);
 
   const resumeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const hoverPauseTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const scheduleResume = useCallback(() => {
     if (resumeTimer.current) clearTimeout(resumeTimer.current);
@@ -82,11 +85,37 @@ export function AutoRail({
     }, 2500);
   }, [isPaused]);
 
+  const handleMouseEnter = useCallback(() => {
+    if (!IS_WEB) return;
+    if (hoverPauseTimer.current) clearTimeout(hoverPauseTimer.current);
+    hoverPauseTimer.current = setTimeout(() => {
+      hoverPauseTimer.current = null;
+      isPaused.value = true;
+    }, HOVER_PAUSE_DELAY_MS);
+  }, [isPaused]);
+
+  const handleMouseLeave = useCallback(() => {
+    if (!IS_WEB) return;
+    if (hoverPauseTimer.current) {
+      clearTimeout(hoverPauseTimer.current);
+      hoverPauseTimer.current = null;
+    }
+    if (resumeTimer.current) {
+      clearTimeout(resumeTimer.current);
+      resumeTimer.current = null;
+    }
+    isPaused.value = false;
+  }, [isPaused]);
+
   useEffect(() => {
     return () => {
       if (resumeTimer.current) {
         clearTimeout(resumeTimer.current);
         resumeTimer.current = null;
+      }
+      if (hoverPauseTimer.current) {
+        clearTimeout(hoverPauseTimer.current);
+        hoverPauseTimer.current = null;
       }
     };
   }, []);
@@ -118,6 +147,9 @@ export function AutoRail({
         .failOffsetY([-12, 12])
         .onBegin(() => {
           'worklet';
+          // На вебе пауза управляется hover-таймером, а не нажатием:
+          // mouse-down не должен мгновенно останавливать карусель.
+          if (IS_WEB) return;
           isPaused.value = true;
           cancelAnimation(tx);
         })
@@ -125,6 +157,12 @@ export function AutoRail({
           'worklet';
           isPanning.value = true;
           startTx.value = tx.value;
+          if (IS_WEB) {
+            // Реальный drag начался — теперь пауза нужна, чтобы авто-кадр
+            // не дрался с translation и инерцией.
+            isPaused.value = true;
+            cancelAnimation(tx);
+          }
         })
         .onUpdate((e) => {
           'worklet';
@@ -219,7 +257,12 @@ export function AutoRail({
         <Text style={styles.railSub}>{subtitle}</Text>
       </View>
       <GestureDetector gesture={panGesture}>
-        <View style={styles.viewport}>
+        <View
+          style={styles.viewport}
+          {...(IS_WEB
+            ? ({ onMouseEnter: handleMouseEnter, onMouseLeave: handleMouseLeave } as object)
+            : null)}
+        >
           <Animated.View style={[styles.track, animStyle]}>
             <View style={styles.row} onLayout={handleRowLayout}>
               {items.map((r, i) => renderCard(r, `a-${r.id}-${i}`))}

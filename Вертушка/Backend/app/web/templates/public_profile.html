@@ -194,6 +194,28 @@
             color: var(--cobalt); font-weight: 700;
             font-variant-numeric: tabular-nums;
         }
+        /* Desktop-only: чуть просторнее карточка стоимости и крупнее текст fun-stat,
+           плюс гарантированная высота под 2 строки, чтобы факт не резался по низу.
+           Мобильная версия (≤720px) остаётся без изменений. */
+        @media (min-width: 721px) {
+            .stats-card {
+                padding: 22px 26px 24px;
+                min-height: 112px;
+                max-width: 560px;
+            }
+            .stat-label { font-size: 11px; letter-spacing: 0.10em; }
+            .stat-value { font-size: 44px; }
+            .stat-value .currency { font-size: 26px; }
+            .fun-stats-wrap {
+                min-height: 56px;
+                margin-top: 16px;
+                overflow: visible;
+            }
+            .fun-stat { align-items: center; gap: 12px; }
+            .fun-stat .icon { width: 30px; height: 30px; font-size: 15px; border-radius: 10px; }
+            .fun-stat .text { font-size: 15px; line-height: 1.4; }
+        }
+
         .stats-row {
             display: flex; gap: 28px; margin-top: 22px; flex-wrap: wrap;
         }
