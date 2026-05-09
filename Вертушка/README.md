@@ -156,8 +156,81 @@ npm start
 ## Продакшен
 
 - **API**: https://api.vinyl-vertushka.ru/api
-- **Хост**: VPS Ubuntu (`85.198.85.12`), Docker Compose + Nginx
-- **Деплой**: `git push && ssh deploy@85.198.85.12 'cd ~/vertushka && bash Backend/scripts/deploy.sh'`
+- **Хост**: Beget VPS Ubuntu 24.04 (`85.198.85.12`, 8.7 ГБ диск, 10 ГБ тариф)
+- **Стек**: Docker Compose (`docker-compose.prod.yml`) + Nginx + 5 контейнеров: api, scheduler, db (Postgres 16), redis, nginx. Metabase убран с прода 2026-05-09 — поднимается локально по требованию.
+
+### Деплой
+
+**Стандартный путь — одна команда:**
+```bash
+git push origin main
+ssh deploy@85.198.85.12 'bash ~/vertushka/Вертушка/Backend/scripts/deploy.sh'
+```
+
+`deploy.sh` ([Backend/scripts/deploy.sh](Backend/scripts/deploy.sh)) делает: git pull → pre-flight check свободного места (нужно >1 ГБ, иначе сам почистит) → build api+scheduler из общего Dockerfile → миграции → up -d с **`--force-recreate --no-deps api scheduler`** → healthcheck `/health` 60 сек → `image prune` + `builder prune --reserved-space 500MB`.
+
+### Бэкап БД
+
+Перед любой потенциально опасной операцией (миграция новой схемы, чистка volume, сомнительный SQL):
+```bash
+ssh deploy@85.198.85.12 'bash ~/vertushka/Вертушка/Backend/scripts/backup.sh'
+# дамп → ~/backups/vertushka_YYYYMMDD_HHMMSS.sql.gz, хранится 7 дней
+```
+
+### Откат
+
+Если деплой испортил api:
+```bash
+# 1. вернуть код:
+ssh deploy@85.198.85.12 'cd ~/vertushka && git reset --hard <предыдущий-commit-sha>'
+# 2. пересобрать:
+ssh deploy@85.198.85.12 'bash ~/vertushka/Вертушка/Backend/scripts/deploy.sh'
+```
+Если миграция испортила БД — восстановить из дампа:
+```bash
+ssh deploy@85.198.85.12 'gunzip -c ~/backups/vertushka_<timestamp>.sql.gz | docker exec -i vertushka_db psql -U <user> -d vertushka'
+```
+
+### Disk hygiene (защита от разрастания)
+
+Активна автоматически — ничего регулярно не делать:
+- **Лимит логов всех контейнеров** — 30 МБ rolling buffer (`/etc/docker/daemon.json`).
+- **journald** — `SystemMaxUse=200M` (`/etc/systemd/journald.conf`).
+- **Weekly auto-prune** — воскресенье 04:00 UTC (`/etc/cron.d/vertushka-disk-cleanup`): `docker system prune -af --filter until=336h` + `apt-get clean`.
+- **Disk-alert** — каждые 30 мин, лог `/var/log/disk-alert.log` если `/` >80%.
+- **Cover cache cap** — `COVERS_MAX_CACHE_MB=500` в `.env.prod`, LRU-cleanup ежедневно в 03:00.
+
+Проверить состояние диска:
+```bash
+ssh deploy@85.198.85.12 'df -h / && docker system df && tail -5 /var/log/disk-alert.log'
+```
+
+### Локальный Metabase для аналитики
+
+```bash
+cd Backend && docker compose up -d metabase
+# http://localhost:3000
+docker compose stop metabase  # когда закончил
+```
+
+### Правила работы с продом
+
+✅ **Можно**:
+- Запускать `bash deploy.sh` — он сам проверяет место, бэкапит, делает healthcheck.
+- `docker image prune -f`, `docker container prune -f`, `docker builder prune -af` — чистят только мусор.
+- Любые правки в `docker-compose.prod.yml` — сервис, env, healthcheck, ports.
+
+❌ **Нельзя без явного намерения** (data loss):
+- `docker system prune` **с флагом `--volumes`** — удалит всю БД, обложки, redis-кэш.
+- `docker compose down -v` — то же самое (флаг `-v` удаляет volume).
+- `docker volume rm backend_postgres_data | backend_uploads_data` — без бэкапа.
+- `git reset --hard` без предварительного `git stash` локальных правок на сервере.
+
+⚠️ **Если что-то добавляешь в стек**:
+- Новый сервис → правь **И** `docker-compose.prod.yml`, **И** dev `docker-compose.yml`.
+- Если сервис должен светиться через nginx — добавь server-блок в [Backend/nginx/nginx.conf](Backend/nginx/nginx.conf), подними SSL через certbot.
+- Если сервис собирается из своего Dockerfile — добавь его в `build` секцию `deploy.sh` (сейчас билдятся `api scheduler`).
+- Если сервис должен пересоздаваться при деплое — добавь его в `--force-recreate --no-deps` в `deploy.sh`.
 
 ---
 
