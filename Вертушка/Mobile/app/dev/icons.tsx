@@ -83,7 +83,7 @@ export default function IconsGalleryScreen() {
       {/* Header */}
       <View style={styles.header}>
         <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
-          <Icon name="arrow-left" size="md" color="primary" />
+          <Icon name="arrow-left" size="md" color="brand" />
         </TouchableOpacity>
         <View style={{ flex: 1 }}>
           <Text style={styles.title}>Icons gallery</Text>

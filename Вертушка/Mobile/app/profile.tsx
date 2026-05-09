@@ -22,6 +22,7 @@ import * as Clipboard from 'expo-clipboard';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
 import { Icon } from '@/components/ui';
+import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuthStore, useCollectionStore, useOnboardingStore, useFollowStore, useGiftStore } from '../lib/store';
 import { useTourTarget } from '../lib/useTourTarget';
@@ -285,7 +286,7 @@ export default function ProfileScreen() {
       <View style={styles.header}>
         <AnimatedGradientText style={Typography.heroTitle}>Профиль</AnimatedGradientText>
         <TouchableOpacity onPress={handleClose} style={styles.closeButton}>
-          <Icon name="close" size={28} color="brand" />
+          <Ionicons name="close" size={28} color={Colors.royalBlue} />
         </TouchableOpacity>
       </View>
 
@@ -505,7 +506,7 @@ export default function ProfileScreen() {
             onPress={() => router.push('/settings/wishlists')}
           >
             <Icon name="gift-outline" size={24} color={Colors.royalBlue} />
-            <Text style={styles.settingsItemText}>Вишлисты</Text>
+            <Text style={styles.settingsItemText}>Бронирования</Text>
           </TouchableOpacity>
 
           <TouchableOpacity
