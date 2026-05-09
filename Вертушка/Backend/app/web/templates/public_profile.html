@@ -650,6 +650,11 @@
             color: var(--slate); cursor: pointer; font-family: inherit; transition: background 0.15s;
         }
         .bs-copy-btn:hover { background: rgba(27,29,38,0.06); }
+        .bs-cancel-action {
+            display: flex; align-items: center; justify-content: center;
+            text-decoration: none;
+        }
+        .bs-cancel-action:hover { transform: translateY(-1px); }
         .rp-footer {
             text-align: center; font-family: 'JetBrains Mono', monospace;
             font-size: 9.5px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--mute);
@@ -1219,15 +1224,11 @@
                 <div class="rp-title" id="bsTitle"></div>
                 <div class="bs-check">🎁</div>
                 <div class="bs-message">Подарок забронирован!</div>
-                <div class="bs-sub">Подтверждение отправлено на email. Бронь действует 60 дней.</div>
-                <div class="bs-cancel-row">
-                    <div class="bs-cancel-lbl">Ссылка для отмены</div>
-                    <div class="bs-cancel-link-wrap">
-                        <a id="bsCancelLink" class="bs-cancel-link" href="#" target="_blank" rel="noopener"></a>
-                        <button class="bs-copy-btn" onclick="copyCancel()">Скопировать</button>
-                    </div>
+                <div class="bs-sub">Подтверждение и кнопка для отмены отправлены на email. Бронь действует 60 дней.</div>
+                <div class="modal-actions">
+                    <a id="bsCancelLink" class="btn-ghost bs-cancel-action" href="#" target="_blank" rel="noopener">Отменить бронь</a>
+                    <button class="btn-primary" onclick="closeBookingSuccess()">Закрыть</button>
                 </div>
-                <button class="btn-primary" style="width:100%" onclick="closeBookingSuccess()">Закрыть</button>
             </div>
         </div>
     </div>
@@ -1726,9 +1727,7 @@
             document.getElementById('bsArtist').textContent = artist || '';
             document.getElementById('bsTitle').textContent  = title  || '';
             var cancelUrl = 'https://vinyl-vertushka.ru/cancel/' + bookingData.id + '?token=' + bookingData.cancel_token;
-            var linkEl = document.getElementById('bsCancelLink');
-            linkEl.href = cancelUrl;
-            linkEl.textContent = cancelUrl;
+            document.getElementById('bsCancelLink').href = cancelUrl;
             _bsReloadOnClose = true;
             if (!bookingSuccessModal.classList.contains('active')) {
                 bookingSuccessModal.classList.add('active');
@@ -1740,14 +1739,6 @@
             bookingSuccessModal.classList.remove('active');
             unlockBodyScroll();
             if (_bsReloadOnClose) { _bsReloadOnClose = false; location.reload(); }
-        }
-        function copyCancel() {
-            var url = document.getElementById('bsCancelLink').href;
-            navigator.clipboard && navigator.clipboard.writeText(url).then(function() {
-                var btn = event.target;
-                btn.textContent = 'Скопировано!';
-                setTimeout(function(){ btn.textContent = 'Скопировать'; }, 2000);
-            });
         }
         bookingSuccessModal && bookingSuccessModal.addEventListener('click', function(e) {
             if (e.target === bookingSuccessModal) closeBookingSuccess();
