@@ -538,6 +538,12 @@ async def public_profile_page(
         except Exception:
             return 0
 
+    # Витрина "Самые дорогие" должна идти в том же порядке, что отображается:
+    # _get_top_expensive сортирует по estimated_price_median (USD-база), а
+    # шаблон рисует RUB через compute_rub с поправками на страну/формат/курс,
+    # поэтому без пересортировки порядок выглядит "вразнобой".
+    top_expensive = sorted(top_expensive, key=compute_rub, reverse=True)
+
     return templates.TemplateResponse("public_profile.html", {
         "request": request,
         "user": user,
