@@ -45,7 +45,8 @@ class Settings(BaseSettings):
     google_client_id: str = Field(default="", alias="GOOGLE_CLIENT_ID")
     google_client_secret: str = Field(default="", alias="GOOGLE_CLIENT_SECRET")
     
-    # Email настройки (Yandex SMTP)
+    # Email — Resend HTTP API приоритетный канал; SMTP остаётся как fallback для dev/локалки.
+    resend_api_key: str = Field(default="", alias="RESEND_API_KEY")
     smtp_host: str = Field(default="smtp.yandex.ru", alias="SMTP_HOST")
     smtp_port: int = Field(default=465, alias="SMTP_PORT")
     smtp_user: str = Field(default="", alias="SMTP_USER")

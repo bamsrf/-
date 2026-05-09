@@ -6,19 +6,47 @@ import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 
+import httpx
+
 from app.config import get_settings
 from app.models.gift_booking import GiftBooking
 
 logger = logging.getLogger(__name__)
 
+RESEND_API_URL = "https://api.resend.com/emails"
 
-async def _send_email(to: str, subject: str, html_body: str):
-    """Отправка email через SMTP"""
+
+async def _send_via_resend(to: str, subject: str, html_body: str) -> bool:
+    """Отправка через Resend HTTP API. Возвращает True при успехе, False иначе."""
     settings = get_settings()
+    payload = {
+        "from": f"Вертушка <{settings.email_from}>",
+        "to": [to],
+        "subject": subject,
+        "html": html_body,
+    }
+    headers = {
+        "Authorization": f"Bearer {settings.resend_api_key}",
+        "Content-Type": "application/json",
+    }
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            r = await client.post(RESEND_API_URL, json=payload, headers=headers)
+        if r.status_code in (200, 201, 202):
+            logger.info(f"Email отправлен через Resend: {subject} -> {to} (id={r.json().get('id')})")
+            return True
+        logger.error(f"Resend вернул {r.status_code}: {r.text} | {subject} -> {to}")
+        return False
+    except Exception as e:
+        logger.error(f"Ошибка Resend API: {e}")
+        return False
 
+
+def _send_via_smtp(to: str, subject: str, html_body: str) -> bool:
+    """Fallback на SMTP. Возвращает True при успехе, False иначе."""
+    settings = get_settings()
     if not settings.smtp_user or not settings.smtp_password:
-        logger.warning(f"SMTP не настроен, пропускаем отправку email: {subject} -> {to}")
-        return
+        return False
 
     msg = MIMEMultipart("alternative")
     msg["Subject"] = subject
@@ -36,9 +64,28 @@ async def _send_email(to: str, subject: str, html_body: str):
                 server.starttls()
                 server.login(settings.smtp_user, settings.smtp_password)
                 server.sendmail(settings.email_from, to, msg.as_string())
-        logger.info(f"Email отправлен: {subject} -> {to}")
+        logger.info(f"Email отправлен через SMTP: {subject} -> {to}")
+        return True
     except Exception as e:
-        logger.error(f"Ошибка отправки email: {e}")
+        logger.error(f"Ошибка отправки SMTP: {e}")
+        return False
+
+
+async def _send_email(to: str, subject: str, html_body: str):
+    """Отправка email. Resend приоритетный, SMTP — fallback для dev/локалки."""
+    settings = get_settings()
+    if not settings.email_from:
+        logger.warning(f"EMAIL_FROM не задан, пропускаем отправку: {subject} -> {to}")
+        return
+
+    if settings.resend_api_key:
+        if await _send_via_resend(to, subject, html_body):
+            return
+        # Fall through на SMTP если Resend не сработал и есть SMTP-конфиг
+        logger.warning("Resend не сработал — пробую SMTP fallback")
+
+    if not _send_via_smtp(to, subject, html_body):
+        logger.warning(f"Email не отправлен (нет рабочего канала): {subject} -> {to}")
 
 
 async def send_booking_notification_to_owner(
