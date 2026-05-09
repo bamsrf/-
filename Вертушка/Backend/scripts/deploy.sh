@@ -42,18 +42,46 @@ fi
 # Перейти в Backend
 cd Вертушка/Backend
 
-# Сборка нового образа
-echo "🔨 Собираю Docker образ..."
-docker compose -f docker-compose.prod.yml build api
+# Pre-flight: проверить что есть достаточно места для билда.
+# Билд распаковывает слои + промежуточные стадии — нужно >1 ГБ свободного,
+# иначе docker умирает с "no space left on device" посередине пересоздания
+# контейнера, и api остаётся в нерабочем состоянии.
+AVAIL_MB=$(df -BM / | awk 'NR==2 {print $4}' | tr -dc '0-9')
+echo "💾 Свободно на /: ${AVAIL_MB} МБ"
+if [ "$AVAIL_MB" -lt 1000 ]; then
+    echo -e "${YELLOW}⚠️  Свободного места <1000 МБ. Освобождаю build cache и dangling образы...${NC}"
+    docker buildx prune -af 2>&1 | tail -1
+    docker image prune -f 2>&1 | tail -1
+    AVAIL_MB=$(df -BM / | awk 'NR==2 {print $4}' | tr -dc '0-9')
+    echo "   После очистки: ${AVAIL_MB} МБ"
+    if [ "$AVAIL_MB" -lt 1000 ]; then
+        echo -e "${YELLOW}❌ Всё равно мало места. Деплой остановлен. Проверь: df -h / && docker system df${NC}"
+        exit 1
+    fi
+fi
+
+# Сборка обоих сервисов из общего Dockerfile.
+# api и scheduler — один образ под капотом, разница только в IS_SCHEDULER env var.
+# Если билдить только api — scheduler застрянет на старом образе.
+echo "🔨 Собираю Docker образы (api + scheduler)..."
+docker compose -f docker-compose.prod.yml build api scheduler
 
 # Применение миграций ДО подъёма новой версии — если миграция упадёт,
 # прод-контейнер останется на старой версии и старой схеме (no downtime).
 echo "📊 Применяю миграции базы данных..."
 docker compose -f docker-compose.prod.yml run --rm -e PYTHONPATH=/app api alembic upgrade head
 
-# Запуск контейнеров с новой версией
-echo "🐳 Перезапускаю контейнеры..."
+# Поднимаем зависимости (db, redis, nginx, metabase) — те что не пересобирали.
+echo "🐳 Поднимаю зависимости..."
 docker compose -f docker-compose.prod.yml up -d
+
+# Принудительный пересоздание api и scheduler — гарантия что контейнеры
+# подхватят свежесобранный образ. Без этого compose иногда не замечает смену
+# image hash и оставляет контейнер на предыдущем (тогда диск пухнет: новый
+# образ лежит, старый держится живым контейнером).
+# --no-deps — не трогать db/redis/nginx, они уже подняты.
+echo "♻️  Принудительно пересоздаю api и scheduler с новым образом..."
+docker compose -f docker-compose.prod.yml up -d --force-recreate --no-deps api scheduler
 
 # Healthcheck — ждём пока api действительно поднимется (до ~60 сек).
 echo "❤️  Проверяю /health..."
