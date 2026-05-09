@@ -172,7 +172,7 @@
     </div>
 
     <script>
-    var BOOKING_ID = {{ booking.id|tojson }};
+    var BOOKING_ID = {{ booking.id|string|tojson }};
     var CANCEL_TOKEN = {{ token|tojson }};
 
     async function doCancel() {
