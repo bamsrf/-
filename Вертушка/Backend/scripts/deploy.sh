@@ -108,7 +108,7 @@ fi
 # Без --volumes / --all — данные пользователей не трогаются.
 echo "🧹 Очищаю старые Docker образы и build cache..."
 docker image prune -f
-docker builder prune -f --filter "until=72h" --keep-storage 500MB
+docker builder prune -f --filter "until=72h" --reserved-space 500MB
 
 echo -e "${GREEN}✅ Деплой завершён успешно!${NC}"
 
