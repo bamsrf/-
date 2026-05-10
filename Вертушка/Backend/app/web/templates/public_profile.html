@@ -228,7 +228,15 @@
         }
 
         /* VINYL */
-        .vinyl-wrap { width: 180px; height: 180px; flex-shrink: 0; }
+        .vinyl-wrap {
+            width: 180px; height: 180px; flex-shrink: 0;
+            border-radius: 50%;
+            /* Тень навешена на обёртку, чтобы не крутилась вместе с пластинкой
+               (box-shadow вращается вместе с transform у самого .vinyl). */
+            box-shadow:
+                0 32px 60px -18px rgba(27, 29, 38, 0.55),
+                0 12px 24px -8px rgba(58, 75, 224, 0.22);
+        }
         @media (max-width: 768px) { .vinyl-wrap { width: 150px; height: 150px; } }
         .vinyl {
             width: 100%; height: 100%; border-radius: 50%;
@@ -258,11 +266,9 @@
                 #1B1D26 63.5% 100%
             );
             position: relative;
-            box-shadow:
-                0 32px 60px -18px rgba(27, 29, 38, 0.55),
-                0 12px 24px -8px rgba(58, 75, 224, 0.22);
             will-change: transform;
-            animation: spin 14s linear infinite;
+            /* 33⅓ RPM = 60s / 33.333 = 1.8s на полный оборот, ровно (linear). */
+            animation: spin 1.8s linear infinite;
         }
         @media (prefers-reduced-motion: reduce) {
             .vinyl { animation: none; }
