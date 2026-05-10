@@ -50,7 +50,7 @@ export function Header({
         <View style={styles.leftSection}>
           {showBack && (
             <TouchableOpacity style={styles.backButton} onPress={handleBackPress}>
-              <Icon name="arrow-back" size={24} color={Colors.deepNavy} />
+              <Icon name="arrow-back" size={24} color={Colors.royalBlue} />
             </TouchableOpacity>
           )}
           {showBack && title ? (

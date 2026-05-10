@@ -748,7 +748,7 @@ export default function UserProfileScreen() {
       {/* Top bar */}
       <View style={styles.topbar}>
         <TouchableOpacity onPress={() => router.back()} style={styles.iconBtn}>
-          <Icon name="chevron-back" size={22} color={PP.ink} />
+          <Icon name="chevron-back" size={22} color={PP.cobalt} />
         </TouchableOpacity>
         <Text style={styles.brand}>ВЕРТУШКА · ПРОФИЛЬ</Text>
         <TouchableOpacity onPress={handleShare} style={styles.iconBtn}>
