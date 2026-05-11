@@ -1,0 +1,228 @@
+"""Серия «Первые шаги» (A* + META_foundation).
+
+Phase 1: A1–A5 + META_foundation.
+- A1: первая пластинка в коллекции
+- A2: первая запись в вишлисте
+- A3: установлен аватар
+- A4: активирован публичный профиль
+- A5: создана вторая коллекция вручную (первая создаётся системой)
+- META_foundation: все 5 открыты
+"""
+from __future__ import annotations
+
+from typing import Any
+from uuid import UUID
+
+from sqlalchemy import select, exists, func
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.models.collection import Collection, CollectionItem
+from app.models.profile_share import ProfileShare
+from app.models.user import User
+from app.models.user_achievement import UserAchievement
+from app.models.wishlist import Wishlist, WishlistItem
+from app.services.achievements.events import (
+    AVATAR_SET,
+    COLLECTION_CREATED,
+    COLLECTION_ITEM_ADDED,
+    PROFILE_SHARED_ENABLED,
+    WISHLIST_ITEM_ADDED,
+)
+from app.services.achievements.registry import (
+    AchievementDefinition,
+    AchievementTier,
+    EvalResult,
+)
+
+
+A1_CODE = "A1_first_record"
+A2_CODE = "A2_first_wishlist"
+A3_CODE = "A3_avatar_set"
+A4_CODE = "A4_public_profile"
+A5_CODE = "A5_second_collection"
+META_CODE = "META_foundation"
+FOUNDATION_CODES = {A1_CODE, A2_CODE, A3_CODE, A4_CODE, A5_CODE}
+
+
+async def _evaluate_a1(
+    db: AsyncSession,
+    user_id: UUID,
+    payload: dict[str, Any],
+    unlocked_now: set[str],
+) -> EvalResult:
+    has_item = await db.scalar(
+        select(
+            exists().where(
+                CollectionItem.collection_id == Collection.id,
+                Collection.user_id == user_id,
+            )
+        )
+    )
+    return EvalResult(unlocked=bool(has_item))
+
+
+async def _evaluate_a2(
+    db: AsyncSession,
+    user_id: UUID,
+    payload: dict[str, Any],
+    unlocked_now: set[str],
+) -> EvalResult:
+    has_item = await db.scalar(
+        select(
+            exists().where(
+                WishlistItem.wishlist_id == Wishlist.id,
+                Wishlist.user_id == user_id,
+            )
+        )
+    )
+    return EvalResult(unlocked=bool(has_item))
+
+
+async def _evaluate_a3(
+    db: AsyncSession,
+    user_id: UUID,
+    payload: dict[str, Any],
+    unlocked_now: set[str],
+) -> EvalResult:
+    user = await db.scalar(select(User).where(User.id == user_id))
+    return EvalResult(unlocked=bool(user and user.avatar_url))
+
+
+async def _evaluate_a4(
+    db: AsyncSession,
+    user_id: UUID,
+    payload: dict[str, Any],
+    unlocked_now: set[str],
+) -> EvalResult:
+    share = await db.scalar(
+        select(ProfileShare).where(ProfileShare.user_id == user_id)
+    )
+    return EvalResult(unlocked=bool(share and share.is_active))
+
+
+async def _evaluate_a5(
+    db: AsyncSession,
+    user_id: UUID,
+    payload: dict[str, Any],
+    unlocked_now: set[str],
+) -> EvalResult:
+    """У юзера ≥2 коллекций.
+
+    Первую создаёт сама система при регистрации; вторая = осознанный жест.
+    """
+    count = await db.scalar(
+        select(func.count(Collection.id)).where(Collection.user_id == user_id)
+    )
+    return EvalResult(unlocked=int(count or 0) >= 2)
+
+
+async def _evaluate_meta_foundation(
+    db: AsyncSession,
+    user_id: UUID,
+    payload: dict[str, Any],
+    unlocked_now: set[str],
+) -> EvalResult:
+    """Открывается, когда все A1–A5 уже unlocked.
+
+    Учитывает ачивки, открытые ровно в этом же emit_event (unlocked_now),
+    плюс уже сохранённые в БД.
+    """
+    persisted = await db.execute(
+        select(UserAchievement.code).where(
+            UserAchievement.user_id == user_id,
+            UserAchievement.code.in_(FOUNDATION_CODES),
+            UserAchievement.is_unlocked.is_(True),
+        )
+    )
+    persisted_codes = set(persisted.scalars().all())
+    all_unlocked = persisted_codes | (unlocked_now & FOUNDATION_CODES)
+    progress = len(all_unlocked)
+    target = len(FOUNDATION_CODES)
+    if progress >= target:
+        return EvalResult(unlocked=True, progress=progress, progress_target=target)
+    return EvalResult(progress=progress, progress_target=target)
+
+
+# META должна перепроверяться на любое событие из A-серии
+_ALL_FOUNDATION_TRIGGERS = (
+    COLLECTION_ITEM_ADDED,
+    WISHLIST_ITEM_ADDED,
+    AVATAR_SET,
+    PROFILE_SHARED_ENABLED,
+    COLLECTION_CREATED,
+)
+
+
+DEFINITIONS: list[AchievementDefinition] = [
+    AchievementDefinition(
+        code=A1_CODE,
+        title_ru="Поехали",
+        description_ru="Добавь первую пластинку в коллекцию.",
+        series="foundation",
+        tier=AchievementTier.SIMPLE,
+        is_hidden=False,
+        triggers=(COLLECTION_ITEM_ADDED,),
+        evaluator=_evaluate_a1,
+        flavor_ru="Первая дорожка проиграна. С неё начинается всё.",
+        icon_slug="a1_first_record",
+    ),
+    AchievementDefinition(
+        code=A2_CODE,
+        title_ru="Хотелка",
+        description_ru="Добавь первую запись в вишлист.",
+        series="foundation",
+        tier=AchievementTier.SIMPLE,
+        is_hidden=False,
+        triggers=(WISHLIST_ITEM_ADDED,),
+        evaluator=_evaluate_a2,
+        icon_slug="a2_first_wishlist",
+    ),
+    AchievementDefinition(
+        code=A3_CODE,
+        title_ru="Аватар",
+        description_ru="Поставь аватар.",
+        series="foundation",
+        tier=AchievementTier.SIMPLE,
+        is_hidden=False,
+        triggers=(AVATAR_SET,),
+        evaluator=_evaluate_a3,
+        icon_slug="a3_avatar",
+    ),
+    AchievementDefinition(
+        code=A4_CODE,
+        title_ru="Распахнул",
+        description_ru="Активируй публичный профиль.",
+        series="foundation",
+        tier=AchievementTier.SIMPLE,
+        is_hidden=False,
+        triggers=(PROFILE_SHARED_ENABLED,),
+        evaluator=_evaluate_a4,
+        icon_slug="a4_public_profile",
+    ),
+    AchievementDefinition(
+        code=A5_CODE,
+        title_ru="Полка-двойник",
+        description_ru="Создай вторую коллекцию вручную.",
+        series="foundation",
+        tier=AchievementTier.SIMPLE,
+        is_hidden=False,
+        triggers=(COLLECTION_CREATED,),
+        evaluator=_evaluate_a5,
+        flavor_ru="Когда одна полка перестаёт хватать.",
+        icon_slug="a5_second_collection",
+    ),
+    # META — всегда последний, на все события серии
+    AchievementDefinition(
+        code=META_CODE,
+        title_ru="На борту",
+        description_ru="Открой все ачивки серии «Первые шаги».",
+        series="foundation",
+        tier=AchievementTier.NOTABLE,
+        is_hidden=False,
+        triggers=_ALL_FOUNDATION_TRIGGERS,
+        evaluator=_evaluate_meta_foundation,
+        is_meta=True,
+        flavor_ru="Канавки услышали тебя.",
+        icon_slug="meta_foundation",
+    ),
+]

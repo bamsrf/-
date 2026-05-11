@@ -331,12 +331,21 @@ async def update_profile_settings(
         profile = ProfileShare(user_id=current_user.id)
         db.add(profile)
 
+    was_active_before = bool(profile.is_active)
+
     update_fields = data.model_dump(exclude_unset=True)
     for field, value in update_fields.items():
         setattr(profile, field, value)
 
     await db.commit()
     await db.refresh(profile)
+
+    # Эмиссия события: профиль стал публичным (любой переход в is_active=True
+    # триггерит — повторные A4 не выдаёт идемпотентно через registry).
+    if profile.is_active and not was_active_before:
+        from app.services.achievements import emit_event
+        from app.services.achievements.events import PROFILE_SHARED_ENABLED
+        await emit_event(db, current_user.id, PROFILE_SHARED_ENABLED, {})
 
     return ProfileShareSettings(
         is_active=profile.is_active,
@@ -448,6 +457,16 @@ async def get_public_profile(
 
     profile.view_count += 1
     await db.commit()
+
+    # Эмиссия события ачивок (K5/K6) — для владельца профиля
+    from app.services.achievements import emit_event
+    from app.services.achievements.events import PROFILE_VIEW
+    await emit_event(
+        db,
+        user.id,
+        PROFILE_VIEW,
+        {"view_count": profile.view_count},
+    )
 
     return await get_public_profile_payload(user, profile, db)
 

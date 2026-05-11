@@ -61,7 +61,7 @@ if _settings_early.sentry_dsn:
     logger.info("Sentry initialised")
 
 # API роутеры
-from app.api import auth, records, collections, wishlists, users, gifts, profile, export, covers, user_photos, waitlist
+from app.api import auth, records, collections, wishlists, users, gifts, profile, export, covers, user_photos, waitlist, achievements
 
 # Web роутеры (HTML страницы)
 from app.web import routes as web_routes
@@ -96,6 +96,7 @@ async def lifespan(app: FastAPI):
             from app.tasks.booking_tasks import send_booking_reminders, auto_release_expired_bookings, auto_cancel_unverified_bookings
             from app.tasks.discogs_tasks import cleanup_search_cache, enrich_records_artist_data, update_prices_batch
             from app.tasks.valuation_tasks import record_daily_snapshots
+            from app.tasks.achievements_tasks import daily_tick_achievements
             from app.services.cover_storage import CoverStorageService
 
             async def cleanup_covers():
@@ -114,6 +115,7 @@ async def lifespan(app: FastAPI):
             scheduler.add_job(update_prices_batch, 'cron', hour=4, minute=0, id='update_prices_batch')
             scheduler.add_job(record_daily_snapshots, 'cron', hour=5, minute=0, id='value_snapshots')
             scheduler.add_job(cleanup_covers, 'cron', hour=3, minute=0, id='covers_lru_cleanup')
+            scheduler.add_job(daily_tick_achievements, 'cron', hour=6, minute=0, id='achievements_daily_tick')
             scheduler.start()
             print("✅ Планировщик задач запущен")
         except ImportError:
@@ -210,6 +212,7 @@ app.include_router(export.router, prefix="/api/export", tags=["Экспорт"])
 app.include_router(covers.router, prefix="/covers", tags=["Обложки"])  # НЕ /api/covers — nginx location /covers/
 app.include_router(user_photos.router, prefix="/api/collections", tags=["Фото пластинок"])
 app.include_router(waitlist.router, prefix="/api/waitlist", tags=["Waitlist"])
+app.include_router(achievements.router, prefix="/api/achievements", tags=["Ачивки"])
 
 # Web страницы (публичный профиль, OG-изображения)
 app.include_router(web_routes.router, tags=["Web"])

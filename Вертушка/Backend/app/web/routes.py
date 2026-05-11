@@ -126,6 +126,19 @@ async def public_profile_page(
     profile.view_count += 1
     await db.commit()
 
+    # Эмиссия события ачивок (K5/K6)
+    try:
+        from app.services.achievements import emit_event
+        from app.services.achievements.events import PROFILE_VIEW
+        await emit_event(
+            db,
+            user.id,
+            PROFILE_VIEW,
+            {"view_count": profile.view_count},
+        )
+    except Exception:  # noqa: BLE001
+        pass  # web-страница не должна падать из-за ачивок
+
     # === Статистика ===
     # Считаем уникальные пластинки (distinct record_id), чтобы не дублировать
     # одну и ту же пластинку из разных папок — мобила показывает дефолт-папку,

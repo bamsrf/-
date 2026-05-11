@@ -322,11 +322,18 @@ async def update_current_user(
         current_user.display_name = data.display_name
     if data.bio is not None:
         current_user.bio = data.bio
+    avatar_was_set = False
     if data.avatar_url is not None:
         current_user.avatar_url = data.avatar_url
+        avatar_was_set = bool(data.avatar_url)
 
     await db.commit()
     await db.refresh(current_user)
+
+    if avatar_was_set:
+        from app.services.achievements import emit_event
+        from app.services.achievements.events import AVATAR_SET
+        await emit_event(db, current_user.id, AVATAR_SET, {})
 
     return current_user
 
@@ -456,6 +463,10 @@ async def upload_avatar(
     current_user.avatar_url = f"/uploads/avatars/{filename}"
     await db.commit()
     await db.refresh(current_user)
+
+    from app.services.achievements import emit_event
+    from app.services.achievements.events import AVATAR_SET
+    await emit_event(db, current_user.id, AVATAR_SET, {})
 
     return current_user
 
@@ -692,7 +703,23 @@ async def follow_user(
     )
     db.add(follow)
     await db.commit()
-    
+
+    # Эмиссия событий ачивок (K-серия)
+    from app.services.achievements import emit_event
+    from app.services.achievements.events import FOLLOW_CREATED, FOLLOW_RECEIVED
+    await emit_event(
+        db,
+        current_user.id,
+        FOLLOW_CREATED,
+        {"following_id": user_id},
+    )
+    await emit_event(
+        db,
+        user_id,
+        FOLLOW_RECEIVED,
+        {"follower_id": current_user.id},
+    )
+
     return {"status": "followed"}
 
 
