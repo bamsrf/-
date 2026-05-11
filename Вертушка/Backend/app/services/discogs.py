@@ -544,8 +544,13 @@ class DiscogsService:
             "is_hot": is_hot,
         }
 
-    async def get_release(self, release_id: str) -> dict[str, Any]:
-        """Получение детальной информации о релизе. Кэшируется в Redis."""
+    async def get_release(self, release_id: str, priority: int = Priority.DETAIL) -> dict[str, Any]:
+        """Получение детальной информации о релизе. Кэшируется в Redis.
+
+        priority: позволяет вызывающему понизить приоритет для фоновых
+        обогащений (Priority.ENRICHMENT/BATCH), чтобы они не тормозили
+        UI-запросы юзера, ждущие токенов из общего бакета.
+        """
         cached = await cache.get("release", release_id)
         if cached is not None:
             return cached
@@ -553,7 +558,7 @@ class DiscogsService:
         # Запускаем price_stats параллельно с основным запросом
         stats_task = asyncio.create_task(self._get_price_stats(release_id))
 
-        data = await self._get(f"{self.BASE_URL}/releases/{release_id}", priority=Priority.DETAIL)
+        data = await self._get(f"{self.BASE_URL}/releases/{release_id}", priority=priority)
 
         # Извлекаем артистов
         artists = data.get("artists", [])
@@ -1141,6 +1146,40 @@ class DiscogsService:
             return "album"
         return "album"
 
+    async def _collect_artist_master_ids(self, artist_id: str, cache_key: str) -> None:
+        """Фоновый сбор master ID артиста по всем страницам /artists/{id}/releases.
+
+        Single-flight через Redis-lock, Priority.ENRICHMENT (не блокирует
+        UI-запросы юзера). Результат пишется в "artist_master_ids" на 1 день.
+        Следующий заход на этого артиста получит фильтр однофамильцев.
+        """
+        lock_key = f"collecting:{artist_id}"
+        if not await cache.set_nx("artist_master_ids_lock", lock_key, "1", ttl=120):
+            return
+        try:
+            valid: set[str] = set()
+            ar_page = 1
+            while True:
+                try:
+                    ar_data = await self._get(
+                        f"{self.BASE_URL}/artists/{artist_id}/releases",
+                        params={"page": ar_page, "per_page": 100},
+                        priority=Priority.ENRICHMENT,
+                    )
+                except Exception:
+                    break
+                for item in ar_data.get("releases", []):
+                    if item.get("type") == "master" and item.get("id"):
+                        valid.add(str(item["id"]))
+                total_pages = ar_data.get("pagination", {}).get("pages", 1)
+                if ar_page >= total_pages or ar_page >= 15:
+                    break
+                ar_page += 1
+            if valid:
+                await cache.set("artist_master_ids", cache_key, list(valid), 86400)
+        finally:
+            await cache.delete("artist_master_ids_lock", lock_key)
+
     async def get_artist_masters(
         self,
         artist_id: str,
@@ -1177,34 +1216,19 @@ class DiscogsService:
             return MasterSearchResponse(results=[], total=0, page=page, per_page=per_page)
 
         # --- Шаг 1: получаем точный список master ID для этого артиста ---
-        # Пагинируем все страницы /artists/{id}/releases чтобы не пропустить
-        # мастера у плодовитых артистов (KGLW, Guided By Voices и т.д.).
-        # Результат кэшируется отдельно на 1 день.
+        # Используется для отсечки однофамильцев (Mac Miller (2), Jimmy Justice).
+        # Пагинируем /artists/{id}/releases — у плодовитых артистов это до 15
+        # запросов и до 15+ сек на холодном кэше, поэтому при cache-miss
+        # запускаем сбор в фоне (asyncio.create_task) с Priority.ENRICHMENT.
+        # Первый sync-ответ идёт без фильтра (может включать однофамильцев);
+        # следующий заход юзера получит обогащённый кэш и чистый результат.
         ids_ck = f"{artist_id}:master_ids:v1"
         cached_ids = await cache.get("artist_master_ids", ids_ck)
         if cached_ids is not None:
             valid_master_ids: set[str] = set(cached_ids)
         else:
             valid_master_ids = set()
-            try:
-                ar_page = 1
-                while True:
-                    ar_data = await self._get(
-                        f"{self.BASE_URL}/artists/{artist_id}/releases",
-                        params={"page": ar_page, "per_page": 100},
-                        priority=Priority.SEARCH,
-                    )
-                    for item in ar_data.get("releases", []):
-                        if item.get("type") == "master" and item.get("id"):
-                            valid_master_ids.add(str(item["id"]))
-                    total_pages = ar_data.get("pagination", {}).get("pages", 1)
-                    if ar_page >= total_pages or ar_page >= 15:
-                        break
-                    ar_page += 1
-                if valid_master_ids:
-                    await cache.set("artist_master_ids", ids_ck, list(valid_master_ids), 86400)
-            except Exception:
-                valid_master_ids = set()
+            asyncio.create_task(self._collect_artist_master_ids(artist_id, ids_ck))
 
         # --- Шаг 2: Search API — обложки и format[] (логика из оригинала не меняется) ---
         clean_name = re.sub(r'\s*\(\d+\)\s*$', '', artist_name).strip()

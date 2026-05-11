@@ -181,6 +181,16 @@ async def create_collection(
     await db.commit()
     await db.refresh(collection)
 
+    # Эмиссия события ачивок (A5)
+    from app.services.achievements import emit_event
+    from app.services.achievements.events import COLLECTION_CREATED
+    await emit_event(
+        db,
+        current_user.id,
+        COLLECTION_CREATED,
+        {"collection_id": collection.id},
+    )
+
     return CollectionResponse(
         id=collection.id,
         user_id=collection.user_id,
@@ -452,6 +462,16 @@ async def add_record_to_collection(
     # Запускаем фоновое скачивание обложки (если ещё не скачана)
     if record.discogs_id:
         await ensure_cover_cached(record.discogs_id, record.cover_image_url, db)
+
+    # Эмиссия события ачивок (после коммита, не роняет основной запрос при ошибке)
+    from app.services.achievements import emit_event
+    from app.services.achievements.events import COLLECTION_ITEM_ADDED
+    await emit_event(
+        db,
+        current_user.id,
+        COLLECTION_ITEM_ADDED,
+        {"collection_item_id": item.id, "record_id": record.id, "record": record},
+    )
 
     return CollectionItemResponse(
         id=item.id,

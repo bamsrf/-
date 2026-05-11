@@ -13,6 +13,7 @@ from app.models.user_photo import UserRecordPhoto
 from app.models.collection_value_snapshot import CollectionValueSnapshot
 from app.models.waitlist import WaitlistEntry
 from app.models.blocked_contact import BlockedContact, BlockedContactKind
+from app.models.user_achievement import UserAchievement
 
 __all__ = [
     "User",
@@ -30,5 +31,6 @@ __all__ = [
     "WaitlistEntry",
     "BlockedContact",
     "BlockedContactKind",
+    "UserAchievement",
 ]
 

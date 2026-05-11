@@ -171,6 +171,16 @@ async def add_to_wishlist(
     if record.discogs_id:
         await ensure_cover_cached(record.discogs_id, record.cover_image_url, db)
 
+    # Эмиссия события ачивок
+    from app.services.achievements import emit_event
+    from app.services.achievements.events import WISHLIST_ITEM_ADDED
+    await emit_event(
+        db,
+        current_user.id,
+        WISHLIST_ITEM_ADDED,
+        {"wishlist_item_id": item.id, "record_id": record.id},
+    )
+
     return WishlistItemResponse(
         id=item.id,
         wishlist_id=item.wishlist_id,

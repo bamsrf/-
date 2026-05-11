@@ -262,6 +262,18 @@ async def book_gift(
         }
     )
 
+    # Эмиссия события ачивок — только для аутентифицированных дарителей
+    # (анонимная бронь не должна засчитываться на чужой аккаунт).
+    if booking.booked_by_user_id is not None:
+        from app.services.achievements import emit_event
+        from app.services.achievements.events import GIFT_BOOKED
+        await emit_event(
+            db,
+            booking.booked_by_user_id,
+            GIFT_BOOKED,
+            {"booking_id": booking.id},
+        )
+
     CANCEL_BASE = settings.app_url or "https://vinyl-vertushka.ru"
     cancel_url = f"{CANCEL_BASE}/cancel/{booking.id}?token={booking.cancel_token}"
     confirm_url = (

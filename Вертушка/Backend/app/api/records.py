@@ -36,6 +36,7 @@ from app.schemas.record import (
     Artist,
 )
 from app.services.discogs import DiscogsService
+from app.services.rate_limiter import Priority
 from app.services.openai_vision import OpenAIVisionService, CoverRecognitionError
 
 router = APIRouter()
@@ -836,7 +837,10 @@ async def _enrich_collectible_async(
         async def fetch_flags(v):
             async with sem:
                 try:
-                    data = await discogs.get_release(v.release_id)
+                    # Priority.ENRICHMENT, чтобы фоновое обогащение не дренило
+                    # token-bucket и не тормозило UI-запросы юзера, ждущие
+                    # тех же токенов с Priority.DETAIL.
+                    data = await discogs.get_release(v.release_id, priority=Priority.ENRICHMENT)
                     v.is_canon = v.is_canon or bool(data.get("is_canon"))
                     v.is_collectible = v.is_collectible or bool(data.get("is_collectible"))
                     v.is_limited = v.is_limited or bool(data.get("is_limited"))
