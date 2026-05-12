@@ -1,0 +1,26 @@
+# Локальная dev-инфра для Backend.
+# Postgres даёт supabase-cli (на порту 54322), здесь поднимаем только то, что
+# Supabase не предоставляет — Redis для кэша.
+#
+# Запуск:  docker compose -f docker-compose.dev.yml up -d
+# Стоп:    docker compose -f docker-compose.dev.yml down
+# Логи:    docker compose -f docker-compose.dev.yml logs -f redis
+
+services:
+  redis:
+    image: redis:7-alpine
+    container_name: vertushka-redis
+    ports:
+      - "6379:6379"
+    command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
+    volumes:
+      - vertushka_redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    restart: unless-stopped
+
+volumes:
+  vertushka_redis_data:
