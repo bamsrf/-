@@ -61,7 +61,7 @@ if _settings_early.sentry_dsn:
     logger.info("Sentry initialised")
 
 # API роутеры
-from app.api import auth, records, collections, wishlists, users, gifts, profile, export, covers, user_photos, waitlist, achievements
+from app.api import auth, records, collections, wishlists, users, gifts, profile, export, covers, user_photos, waitlist, achievements, offers
 
 # Web роутеры (HTML страницы)
 from app.web import routes as web_routes
@@ -116,6 +116,27 @@ async def lifespan(app: FastAPI):
             scheduler.add_job(record_daily_snapshots, 'cron', hour=5, minute=0, id='value_snapshots')
             scheduler.add_job(cleanup_covers, 'cron', hour=3, minute=0, id='covers_lru_cleanup')
             scheduler.add_job(daily_tick_achievements, 'cron', hour=6, minute=0, id='achievements_daily_tick')
+
+            # ---- Парсеры магазинов винила (под env SCRAPERS_ENABLED) ----
+            if os.environ.get("SCRAPERS_ENABLED", "false").lower() == "true":
+                from app.tasks.scraper_tasks import (
+                    daily_full_crawl_http,
+                    weekly_full_crawl_browser,
+                    daily_incremental_crawl,
+                    stock_refresh_active,
+                    hourly_match_unmatched,
+                    weekly_cleanup_stale,
+                    invalidate_offers_for_recently_updated,
+                )
+                scheduler.add_job(daily_full_crawl_http, 'cron', hour=2, minute=0, id='scrape_full_http')
+                scheduler.add_job(weekly_full_crawl_browser, 'cron', day_of_week='sat', hour=2, minute=0, id='scrape_full_browser')
+                scheduler.add_job(daily_incremental_crawl, 'cron', hour=14, minute=0, id='scrape_incremental')
+                scheduler.add_job(stock_refresh_active, 'interval', hours=6, id='scrape_stock_refresh')
+                scheduler.add_job(hourly_match_unmatched, 'interval', minutes=60, id='scrape_match_unmatched')
+                scheduler.add_job(weekly_cleanup_stale, 'cron', day_of_week='sun', hour=4, minute=0, id='scrape_cleanup_stale')
+                scheduler.add_job(invalidate_offers_for_recently_updated, 'interval', minutes=15, id='scrape_invalidate_offers')
+                logger.info("✅ Scraper jobs зарегистрированы (SCRAPERS_ENABLED=true)")
+
             scheduler.start()
             print("✅ Планировщик задач запущен")
         except ImportError:
@@ -213,6 +234,7 @@ app.include_router(covers.router, prefix="/covers", tags=["Обложки"])  # 
 app.include_router(user_photos.router, prefix="/api/collections", tags=["Фото пластинок"])
 app.include_router(waitlist.router, prefix="/api/waitlist", tags=["Waitlist"])
 app.include_router(achievements.router, prefix="/api/achievements", tags=["Ачивки"])
+app.include_router(offers.router, prefix="/api", tags=["Магазины"])
 
 # Web страницы (публичный профиль, OG-изображения)
 app.include_router(web_routes.router, tags=["Web"])

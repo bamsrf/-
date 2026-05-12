@@ -1,0 +1,86 @@
+"""
+ШАБЛОН парсера магазина. Скопируй в `<slug>.py`, переименуй класс,
+заполни поля под конкретный сайт. Не забудь добавить импорт в shops/__init__.py.
+
+Стратегии (выбери подходящую):
+1. **YML-фид** — самый удобный путь. Если у магазина есть /yml.xml — переопредели
+   `crawl_full` чтобы стримить offer-ы напрямую.
+2. **Sitemap + JSON-LD** — sitemap.xml даёт URL-ы товаров, JSON-LD вытаскивает поля.
+3. **Sitemap + CSS** — fallback, когда JSON-LD нет.
+4. **Category-walk** — если sitemap отсутствует, override `discover_urls`.
+"""
+from __future__ import annotations
+
+from decimal import Decimal
+
+from app.services.scrapers.base import BaseStoreParser, ListingDTO, ParserError
+from app.services.scrapers.extractors import (
+    extract_jsonld_product,
+    jsonld_price,
+    jsonld_availability,
+    parse_price,
+    parse_year,
+    infer_format,
+    infer_vinyl_color,
+    normalize_barcode,
+    normalize_catalog,
+    find_discogs_release_url,
+)
+from app.services.scrapers.registry import register_parser
+
+
+@register_parser("EXAMPLE_SLUG")
+class ExampleParser(BaseStoreParser):
+    base_url = "https://example.com"
+    rate_limit_per_sec = 0.5      # 1 req / 2 сек
+    requires_js = False
+    listing_url_pattern = r"/product/"   # фильтр URL из sitemap
+
+    async def parse_listing(self, url: str) -> ListingDTO:
+        html = await self.http.get_text(url)
+
+        # 1) Пробуем JSON-LD (самый стабильный путь)
+        product = extract_jsonld_product(html)
+        if product:
+            title = product.get("name") or ""
+            brand = product.get("brand")
+            artist = (brand.get("name") if isinstance(brand, dict) else brand) or None
+            price = jsonld_price(product)
+            status = jsonld_availability(product)
+            barcode = normalize_barcode(product.get("gtin13") or product.get("gtin"))
+            catalog = normalize_catalog(product.get("mpn") or product.get("sku"))
+            description = product.get("description", "")
+        else:
+            # 2) CSS-фолбэки. Реализуй под конкретный сайт через bs4.
+            from bs4 import BeautifulSoup
+            soup = BeautifulSoup(html, "lxml")
+            title_node = soup.select_one("h1.product-title, h1.title, .product-name")
+            title = title_node.get_text(strip=True) if title_node else ""
+            artist = None
+            price_node = soup.select_one(".price, .product-price")
+            price = parse_price(price_node.get_text() if price_node else None)
+            status = "in_stock"
+            barcode = None
+            catalog = None
+            description = ""
+
+        if not title:
+            raise ParserError(f"no title at {url}")
+
+        return ListingDTO(
+            external_id=url.rstrip("/").rsplit("/", 1)[-1],
+            url=url,
+            title_raw=title,
+            artist_raw=artist,
+            year_raw=parse_year(description) or parse_year(title),
+            format_raw=infer_format(title) or infer_format(description),
+            vinyl_color_raw=infer_vinyl_color(title) or infer_vinyl_color(description),
+            condition=None,
+            price_rub=price,
+            status=status if price else "on_request",
+            barcode=barcode,
+            catalog_number=catalog,
+            discogs_release_url=find_discogs_release_url(html),
+            image_url=(product or {}).get("image") if product else None,
+            raw_payload={"jsonld": bool(product)},
+        )

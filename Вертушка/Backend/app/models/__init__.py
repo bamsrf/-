@@ -14,6 +14,8 @@ from app.models.collection_value_snapshot import CollectionValueSnapshot
 from app.models.waitlist import WaitlistEntry
 from app.models.blocked_contact import BlockedContact, BlockedContactKind
 from app.models.user_achievement import UserAchievement
+from app.models.store import Store
+from app.models.store_listing import StoreListing, ListingStatus, MatchMethod
 
 __all__ = [
     "User",
@@ -32,5 +34,9 @@ __all__ = [
     "BlockedContact",
     "BlockedContactKind",
     "UserAchievement",
+    "Store",
+    "StoreListing",
+    "ListingStatus",
+    "MatchMethod",
 ]
 

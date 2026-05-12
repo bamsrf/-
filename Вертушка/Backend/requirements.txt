@@ -52,6 +52,13 @@ sentry-sdk[fastapi]==2.19.2
 # Structured logging
 python-json-logger==2.0.7
 
+# Парсинг магазинов винила
+rapidfuzz==3.6.1
+lxml==5.1.0
+beautifulsoup4==4.12.3
+playwright==1.41.2
+cloudscraper==1.2.71
+
 # Тестирование
 pytest==7.4.4
 pytest-asyncio==0.23.3
