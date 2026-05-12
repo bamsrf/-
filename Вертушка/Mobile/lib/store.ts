@@ -6,6 +6,11 @@ import { toast } from './toast';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { api } from './api';
 import { analytics } from './analytics';
+import {
+  initAchievementsCache,
+  resetAchievementsCache,
+  detectAchievementUnlocks,
+} from './achievementsBus';
 
 // ==================== In-flight action deduplication ====================
 /**
@@ -200,6 +205,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       set({ user, isAuthenticated: true, isLoading: false });
       analytics.identify(user.id);
       analytics.login('email');
+      initAchievementsCache().catch(() => {});
     } catch (error) {
       set({ isLoading: false });
       throw error;
@@ -216,6 +222,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       set({ user, isAuthenticated: true, isLoading: false });
       analytics.identify(user.id);
       analytics.register();
+      initAchievementsCache().catch(() => {});
     } catch (error) {
       set({ isLoading: false });
       throw error;
@@ -230,6 +237,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       set({ user, isAuthenticated: true, isLoading: false });
       analytics.identify(user.id);
       analytics.login('apple');
+      initAchievementsCache().catch(() => {});
     } catch (error) {
       set({ isLoading: false });
       throw error;
@@ -244,6 +252,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       set({ user, isAuthenticated: true, isLoading: false });
       analytics.identify(user.id);
       analytics.login('google');
+      initAchievementsCache().catch(() => {});
     } catch (error) {
       set({ isLoading: false });
       throw error;
@@ -255,12 +264,14 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     set({ user: null, isAuthenticated: false });
     analytics.logout();
     resetUserStores();
+    resetAchievementsCache();
   },
 
   forceLogout: () => {
     set({ user: null, isAuthenticated: false, isLoading: false });
     analytics.logout();
     resetUserStores();
+    resetAchievementsCache();
   },
 
   checkAuth: async () => {
@@ -271,6 +282,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         const user = await api.getMe();
         set({ user, isAuthenticated: true, isLoading: false });
         analytics.identify(user.id);
+        initAchievementsCache().catch(() => {});
       } else {
         set({ isLoading: false });
       }
@@ -343,7 +355,7 @@ export const useSearchStore = create<SearchState>((set, get) => ({
     set({ isLoading: true, query, page: 1, artistPage: 1 });
     try {
       const { filters } = get();
-      const hasFilters = !!(filters.format || filters.country || filters.year);
+      const hasFilters = !!(filters.format || filters.country || filters.year || filters.year_min != null || filters.year_max != null);
 
       // Ключ кэша поиска
       const cacheKey = `${query}|${hasFilters ? JSON.stringify(filters) : ''}|1`;
@@ -419,7 +431,7 @@ export const useSearchStore = create<SearchState>((set, get) => ({
     set({ isLoading: true });
     try {
       const nextPage = page + 1;
-      const hasFilters = !!(filters.format || filters.country || filters.year);
+      const hasFilters = !!(filters.format || filters.country || filters.year || filters.year_min != null || filters.year_max != null);
 
       // Используем тот же тип поиска, что и в основном search
       const response = hasFilters
@@ -665,6 +677,8 @@ export const useCollectionStore = create<CollectionState>((set, get) => ({
         fetchCollectionItems(),
         fetchWishlistItems()
       ]);
+      // Возможные анлоки: A1, B*, R_* (числовые/самореферентные)
+      detectAchievementUnlocks();
     });
   },
 
@@ -676,6 +690,8 @@ export const useCollectionStore = create<CollectionState>((set, get) => ({
       await api.addToWishlist(discogsId);
       useCacheStore.getState().invalidateAll();
       await get().fetchWishlistItems();
+      // Возможные анлоки: A2
+      detectAchievementUnlocks();
     });
   },
 
@@ -743,6 +759,8 @@ export const useCollectionStore = create<CollectionState>((set, get) => ({
   createFolder: async (name) => {
     const collection = await api.createCollection({ name });
     await get().fetchCollections();
+    // Возможные анлоки: A5 «Полка-двойник» (вторая коллекция вручную)
+    detectAchievementUnlocks();
     return collection;
   },
 
@@ -865,6 +883,10 @@ export const useProfileStore = create<ProfileState>((set, get) => ({
     try {
       const settings = await api.updateProfileSettings(data);
       set({ settings, isSaving: false });
+      // Возможен анлок A4 «Распахнул» при is_active=true
+      if (settings.is_active && !prev?.is_active) {
+        detectAchievementUnlocks();
+      }
     } catch (error) {
       // Откат при ошибке
       set({ settings: prev, isSaving: false });
@@ -1181,6 +1203,8 @@ export const useFollowStore = create<FollowState>((set, get) => ({
   followUser: async (userId) => {
     await api.followUser(userId);
     await get().fetchFollowing();
+    // Возможные анлоки: K1 (5 подписок), K7 mutual
+    detectAchievementUnlocks();
   },
 
   unfollowUser: async (userId) => {

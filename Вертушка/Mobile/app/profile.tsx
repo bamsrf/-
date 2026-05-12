@@ -33,10 +33,12 @@ import { AnimatedGradientText } from '../components/AnimatedGradientText';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as ImagePicker from 'expo-image-picker';
 import { api, resolveMediaUrl } from '../lib/api';
+import { detectAchievementUnlocks } from '../lib/achievementsBus';
 import { toast } from '../lib/toast';
 import Toast from 'react-native-toast-message';
 import { toastConfig } from '../components/CustomToast';
 import { Colors, Typography, Spacing, BorderRadius, Shadows } from '../constants/theme';
+import { AchievementsBlock } from '../components/AchievementsBlock';
 
 export default function ProfileScreen() {
   const router = useRouter();
@@ -98,6 +100,8 @@ export default function ProfileScreen() {
     try {
       const { avatar_url } = await api.uploadAvatar(result.assets[0].uri);
       setUser({ ...user!, avatar_url: `${avatar_url}?t=${Date.now()}` });
+      // Возможный анлок A3 «Аватар»
+      detectAchievementUnlocks();
     } catch {
       toast.error('Не удалось загрузить аватарку');
     } finally {
@@ -460,6 +464,11 @@ export default function ProfileScreen() {
           </View>
         )}
 
+        {/* Ачивки */}
+        <View style={styles.achievementsSection}>
+          <AchievementsBlock />
+        </View>
+
         {/* Настройки */}
         <View style={styles.settingsSection}>
           <Text style={styles.sectionTitle}>Настройки</Text>
@@ -727,6 +736,9 @@ const styles = StyleSheet.create({
   linkButtonText: {
     ...Typography.buttonSmall,
     color: Colors.royalBlue,
+  },
+  achievementsSection: {
+    marginBottom: Spacing.lg,
   },
   settingsSection: {
     marginBottom: Spacing.xl,

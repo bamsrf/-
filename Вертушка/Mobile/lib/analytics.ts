@@ -25,7 +25,7 @@ export async function initAmplitude(apiKey: string): Promise<void> {
     return; // Expo Go или модуль не собран — пропускаем
   }
   await Amplitude.init(apiKey, undefined, {
-    trackingOptions: { ipAddress: false },
+    trackingOptions: { ipAddress: false, adid: false, dma: false, carrier: false },
   }).promise;
   setAnalyticsProvider({
     track: (event, properties) => {

@@ -40,6 +40,9 @@ import {
   SuggestResponse,
   AppleSignInRequest,
   GoogleSignInRequest,
+  MyAchievementsResponse,
+  RandomUnlockedResponse,
+  CatalogResponse,
 } from './types';
 
 // API сервер
@@ -391,6 +394,8 @@ class ApiClient {
 
     if (filters?.artist) params.artist = filters.artist;
     if (filters?.year) params.year = filters.year;
+    if (filters?.year_min != null) params.year_min = filters.year_min;
+    if (filters?.year_max != null) params.year_max = filters.year_max;
     if (filters?.label) params.label = filters.label;
 
     return this.deduplicatedGet<RecordSearchResponse>('/records/search', { params });
@@ -469,6 +474,8 @@ class ApiClient {
     if (filters?.format) params.format = filters.format;
     if (filters?.country) params.country = filters.country;
     if (filters?.year) params.year = filters.year;
+    if (filters?.year_min != null) params.year_min = filters.year_min;
+    if (filters?.year_max != null) params.year_max = filters.year_max;
 
     return this.deduplicatedGet<ReleaseSearchResponse>('/records/releases/search', { params });
   }
@@ -794,6 +801,59 @@ class ApiClient {
     await this.client.put(`/gifts/me/received/${bookingId}/complete`, undefined, {
       timeout: 15000,
     });
+  }
+
+  // ==================== Achievements ====================
+
+  async getMyAchievements(): Promise<MyAchievementsResponse> {
+    const { data } = await this.client.get<MyAchievementsResponse>('/achievements/me');
+    return data;
+  }
+
+  async getMyRandomUnlocked(): Promise<RandomUnlockedResponse> {
+    const { data } = await this.client.get<RandomUnlockedResponse>('/achievements/me/random');
+    return data;
+  }
+
+  async getAchievementsCatalog(): Promise<CatalogResponse> {
+    const { data } = await this.client.get<CatalogResponse>('/achievements/catalog');
+    return data;
+  }
+
+  async getAchievementsByUsername(username: string): Promise<MyAchievementsResponse> {
+    const { data } = await this.client.get<MyAchievementsResponse>(
+      `/achievements/by-username/${encodeURIComponent(username)}`
+    );
+    return data;
+  }
+
+  /** URL для share-card PNG. Не загружается через axios — используется напрямую в Image
+   *  или передаётся в Share/ViewShot. Сервер требует Bearer токен, поэтому для прямого
+   *  показа в `<Image>` лучше скачать через axios и передать base64/блоб. */
+  async fetchShareCardPng(code: string, fmt: 'stories' | 'feed' | 'portrait' = 'stories'): Promise<string> {
+    const { data } = await this.client.get<ArrayBuffer>(
+      `/achievements/me/share-card/${encodeURIComponent(code)}`,
+      {
+        params: { fmt },
+        responseType: 'arraybuffer',
+      }
+    );
+    // base64 для передачи в Share / FileSystem
+    const bytes = new Uint8Array(data);
+    let binary = '';
+    for (let i = 0; i < bytes.byteLength; i++) {
+      binary += String.fromCharCode(bytes[i]);
+    }
+    if (typeof btoa !== 'undefined') {
+      return `data:image/png;base64,${btoa(binary)}`;
+    }
+    // RN fallback через global Buffer (если установлен)
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const G: any = global as any;
+    if (G.Buffer) {
+      return `data:image/png;base64,${G.Buffer.from(bytes).toString('base64')}`;
+    }
+    throw new Error('Base64 encoder not available');
   }
 }
 

@@ -113,7 +113,7 @@ export default function SearchScreen() {
   const [selectedDecade, setSelectedDecade] = useState<string | undefined>(undefined);
 
   // Временные фильтры для модалки (применяются только при закрытии)
-  const [tempFilters, setTempFilters] = useState<{ format?: string; country?: string; year?: number }>({});
+  const [tempFilters, setTempFilters] = useState<{ format?: string; country?: string; year?: number; year_min?: number; year_max?: number }>({});
 
   // Защита от спама: cooldown кнопки поиска 500ms
   const lastSearchTime = useRef(0);
@@ -168,8 +168,13 @@ export default function SearchScreen() {
     // Загружаем текущие фильтры во временный стейт
     setTempFilters(filters);
 
-    // Восстанавливаем выбранную декаду на основе текущего года в фильтрах
-    if (filters.year) {
+    // Восстанавливаем выбранную декаду по year_min/year_max (или legacy year)
+    if (filters.year_min != null && filters.year_max != null) {
+      const decade = YEAR_OPTIONS.find((option) =>
+        option.value && 'min' in option && option.min === filters.year_min && option.max === filters.year_max
+      );
+      setSelectedDecade(decade?.value);
+    } else if (filters.year) {
       const decade = YEAR_OPTIONS.find((option) =>
         option.value && 'min' in option && filters.year! >= option.min! && filters.year! <= option.max!
       );
@@ -301,7 +306,7 @@ export default function SearchScreen() {
   const hasActiveFilters = !!(filters.format || filters.country || filters.year);
 
   // Проверка активных временных фильтров (для модалки)
-  const hasTempFilters = !!(tempFilters.format || tempFilters.country || tempFilters.year || selectedDecade);
+  const hasTempFilters = !!(tempFilters.format || tempFilters.country || tempFilters.year || tempFilters.year_min != null || tempFilters.year_max != null || selectedDecade);
 
   // Автосброс фильтров при изменении поискового запроса
   const handleSearchInputChange = useCallback((text: string) => {
@@ -669,9 +674,16 @@ export default function SearchScreen() {
                     style={[styles.filterOption, isSelected && styles.filterOptionSelected]}
                     onPress={() => {
                       setSelectedDecade(option.value);
-                      // Для Discogs API отправляем конкретный год (середину декады) или undefined
-                      const yearValue = option.value && 'min' in option ? Math.floor((option.min! + option.max!) / 2) : undefined;
-                      updateTempFilter('year', yearValue);
+                      // Декада → year_min/year_max. Backend пробрасывает в Discogs как lucene-range.
+                      const range = option.value && 'min' in option
+                        ? { year_min: option.min, year_max: option.max }
+                        : { year_min: undefined, year_max: undefined };
+                      setTempFilters(prev => ({
+                        ...prev,
+                        year: undefined,
+                        year_min: range.year_min,
+                        year_max: range.year_max,
+                      }));
                     }}
                   >
                     <Text style={[styles.filterOptionText, isSelected && styles.filterOptionTextSelected]}>

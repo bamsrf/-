@@ -17,8 +17,31 @@
       "supportsTablet": true,
       "bundleIdentifier": "com.vertushka.app",
       "usesAppleSignIn": true,
+      "privacyManifests": {
+        "NSPrivacyAccessedAPITypes": [
+          {
+            "NSPrivacyAccessedAPIType": "NSPrivacyAccessedAPICategoryUserDefaults",
+            "NSPrivacyAccessedAPITypeReasons": ["CA92.1"]
+          },
+          {
+            "NSPrivacyAccessedAPIType": "NSPrivacyAccessedAPICategoryFileTimestamp",
+            "NSPrivacyAccessedAPITypeReasons": ["C617.1"]
+          },
+          {
+            "NSPrivacyAccessedAPIType": "NSPrivacyAccessedAPICategorySystemBootTime",
+            "NSPrivacyAccessedAPITypeReasons": ["35F9.1"]
+          },
+          {
+            "NSPrivacyAccessedAPIType": "NSPrivacyAccessedAPICategoryDiskSpace",
+            "NSPrivacyAccessedAPITypeReasons": ["E174.1"]
+          }
+        ]
+      },
       "infoPlist": {
-        "NSCameraUsageDescription": "Приложению нужен доступ к камере для сканирования штрихкодов пластинок"
+        "NSCameraUsageDescription": "Приложению нужен доступ к камере для сканирования штрихкодов и распознавания обложек пластинок",
+        "NSPhotoLibraryUsageDescription": "Чтобы выбрать фото для аватара и обложек пластинок из вашей галереи",
+        "NSPhotoLibraryAddUsageDescription": "Чтобы сохранять обложки пластинок в галерею",
+        "ITSAppUsesNonExemptEncryption": false
       }
     },
     "android": {

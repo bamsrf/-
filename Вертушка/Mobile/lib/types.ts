@@ -319,6 +319,8 @@ export type RecordStatus =
 export interface SearchFilters {
   artist?: string;
   year?: number;
+  year_min?: number;
+  year_max?: number;
   label?: string;
   genre?: string;
   format?: string;
@@ -557,4 +559,58 @@ export interface FeedItem {
     cover_image_url?: string;
   };
   added_at: string;
+}
+
+// ==================== Achievements ====================
+
+export type AchievementTierKey = 'simple' | 'notable' | 'rare' | 'epic' | 'legend';
+export type AchievementSeriesKey = 'foundation' | 'scale' | 'gifts' | 'community';
+
+export interface AchievementTierInfo {
+  key: AchievementTierKey;
+  label_ru: string;
+  color_hex: string;
+}
+
+export interface AchievementItem {
+  code: string;
+  /** null если ачивка скрытая и ещё не открыта (рендерим как «❓ Сюрприз») */
+  title_ru: string | null;
+  description_ru: string | null;
+  flavor_ru?: string | null;
+  icon_slug?: string | null;
+  series: AchievementSeriesKey | 'random';
+  tier: AchievementTierInfo;
+  is_hidden: boolean;
+  is_meta: boolean;
+  is_unlocked: boolean;
+  unlocked_at: string | null;
+  progress: number;
+  progress_target: number;
+}
+
+export interface AchievementSeriesItem {
+  key: AchievementSeriesKey;
+  title_ru: string;
+  description_ru: string;
+  icon_emoji: string;
+  total: number;
+  unlocked: number;
+  items: AchievementItem[];
+}
+
+export interface MyAchievementsResponse {
+  total: number;
+  unlocked: number;
+  random_unlocked: number;
+  series: AchievementSeriesItem[];
+}
+
+export interface CatalogResponse {
+  series: AchievementSeriesItem[];
+  random_count: number;
+}
+
+export interface RandomUnlockedResponse {
+  items: AchievementItem[];
 }

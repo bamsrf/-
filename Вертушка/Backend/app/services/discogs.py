@@ -46,6 +46,30 @@ logger = logging.getLogger(__name__)
 settings = get_settings()
 
 
+def _build_year_query(
+    query: str,
+    year: int | None,
+    year_min: int | None,
+    year_max: int | None,
+) -> tuple[str, int | None]:
+    """Возвращает (q, year) для Discogs search.
+
+    Discogs API параметр `year` — это точный год. Для декадных фильтров
+    встраиваем lucene-range `year:[X TO Y]` в q-строку, оставляя сам
+    параметр `year` пустым.
+    """
+    if year_min is not None and year_max is not None:
+        if year_min == year_max:
+            return query, year_min
+        lo, hi = (year_min, year_max) if year_min <= year_max else (year_max, year_min)
+        return f"{query} year:[{lo} TO {hi}]".strip(), None
+    if year_min is not None:
+        return query, year_min
+    if year_max is not None:
+        return query, year_max
+    return query, year
+
+
 class CircuitOpenError(Exception):
     """Raised when Discogs circuit breaker is OPEN — fast-fail без похода в сеть."""
 
@@ -291,22 +315,24 @@ class DiscogsService:
         query: str,
         artist: str | None = None,
         year: int | None = None,
+        year_min: int | None = None,
+        year_max: int | None = None,
         label: str | None = None,
         page: int = 1,
         per_page: int = 20
     ) -> RecordSearchResponse:
         """Поиск пластинок в Discogs."""
-        # query передаётся в Discogs как есть (кириллица включительно) — тест без транслитерации
+        q_value, year_param = _build_year_query(query, year, year_min, year_max)
         params = {
-            "q": query,
+            "q": q_value,
             "type": "release",
             "page": page,
             "per_page": per_page,
         }
         if artist:
             params["artist"] = artist
-        if year:
-            params["year"] = year
+        if year_param is not None:
+            params["year"] = year_param
         if label:
             params["label"] = label
 
@@ -749,13 +775,15 @@ class DiscogsService:
         format: str | None = None,
         country: str | None = None,
         year: int | None = None,
+        year_min: int | None = None,
+        year_max: int | None = None,
         page: int = 1,
         per_page: int = 20
     ) -> ReleaseSearchResponse:
         """Поиск конкретных релизов с фильтрами в Discogs."""
-        # query передаётся в Discogs как есть (кириллица включительно) — тест без транслитерации
+        q_value, year_param = _build_year_query(query, year, year_min, year_max)
         params = {
-            "q": query,
+            "q": q_value,
             "type": "release",
             "page": page,
             "per_page": per_page,
@@ -764,8 +792,8 @@ class DiscogsService:
             params["format"] = format
         if country:
             params["country"] = country
-        if year:
-            params["year"] = year
+        if year_param is not None:
+            params["year"] = year_param
 
         ck = search_cache_key(params)
         cached = await cache.get("search_releases", ck)

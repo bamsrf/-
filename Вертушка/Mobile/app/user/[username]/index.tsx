@@ -1,6 +1,11 @@
 /**
- * Публичный профиль другого пользователя — light premium редизайн (PR-5).
- * Палитра: ivory base + cobalt action (см. Design/Vertuska_publicPRofile/).
+ * Профиль другого пользователя — внутриприложный вид.
+ *
+ * Логика:
+ * - Сверху шапка: аватар + @username + custom_title + bio + ачивки + стоимость коллекции
+ * - Ниже — как личная вкладка коллекции: segmented «В наличии / Вишлист», формат-фильтры, grid/list
+ * - Бронь подарка из вишлиста доступна только если ты подписан (is_following === true).
+ * - В модалке брони имя/email берутся из учётки автоматически — спрашиваем только сообщение.
  */
 import { useEffect, useMemo, useRef, useState, useCallback } from 'react';
 import {
@@ -37,7 +42,7 @@ import {
   WishlistPublicResponse,
 } from '../../../lib/types';
 import { toast } from '../../../lib/toast';
-import { AutoRail } from '../../../components/AutoRail';
+import { AchievementsBlock } from '../../../components/AchievementsBlock';
 
 type ProfileTab = 'collection' | 'wishlist';
 type ViewMode = 'grid' | 'list';
@@ -66,7 +71,6 @@ const GRID_GAP = 12;
 const GRID_PADDING = 20;
 const GRID_COLS = 3;
 const CARD_W = Math.floor((SCREEN_W - GRID_PADDING * 2 - GRID_GAP * (GRID_COLS - 1)) / GRID_COLS);
-const RAIL_COVER = 108;
 
 function formatRub(value: number) {
   return Math.round(value).toLocaleString('ru-RU').replace(/,/g, ' ');
@@ -75,122 +79,6 @@ function formatRub(value: number) {
 function priceLabel(record: PublicProfileRecord): string | null {
   if (!record.estimated_price_median) return null;
   return `~$${Math.round(record.estimated_price_median)}`;
-}
-
-/* ---------------- VINYL with curved label ---------------- */
-function Vinyl({ size = 150 }: { size?: number }) {
-  const rot = useRef(new Animated.Value(0)).current;
-  useEffect(() => {
-    const anim = Animated.loop(
-      Animated.timing(rot, {
-        toValue: 1,
-        duration: 14000,
-        easing: Easing.linear,
-        useNativeDriver: true,
-      })
-    );
-    anim.start();
-    return () => anim.stop();
-  }, [rot]);
-  const spin = rot.interpolate({ inputRange: [0, 1], outputRange: ['0deg', '360deg'] });
-
-  // Криволинейный лейбл по окружности
-  const labelText = 'ВЕРТУШКА · ПРОФИЛЬ · ВЕРТУШКА · ';
-  const chars = labelText.split('');
-  const radius = size * 0.46;
-  const center = size / 2;
-
-  return (
-    <Animated.View
-      style={{
-        width: size,
-        height: size,
-        borderRadius: size / 2,
-        backgroundColor: PP.ink,
-        transform: [{ rotate: spin }],
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 22 },
-        shadowOpacity: 0.55,
-        shadowRadius: 30,
-        elevation: 18,
-      }}
-    >
-      {/* Виниловые «канавки» */}
-      <View
-        style={{
-          position: 'absolute',
-          inset: 6,
-          borderRadius: size / 2,
-          borderWidth: 1,
-          borderColor: 'rgba(255,255,255,0.05)',
-        } as any}
-      />
-      <View
-        style={{
-          position: 'absolute',
-          left: 14, right: 14, top: 14, bottom: 14,
-          borderRadius: size / 2,
-          borderWidth: 1,
-          borderColor: 'rgba(255,255,255,0.04)',
-        }}
-      />
-
-      {/* Лейбл по окружности */}
-      {chars.map((ch, i) => {
-        const angle = (i / chars.length) * 360;
-        const rad = (angle - 90) * (Math.PI / 180);
-        const x = center + radius * Math.cos(rad) - 4;
-        const y = center + radius * Math.sin(rad) - 6;
-        return (
-          <Text
-            key={i}
-            style={{
-              position: 'absolute',
-              left: x,
-              top: y,
-              width: 8,
-              fontSize: 7,
-              color: 'rgba(255,255,255,0.55)',
-              fontFamily: Platform.select({ ios: 'Menlo', android: 'monospace' }),
-              textAlign: 'center',
-              transform: [{ rotate: `${angle}deg` }],
-            }}
-          >
-            {ch}
-          </Text>
-        );
-      })}
-
-      {/* Центральный лейбл-наклейка */}
-      <View
-        style={{
-          position: 'absolute',
-          left: size * 0.3,
-          top: size * 0.3,
-          width: size * 0.4,
-          height: size * 0.4,
-          borderRadius: size * 0.2,
-          overflow: 'hidden',
-        }}
-      >
-        <LinearGradient
-          colors={[PP.periwinkle, PP.cobalt, '#2030B0']}
-          style={{ flex: 1 }}
-        />
-      </View>
-      <View
-        style={{
-          position: 'absolute',
-          left: size / 2 - 3,
-          top: size / 2 - 3,
-          width: 6,
-          height: 6,
-          borderRadius: 3,
-          backgroundColor: PP.ink,
-        }}
-      />
-    </Animated.View>
-  );
 }
 
 /* ---------------- SEGMENTED ---------------- */
@@ -214,13 +102,13 @@ function Segmented({
       Animated.parallel([
         Animated.timing(pillX, {
           toValue: offsets[idx],
-          duration: 420,
+          duration: 380,
           easing: Easing.bezier(0.22, 0.7, 0.18, 1),
           useNativeDriver: false,
         }),
         Animated.timing(pillW, {
           toValue: widths[idx],
-          duration: 420,
+          duration: 380,
           easing: Easing.bezier(0.22, 0.7, 0.18, 1),
           useNativeDriver: false,
         }),
@@ -471,12 +359,9 @@ export default function UserProfileScreen() {
   const [isFollowLoading, setIsFollowLoading] = useState(false);
 
   const [bookingItem, setBookingItem] = useState<WishlistPublicItem | null>(null);
-  const [bookingName, setBookingName] = useState('');
-  const [bookingEmail, setBookingEmail] = useState('');
   const [bookingMessage, setBookingMessage] = useState('');
   const [isBooking, setIsBooking] = useState(false);
 
-  const bgAnim = useRef(new Animated.Value(0)).current;
   const counterAnim = useRef(new Animated.Value(0)).current;
   const [displayValue, setDisplayValue] = useState(0);
 
@@ -520,15 +405,6 @@ export default function UserProfileScreen() {
   }, [pubProfile, activeTab, wishlist, loadWishlist]);
 
   useEffect(() => {
-    Animated.timing(bgAnim, {
-      toValue: activeTab === 'collection' ? 0 : 1,
-      duration: 600,
-      easing: Easing.bezier(0.4, 0, 0.2, 1),
-      useNativeDriver: false,
-    }).start();
-  }, [activeTab, bgAnim]);
-
-  useEffect(() => {
     if (!pubProfile?.collection_value_rub) return;
     counterAnim.setValue(0);
     const id = counterAnim.addListener(({ value }) => {
@@ -536,7 +412,7 @@ export default function UserProfileScreen() {
     });
     Animated.timing(counterAnim, {
       toValue: 1,
-      duration: 1600,
+      duration: 1400,
       easing: Easing.out(Easing.cubic),
       useNativeDriver: false,
     }).start();
@@ -576,27 +452,43 @@ export default function UserProfileScreen() {
     } catch {}
   }, [username]);
 
+  const tryOpenBooking = useCallback(
+    (item: WishlistPublicItem | null, reserved: boolean) => {
+      if (!item || reserved || isOwn) return;
+      if (!currentUser) {
+        router.push('/(auth)/register');
+        return;
+      }
+      if (!following) {
+        toast.info('Подпишитесь', 'Бронь подарков доступна подписчикам');
+        return;
+      }
+      setBookingItem(item);
+    },
+    [currentUser, following, isOwn, router]
+  );
+
   const isBookingRef = useRef(false);
   const handleBookGift = useCallback(async () => {
-    if (!bookingItem || !bookingName.trim() || !bookingEmail.trim()) {
-      toast.error('Заполните имя и email');
-      return;
-    }
-    // Защита от двойных тапов (synchronous guard — disabled-prop догоняет позже)
+    if (!bookingItem || !currentUser) return;
     if (isBookingRef.current) return;
     isBookingRef.current = true;
     setIsBooking(true);
     try {
+      const gifterName = (currentUser.display_name?.trim() || currentUser.username || '').trim();
+      const gifterEmail = (currentUser.email || '').trim();
+      if (!gifterName || !gifterEmail) {
+        toast.error('Не удалось забронировать', 'Заполните имя и email в своём профиле');
+        return;
+      }
       await api.bookGift({
         wishlist_item_id: bookingItem.id,
-        gifter_name: bookingName.trim(),
-        gifter_email: bookingEmail.trim(),
+        gifter_name: gifterName,
+        gifter_email: gifterEmail,
         gifter_message: bookingMessage.trim() || undefined,
       });
       toast.success('Готово!', 'Бронь на 60 дней. Подтверждение отправлено на email.');
       setBookingItem(null);
-      setBookingName('');
-      setBookingEmail('');
       setBookingMessage('');
       await loadWishlist();
     } catch (error: any) {
@@ -605,14 +497,13 @@ export default function UserProfileScreen() {
       setIsBooking(false);
       isBookingRef.current = false;
     }
-  }, [bookingItem, bookingName, bookingEmail, bookingMessage, loadWishlist]);
+  }, [bookingItem, bookingMessage, currentUser, loadWishlist]);
 
   const collectionValueRub = pubProfile?.collection_value_rub;
   const monthlyDelta = pubProfile?.monthly_value_delta_rub;
 
   const wishlistItems = wishlist?.items || [];
 
-  // M4: грид коллекции — полная коллекция, не recent_additions
   const baseCollection: PublicProfileRecord[] = pubProfile?.collection ?? [];
   const baseWishlist: PublicProfileRecord[] = wishlistItems.map((it) => ({
     ...it.record,
@@ -639,9 +530,6 @@ export default function UserProfileScreen() {
     [applyFilter, activeTab, baseCollection, baseWishlist]
   );
 
-  const collectionBgOpacity = bgAnim.interpolate({ inputRange: [0, 1], outputRange: [1, 0] });
-  const wishlistBgOpacity = bgAnim.interpolate({ inputRange: [0, 1], outputRange: [0, 1] });
-
   if (isLoading) {
     return (
       <View style={[styles.container, styles.center, { paddingTop: insets.top }]}>
@@ -667,7 +555,7 @@ export default function UserProfileScreen() {
         <View style={styles.list}>
           {gridData.map((r, idx) => {
             const isWishlist = activeTab === 'wishlist';
-            const item = isWishlist ? wishlistItems.find((w) => w.record.id === r.id) : null;
+            const item = isWishlist ? wishlistItems.find((w) => w.record.id === r.id) ?? null : null;
             const reserved = isWishlist ? !!r.is_booked : false;
             return (
               <RecordRowLight
@@ -675,7 +563,7 @@ export default function UserProfileScreen() {
                 record={r}
                 reserved={reserved}
                 onPress={() => {
-                  if (isWishlist && item && !reserved && !isOwn) setBookingItem(item);
+                  if (isWishlist && item && !reserved && !isOwn) tryOpenBooking(item, reserved);
                   else router.push(`/record/${r.id}`);
                 }}
               />
@@ -688,7 +576,7 @@ export default function UserProfileScreen() {
       <View style={styles.grid}>
         {gridData.map((r, idx) => {
           const isWishlist = activeTab === 'wishlist';
-          const item = isWishlist ? wishlistItems.find((w) => w.record.id === r.id) : null;
+          const item = isWishlist ? wishlistItems.find((w) => w.record.id === r.id) ?? null : null;
           const reserved = isWishlist ? !!r.is_booked : false;
           return (
             <RecordCardLight
@@ -696,7 +584,7 @@ export default function UserProfileScreen() {
               record={r}
               reserved={reserved}
               onPress={() => {
-                if (isWishlist && item && !reserved && !isOwn) setBookingItem(item);
+                if (isWishlist && item && !reserved && !isOwn) tryOpenBooking(item, reserved);
                 else router.push(`/record/${r.id}`);
               }}
             />
@@ -706,51 +594,33 @@ export default function UserProfileScreen() {
     );
   };
 
+  const showStickyCTA = !currentUser;
+
   return (
     <View style={[styles.container, { paddingTop: insets.top }]}>
-      {/* Background layers */}
+      {/* Soft tinted background */}
       <View style={StyleSheet.absoluteFill}>
         <View style={[StyleSheet.absoluteFill, { backgroundColor: '#F5F0EA' }]} />
-        {/* Collection: periwinkle top-right + sky top-left */}
-        <Animated.View
+        <LinearGradient
+          colors={['rgba(154,168,255,0.55)', 'rgba(154,168,255,0.12)', 'transparent']}
+          start={{ x: 1, y: 0 }} end={{ x: 0.2, y: 0.6 }}
+          style={StyleSheet.absoluteFill}
           pointerEvents="none"
-          style={[StyleSheet.absoluteFill, { opacity: collectionBgOpacity }]}
-        >
-          <LinearGradient
-            colors={['rgba(154,168,255,0.82)', 'rgba(154,168,255,0.20)', 'transparent']}
-            start={{ x: 1, y: 0 }} end={{ x: 0.2, y: 0.65 }}
-            style={StyleSheet.absoluteFill}
-          />
-          <LinearGradient
-            colors={['rgba(189,212,255,0.60)', 'rgba(189,212,255,0.10)', 'transparent']}
-            start={{ x: 0, y: 0 }} end={{ x: 0.7, y: 0.55 }}
-            style={StyleSheet.absoluteFill}
-          />
-        </Animated.View>
-        {/* Wishlist: lavender top-right + blush top-left */}
-        <Animated.View
+        />
+        <LinearGradient
+          colors={['rgba(189,212,255,0.45)', 'rgba(189,212,255,0.08)', 'transparent']}
+          start={{ x: 0, y: 0 }} end={{ x: 0.7, y: 0.5 }}
+          style={StyleSheet.absoluteFill}
           pointerEvents="none"
-          style={[StyleSheet.absoluteFill, { opacity: wishlistBgOpacity }]}
-        >
-          <LinearGradient
-            colors={['rgba(201,184,255,0.85)', 'rgba(201,184,255,0.22)', 'transparent']}
-            start={{ x: 1, y: 0 }} end={{ x: 0.2, y: 0.65 }}
-            style={StyleSheet.absoluteFill}
-          />
-          <LinearGradient
-            colors={['rgba(246,199,208,0.68)', 'rgba(246,199,208,0.12)', 'transparent']}
-            start={{ x: 0, y: 0 }} end={{ x: 0.7, y: 0.55 }}
-            style={StyleSheet.absoluteFill}
-          />
-        </Animated.View>
+        />
       </View>
 
-      {/* Top bar */}
+      {/* Top bar — минимальный */}
       <View style={styles.topbar}>
         <TouchableOpacity onPress={() => router.back()} style={styles.iconBtn}>
-          <Icon name="chevron-back" size={22} color={PP.cobalt} />
+          <Icon name="chevron-back" size={22} color={PP.ink} />
         </TouchableOpacity>
-        <Text style={styles.brand}>ВЕРТУШКА · ПРОФИЛЬ</Text>
+        <View style={{ flex: 1 }} />
         <TouchableOpacity onPress={handleShare} style={styles.iconBtn}>
           <Icon name="share-outline" size={18} color={PP.ink} />
         </TouchableOpacity>
@@ -758,143 +628,153 @@ export default function UserProfileScreen() {
 
       <ScrollView
         showsVerticalScrollIndicator={false}
-        contentContainerStyle={{ paddingBottom: 140 }}
+        contentContainerStyle={{ paddingBottom: showStickyCTA ? 140 : 32 }}
         refreshControl={
           <RefreshControl refreshing={isRefreshing} onRefresh={handleRefresh} tintColor={PP.cobalt} />
         }
       >
-        {/* HERO — left: avatar + username + price, right: vinyl */}
+        {/* HERO — компактный, без винила */}
         <View style={styles.hero}>
-          <View style={styles.heroLeft}>
-            <View style={styles.userRow}>
-              <View style={styles.avatarShadow}>
-                <LinearGradient colors={[PP.blush, PP.lavender, PP.periwinkle, PP.sky]} style={styles.avatarRing}>
-                  <View style={styles.avatarInner}>
-                    {pubProfile.avatar_url ? (
-                      <Image
-                        source={resolveMediaUrl(pubProfile.avatar_url)}
-                        style={{ width: '100%', height: '100%', borderRadius: 50 }}
-                        cachePolicy="disk"
-                      />
-                    ) : (
-                      <Text style={styles.avatarInitials}>{initials}</Text>
-                    )}
-                  </View>
-                </LinearGradient>
+          <View style={styles.userRow}>
+            <View style={styles.avatarShadow}>
+              <LinearGradient
+                colors={[PP.blush, PP.lavender, PP.periwinkle, PP.sky]}
+                style={styles.avatarRing}
+              >
+                <View style={styles.avatarInner}>
+                  {pubProfile.avatar_url ? (
+                    <Image
+                      source={resolveMediaUrl(pubProfile.avatar_url)}
+                      style={{ width: '100%', height: '100%', borderRadius: 60 }}
+                      cachePolicy="disk"
+                    />
+                  ) : (
+                    <Text style={styles.avatarInitials}>{initials}</Text>
+                  )}
+                </View>
+              </LinearGradient>
+            </View>
+            <View style={{ flex: 1, minWidth: 0 }}>
+              <Text style={styles.username} numberOfLines={1}>@{pubProfile.username}</Text>
+              {pubProfile.custom_title ? (
+                <Text style={styles.customTitle} numberOfLines={2}>{pubProfile.custom_title}</Text>
+              ) : null}
+              {pubProfile.bio ? (
+                <Text style={styles.bio} numberOfLines={3}>{pubProfile.bio}</Text>
+              ) : null}
+            </View>
+          </View>
+
+          {/* Follow button */}
+          {!isOwn && profileUserId ? (
+            <TouchableOpacity
+              style={[styles.followBtn, following && styles.followBtnActive]}
+              onPress={handleFollow}
+              disabled={isFollowLoading}
+            >
+              {isFollowLoading ? (
+                <ActivityIndicator size="small" color={following ? PP.cobalt : '#fff'} />
+              ) : (
+                <>
+                  <Icon
+                    name={following ? 'checkmark' : 'person-add-outline'}
+                    size={16} color={following ? PP.cobalt : '#fff'}
+                  />
+                  <Text style={[styles.followTxt, following && styles.followTxtActive]}>
+                    {following ? 'Вы подписаны' : 'Подписаться'}
+                  </Text>
+                </>
+              )}
+            </TouchableOpacity>
+          ) : null}
+
+          {/* Stats card */}
+          {collectionValueRub != null ? (
+            <View style={styles.statsCard}>
+              <Text style={styles.statLabel}>Стоимость коллекции</Text>
+              <Text style={styles.statValue}>
+                {formatRub(displayValue)} <Text style={styles.currency}>₽</Text>
+              </Text>
+              <View style={styles.statsRow}>
+                <View style={styles.statsItem}>
+                  <Text style={styles.statsNum}>{pubProfile.collection_count}</Text>
+                  <Text style={styles.statsLbl}>в коллекции</Text>
+                </View>
+                <View style={styles.statsDivider} />
+                <View style={styles.statsItem}>
+                  <Text style={styles.statsNum}>{pubProfile.wishlist_count}</Text>
+                  <Text style={styles.statsLbl}>в вишлисте</Text>
+                </View>
+                <View style={styles.statsDivider} />
+                <View style={styles.statsItem}>
+                  <Text style={styles.statsNum}>{pubProfile.followers_count}</Text>
+                  <Text style={styles.statsLbl}>подписчиков</Text>
+                </View>
               </View>
-              <View style={{ minWidth: 0 }}>
-                <Text style={styles.username} numberOfLines={1}>@{pubProfile.username}</Text>
-                {pubProfile.custom_title ? (
-                  <Text style={styles.customTitle} numberOfLines={1}>{pubProfile.custom_title}</Text>
-                ) : null}
+              {monthlyDelta != null ? (
+                <View style={styles.deltaPill}>
+                  <Icon
+                    name={monthlyDelta >= 0 ? 'arrow-up' : 'arrow-down'}
+                    size={11} color={PP.cobalt}
+                  />
+                  <Text style={styles.deltaText}>
+                    {monthlyDelta >= 0 ? '+' : ''}{formatRub(monthlyDelta)} ₽ за месяц
+                  </Text>
+                </View>
+              ) : null}
+            </View>
+          ) : (
+            <View style={styles.statsRowStandalone}>
+              <View style={styles.statsItem}>
+                <Text style={styles.statsNum}>{pubProfile.collection_count}</Text>
+                <Text style={styles.statsLbl}>в коллекции</Text>
+              </View>
+              <View style={styles.statsDivider} />
+              <View style={styles.statsItem}>
+                <Text style={styles.statsNum}>{pubProfile.wishlist_count}</Text>
+                <Text style={styles.statsLbl}>в вишлисте</Text>
+              </View>
+              <View style={styles.statsDivider} />
+              <View style={styles.statsItem}>
+                <Text style={styles.statsNum}>{pubProfile.followers_count}</Text>
+                <Text style={styles.statsLbl}>подписчиков</Text>
               </View>
             </View>
-
-            {collectionValueRub != null ? (
-              <View style={[{ marginTop: 16 }, styles.statsCard]}>
-                <Text style={styles.statLabel}>Стоимость коллекции</Text>
-                <Text style={styles.statValue}>
-                  {formatRub(displayValue)} <Text style={styles.currency}>₽</Text>
-                </Text>
-                {monthlyDelta != null ? (
-                  <View style={styles.deltaPill}>
-                    <Icon
-                      name={monthlyDelta >= 0 ? 'arrow-up' : 'arrow-down'}
-                      size={11} color={PP.cobalt}
-                    />
-                    <Text style={styles.deltaText}>
-                      {monthlyDelta >= 0 ? '+' : ''}{formatRub(monthlyDelta)} ₽ за месяц
-                    </Text>
-                  </View>
-                ) : null}
-              </View>
-            ) : null}
-          </View>
-
-          <View style={styles.heroRight}>
-            <Vinyl size={160} />
-          </View>
-        </View>
-
-        {/* Follow button */}
-        {!isOwn && profileUserId ? (
-          <TouchableOpacity
-            style={[styles.followBtn, following && styles.followBtnActive]}
-            onPress={handleFollow}
-            disabled={isFollowLoading}
-          >
-            {isFollowLoading ? (
-              <ActivityIndicator size="small" color={following ? PP.cobalt : '#fff'} />
-            ) : (
-              <>
-                <Icon
-                  name={following ? 'checkmark' : 'person-add-outline'}
-                  size={16} color={following ? PP.cobalt : '#fff'}
-                />
-                <Text style={[styles.followTxt, following && styles.followTxtActive]}>
-                  {following ? 'Подписаны' : 'Подписаться'}
-                </Text>
-              </>
-            )}
-          </TouchableOpacity>
-        ) : null}
-
-        {/* Rails */}
-        <View style={{ marginTop: 22 }}>
-          {activeTab === 'collection' ? (
-            <AutoRail
-              title="Недавно добавленные"
-              subtitle="Свежее в коллекции"
-              titleColor={PP.cobalt}
-              items={pubProfile.recent_additions}
-              onPick={(r) => {
-                if (!currentUser) {
-                  router.push('/(auth)/register');
-                  return;
-                }
-                router.push(`/record/${r.id}`);
-              }}
-            />
-          ) : (
-            <AutoRail
-              title="Новинки"
-              subtitle="Свежие релизы · Discogs"
-              titleColor={PP.slate}
-              items={pubProfile.new_releases}
-              showYear
-              onPick={(r) => {
-                if (!currentUser) {
-                  router.push('/(auth)/register');
-                  return;
-                }
-                router.push(`/record/${r.id}`);
-              }}
-            />
           )}
         </View>
 
-        {/* Booking 1-line hint (только в вишлисте) */}
-        {activeTab === 'wishlist' ? (
+        {/* Achievements */}
+        <View style={styles.achievementsWrap}>
+          <AchievementsBlock username={username} />
+        </View>
+
+        {/* Booking hint — только в вишлисте */}
+        {activeTab === 'wishlist' && !isOwn ? (
           <View style={styles.bookingHint}>
             <Text style={styles.bookingHintTxt}>
               🔒 Бронь анонимна · 🎁 60 дней · ⏰ напоминание за 7
             </Text>
+            {!following ? (
+              <Text style={styles.bookingHintSub}>
+                Подпишитесь, чтобы бронировать подарки
+              </Text>
+            ) : null}
           </View>
         ) : null}
 
-        {/* Segmented — по центру */}
+        {/* Segmented */}
         <View style={styles.segmentedWrap}>
           <Segmented
             value={activeTab}
             onChange={setActiveTab}
             items={[
-              { id: 'collection', label: 'Коллекция', count: pubProfile.collection_count },
+              { id: 'collection', label: 'В наличии', count: pubProfile.collection_count },
               { id: 'wishlist', label: 'Вишлист', count: pubProfile.wishlist_count },
             ]}
           />
         </View>
 
-        {/* Toolbar: ViewToggle + FormatFilter */}
+        {/* Toolbar: формат + view toggle */}
         <View style={styles.toolbar}>
           <View style={{ flex: 1, marginRight: 10 }}>
             <FormatChips value={formatFilter} onChange={setFormatFilter} />
@@ -904,28 +784,28 @@ export default function UserProfileScreen() {
 
         {/* Grid / List */}
         {renderGrid()}
-
-        <Text style={styles.brandFooter}>VINYL-VERTUSHKA.RU</Text>
       </ScrollView>
 
-      {/* Sticky CTA */}
-      <View pointerEvents="box-none" style={[styles.ctaWrap, { paddingBottom: insets.bottom + 12 }]}>
-        <LinearGradient
-          pointerEvents="none"
-          colors={['rgba(244,238,230,0)', 'rgba(244,238,230,0.85)', 'rgba(244,238,230,1)']}
-          style={styles.ctaFade}
-        />
-        <TouchableOpacity
-          activeOpacity={0.9}
-          style={styles.cta}
-          onPress={() => router.push('/profile')}
-        >
-          <Icon name="add-circle-outline" size={18} color="#fff" />
-          <Text style={styles.ctaTxt}>Создать свой профиль</Text>
-        </TouchableOpacity>
-      </View>
+      {/* Sticky CTA — только для неавторизованных deep-link юзеров */}
+      {showStickyCTA ? (
+        <View pointerEvents="box-none" style={[styles.ctaWrap, { paddingBottom: insets.bottom + 12 }]}>
+          <LinearGradient
+            pointerEvents="none"
+            colors={['rgba(244,238,230,0)', 'rgba(244,238,230,0.85)', 'rgba(244,238,230,1)']}
+            style={styles.ctaFade}
+          />
+          <TouchableOpacity
+            activeOpacity={0.9}
+            style={styles.cta}
+            onPress={() => router.push('/(auth)/register')}
+          >
+            <Icon name="add-circle-outline" size={18} color="#fff" />
+            <Text style={styles.ctaTxt}>Создать свой профиль</Text>
+          </TouchableOpacity>
+        </View>
+      ) : null}
 
-      {/* Booking modal */}
+      {/* Booking modal — без полей имени/email (берём из учётки) */}
       <Modal
         visible={!!bookingItem}
         transparent
@@ -948,47 +828,56 @@ export default function UserProfileScreen() {
               </TouchableOpacity>
             </View>
             {bookingItem ? (
-              <Text style={styles.modalRec}>
-                {bookingItem.record.artist} — {bookingItem.record.title}
-              </Text>
+              <View style={styles.modalRecRow}>
+                <View style={styles.modalRecCover}>
+                  {bookingItem.record.cover_image_url ? (
+                    <Image
+                      source={resolveMediaUrl(bookingItem.record.cover_image_url)}
+                      style={{ width: 56, height: 56 }}
+                      cachePolicy="disk"
+                    />
+                  ) : (
+                    <LinearGradient
+                      colors={[PP.lavender, PP.sky]}
+                      style={{ width: 56, height: 56 }}
+                    />
+                  )}
+                </View>
+                <View style={{ flex: 1, minWidth: 0 }}>
+                  <Text numberOfLines={1} style={styles.cardArtist}>
+                    {bookingItem.record.artist}
+                  </Text>
+                  <Text numberOfLines={2} style={styles.modalRecTitle}>
+                    {bookingItem.record.title}
+                  </Text>
+                </View>
+              </View>
             ) : null}
             <Text style={styles.modalInfo}>
               Бронь анонимная — владелец увидит только метку «Забронировано». Срок 60 дней.
               За 7 дней до истечения мы напомним на email. Если подарок не вручён — бронь
               освободится автоматически.
             </Text>
-            <TextInput
-              style={styles.input}
-              placeholder="Ваше имя"
-              placeholderTextColor={PP.mute}
-              value={bookingName}
-              onChangeText={setBookingName}
-              autoCapitalize="words"
-            />
-            <TextInput
-              style={styles.input}
-              placeholder="Email для подтверждения"
-              placeholderTextColor={PP.mute}
-              value={bookingEmail}
-              onChangeText={setBookingEmail}
-              keyboardType="email-address"
-              autoCapitalize="none"
-            />
+            {currentUser ? (
+              <View style={styles.identityChip}>
+                <Icon name="person-circle-outline" size={16} color={PP.cobalt} />
+                <Text style={styles.identityTxt} numberOfLines={1}>
+                  {(currentUser.display_name || currentUser.username) + ' · ' + currentUser.email}
+                </Text>
+              </View>
+            ) : null}
             <TextInput
               style={[styles.input, styles.textarea]}
-              placeholder="Сообщение (необязательно)"
+              placeholder="Сообщение владельцу (необязательно)"
               placeholderTextColor={PP.mute}
               value={bookingMessage}
               onChangeText={setBookingMessage}
               multiline
             />
             <TouchableOpacity
-              style={[
-                styles.confirmBtn,
-                (!bookingName.trim() || !bookingEmail.trim() || isBooking) && { opacity: 0.55 },
-              ]}
+              style={[styles.confirmBtn, isBooking && { opacity: 0.55 }]}
               onPress={handleBookGift}
-              disabled={isBooking || !bookingName.trim() || !bookingEmail.trim()}
+              disabled={isBooking}
             >
               {isBooking ? (
                 <ActivityIndicator color="#fff" />
@@ -1014,12 +903,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: GRID_PADDING,
     paddingVertical: 8,
   },
-  brand: {
-    fontFamily: Platform.select({ ios: 'Menlo', android: 'monospace' }),
-    fontSize: 11,
-    letterSpacing: 1.5,
-    color: PP.slate,
-  },
   iconBtn: {
     width: 36, height: 36, borderRadius: 18,
     alignItems: 'center', justifyContent: 'center',
@@ -1027,17 +910,13 @@ const styles = StyleSheet.create({
     borderWidth: 1, borderColor: PP.hairline,
   },
 
-  /* HERO — horizontal: left content + right vinyl */
+  /* HERO */
   hero: {
-    flexDirection: 'row',
-    alignItems: 'center',
     paddingHorizontal: GRID_PADDING,
-    paddingTop: 8,
-    paddingBottom: 12,
+    paddingTop: 4,
+    paddingBottom: 8,
   },
-  heroLeft: { flex: 1, paddingRight: 12 },
-  heroRight: { alignItems: 'flex-end' },
-  userRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  userRow: { flexDirection: 'row', alignItems: 'center', gap: 14 },
   avatarShadow: {
     shadowColor: PP.periwinkle,
     shadowOffset: { width: 0, height: 8 },
@@ -1045,19 +924,38 @@ const styles = StyleSheet.create({
     shadowRadius: 16,
     elevation: 10,
   },
-  avatarRing: { width: 50, height: 50, borderRadius: 25, padding: 2 },
+  avatarRing: { width: 64, height: 64, borderRadius: 32, padding: 2.5 },
   avatarInner: {
-    flex: 1, borderRadius: 50, backgroundColor: PP.pearl,
+    flex: 1, borderRadius: 60, backgroundColor: PP.pearl,
     alignItems: 'center', justifyContent: 'center', overflow: 'hidden',
   },
-  avatarInitials: { color: PP.cobalt, fontWeight: '600', fontSize: 16 },
+  avatarInitials: { color: PP.cobalt, fontWeight: '600', fontSize: 18 },
   username: { fontSize: 22, fontWeight: '700', color: PP.ink, letterSpacing: -0.3 },
-  customTitle: { fontSize: 12, color: PP.slate, marginTop: 2 },
+  customTitle: { fontSize: 12, color: PP.slate, marginTop: 3 },
+  bio: { fontSize: 13, color: PP.slate, marginTop: 6, lineHeight: 18 },
 
+  /* Follow button */
+  followBtn: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
+    marginTop: 16, marginBottom: 4,
+    backgroundColor: PP.cobalt, borderRadius: 14, paddingVertical: 12,
+  },
+  followBtnActive: {
+    backgroundColor: PP.whiteSoft, borderWidth: 1, borderColor: 'rgba(58,75,224,0.25)',
+  },
+  followTxt: { color: '#fff', fontWeight: '600', fontSize: 14 },
+  followTxtActive: { color: PP.cobalt },
+
+  /* Stats card */
   statsCard: {
+    marginTop: 16,
+    backgroundColor: 'rgba(255,255,255,0.55)',
+    borderRadius: 18,
+    borderWidth: 1, borderColor: PP.hairline,
+    paddingHorizontal: 18, paddingVertical: 16,
     shadowColor: PP.ink,
     shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.10,
+    shadowOpacity: 0.08,
     shadowRadius: 12,
   },
   statLabel: {
@@ -1070,44 +968,36 @@ const styles = StyleSheet.create({
   currency: { fontSize: 18, color: PP.slate, fontWeight: '500' },
   deltaPill: {
     flexDirection: 'row', alignItems: 'center', gap: 6,
-    marginTop: 10, paddingHorizontal: 10, paddingVertical: 5,
-    borderRadius: 999, backgroundColor: 'rgba(255,255,255,0.55)',
+    marginTop: 12, paddingHorizontal: 10, paddingVertical: 5,
+    borderRadius: 999, backgroundColor: 'rgba(255,255,255,0.6)',
     borderWidth: 1, borderColor: 'rgba(58,75,224,0.12)',
+    alignSelf: 'flex-start',
   },
   deltaText: { fontSize: 11, color: PP.cobalt, fontWeight: '500' },
+  statsRow: {
+    flexDirection: 'row', alignItems: 'center',
+    marginTop: 14,
+    paddingTop: 14,
+    borderTopWidth: 1, borderTopColor: PP.hairline,
+  },
+  statsRowStandalone: {
+    flexDirection: 'row', alignItems: 'center',
+    marginTop: 16,
+    paddingVertical: 14, paddingHorizontal: 18,
+    backgroundColor: 'rgba(255,255,255,0.55)',
+    borderRadius: 18,
+    borderWidth: 1, borderColor: PP.hairline,
+  },
+  statsItem: { flex: 1, alignItems: 'center' },
+  statsNum: { fontSize: 18, fontWeight: '700', color: PP.ink, letterSpacing: -0.2 },
+  statsLbl: { fontSize: 10.5, color: PP.mute, marginTop: 3, letterSpacing: 0.2 },
+  statsDivider: { width: 1, height: 24, backgroundColor: PP.hairline },
 
-  followBtn: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
-    marginHorizontal: GRID_PADDING, marginTop: 14, marginBottom: 4,
-    backgroundColor: PP.cobalt, borderRadius: 14, paddingVertical: 12,
+  /* Achievements wrapper */
+  achievementsWrap: {
+    paddingHorizontal: GRID_PADDING,
+    marginTop: 18,
   },
-  followBtnActive: {
-    backgroundColor: PP.whiteSoft, borderWidth: 1, borderColor: 'rgba(58,75,224,0.25)',
-  },
-  followTxt: { color: '#fff', fontWeight: '600', fontSize: 14 },
-  followTxtActive: { color: PP.cobalt },
-
-  /* Rails */
-  railHead: {
-    flexDirection: 'row', alignItems: 'baseline', justifyContent: 'space-between',
-    paddingHorizontal: GRID_PADDING, marginBottom: 12,
-  },
-  railTitle: {
-    fontSize: 10, letterSpacing: 1.2, fontWeight: '600',
-    fontFamily: Platform.select({ ios: 'Menlo', android: 'monospace' }),
-  },
-  railSub: { fontSize: 11, color: PP.mute },
-  railCover: {
-    width: RAIL_COVER, height: RAIL_COVER, borderRadius: 13, overflow: 'hidden',
-    backgroundColor: PP.lavender,
-    shadowColor: PP.ink, shadowOffset: { width: 0, height: 8 }, shadowOpacity: 0.18, shadowRadius: 14,
-  },
-  railArtist: {
-    fontFamily: Platform.select({ ios: 'Menlo', android: 'monospace' }),
-    fontSize: 9, letterSpacing: 0.6, marginTop: 8,
-  },
-  railTitleSmall: { fontSize: 11.5, fontWeight: '600', color: PP.ink, marginTop: 2 },
-  railYear: { fontSize: 11, color: PP.periwinkle, marginTop: 2 },
 
   /* Booking hint */
   bookingHint: {
@@ -1120,11 +1010,12 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   bookingHintTxt: { fontSize: 12, color: PP.slate, fontWeight: '500' },
+  bookingHintSub: { fontSize: 11, color: PP.cobalt, fontWeight: '600', marginTop: 4 },
 
   /* Segmented */
   segmentedWrap: {
     alignItems: 'center',
-    marginTop: 20,
+    marginTop: 18,
     paddingHorizontal: GRID_PADDING,
   },
   segmented: {
@@ -1244,13 +1135,7 @@ const styles = StyleSheet.create({
     width: '100%', textAlign: 'center', color: PP.mute, fontSize: 14, paddingVertical: 60,
   },
 
-  brandFooter: {
-    textAlign: 'center', color: PP.mute, fontSize: 10,
-    fontFamily: Platform.select({ ios: 'Menlo', android: 'monospace' }),
-    letterSpacing: 1.4, marginTop: 24,
-  },
-
-  /* Sticky CTA */
+  /* Sticky CTA — только для гостей */
   ctaWrap: {
     position: 'absolute', left: 0, right: 0, bottom: 0,
     alignItems: 'center',
@@ -1281,11 +1166,31 @@ const styles = StyleSheet.create({
   },
   modalHeader: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    marginBottom: 6,
+    marginBottom: 10,
   },
   modalTitle: { fontSize: 18, fontWeight: '700', color: PP.ink, letterSpacing: -0.3 },
-  modalRec: { fontSize: 13, color: PP.cobalt, fontWeight: '500', marginTop: 4 },
-  modalInfo: { fontSize: 12.5, color: PP.slate, lineHeight: 18, marginTop: 10, marginBottom: 16 },
+  modalRecRow: {
+    flexDirection: 'row', alignItems: 'center', gap: 12,
+    paddingVertical: 10,
+    borderTopWidth: 1, borderTopColor: PP.hairline,
+    borderBottomWidth: 1, borderBottomColor: PP.hairline,
+    marginBottom: 12,
+  },
+  modalRecCover: {
+    width: 56, height: 56, borderRadius: 10, overflow: 'hidden',
+    backgroundColor: PP.lavender,
+  },
+  modalRecTitle: { fontSize: 14, color: PP.ink, fontWeight: '700', marginTop: 2 },
+  modalInfo: { fontSize: 12.5, color: PP.slate, lineHeight: 18, marginBottom: 12 },
+  identityChip: {
+    flexDirection: 'row', alignItems: 'center', gap: 8,
+    paddingHorizontal: 12, paddingVertical: 10,
+    borderRadius: 12,
+    backgroundColor: 'rgba(58,75,224,0.08)',
+    borderWidth: 1, borderColor: 'rgba(58,75,224,0.18)',
+    marginBottom: 10,
+  },
+  identityTxt: { flex: 1, fontSize: 12.5, color: PP.cobalt, fontWeight: '500' },
   input: {
     height: 46, paddingHorizontal: 14, borderRadius: 14,
     backgroundColor: 'rgba(255,255,255,0.75)',

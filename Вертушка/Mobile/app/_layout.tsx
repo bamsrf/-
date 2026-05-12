@@ -30,6 +30,7 @@ try {
 import { Colors } from '../constants/theme';
 import { OfflineBanner } from '../components/OfflineBanner';
 import { OnboardingOverlay } from '../components/OnboardingOverlay';
+import { AchievementUnlockHost } from '../components/AchievementUnlockOverlay';
 import Toast from 'react-native-toast-message';
 import { toastConfig } from '../components/CustomToast';
 import { initAmplitude } from '../lib/analytics';
@@ -167,8 +168,11 @@ function RootLayout() {
           <Stack.Screen name="gift/[id]" />
           <Stack.Screen name="social/list" />
           <Stack.Screen name="dev/icons" />
+          <Stack.Screen name="achievements" options={{ headerShown: true, title: 'Ачивки' }} />
+          <Stack.Screen name="user/[username]/achievements" options={{ headerShown: true, title: 'Ачивки' }} />
         </Stack>
         <OnboardingOverlay />
+        <AchievementUnlockHost />
         <Toast config={toastConfig} topOffset={56} />
       </SafeAreaProvider>
     </GestureHandlerRootView>
