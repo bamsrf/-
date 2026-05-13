@@ -105,18 +105,39 @@ def reset_registry() -> None:
 
 # Загружаем определения. Порядок важен: серии раньше, рандом — после.
 # Внутри серии: обычные ачивки → мета-ачивка.
+#
+# Серии-каркасы (rarity / geography / eras / genres / invitations / discography
+# + J2–J6 в gifts.py) — это SCAFFOLDING. Их evaluator-ы возвращают
+# `unlocked=False`, поэтому ничего не выдают пользователям. Каталог-эндпоинт
+# отдаёт их как «навсегда залоченные», чтобы Mobile-команда видела сетку серий
+# в UI и проверяла верстку до прихода финальных дизайнов/копирайта.
 def _load_definitions() -> None:
     # Импорты внутри функции, чтобы избежать циклов и регистрировать в нужном порядке.
     from app.services.achievements.definitions.series import foundation as _foundation
     from app.services.achievements.definitions.series import scale as _scale
     from app.services.achievements.definitions.series import gifts as _gifts
     from app.services.achievements.definitions.series import community as _community
+    from app.services.achievements.definitions.series import rarity as _rarity
+    from app.services.achievements.definitions.series import geography as _geography
+    from app.services.achievements.definitions.series import eras as _eras
+    from app.services.achievements.definitions.series import genres as _genres
+    from app.services.achievements.definitions.series import invitations as _invitations
+    from app.services.achievements.definitions.series import discography as _discography
     from app.services.achievements.definitions import random as _random
 
+    # Реальная логика (Phase 0 / Phase 1)
     register(*_foundation.DEFINITIONS)
     register(*_scale.DEFINITIONS)
     register(*_gifts.DEFINITIONS)
     register(*_community.DEFINITIONS)
+    # Каркасы (Phase 2–4) — evaluator всегда False
+    register(*_rarity.DEFINITIONS)
+    register(*_geography.DEFINITIONS)
+    register(*_eras.DEFINITIONS)
+    register(*_genres.DEFINITIONS)
+    register(*_invitations.DEFINITIONS)
+    register(*_discography.DEFINITIONS)
+    # Рандом — после всех серий
     register(*_random.DEFINITIONS)
 
 

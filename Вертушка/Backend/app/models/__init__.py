@@ -7,6 +7,7 @@ from app.models.collection import Collection, CollectionItem
 from app.models.wishlist import Wishlist, WishlistItem
 from app.models.gift_booking import GiftBooking
 from app.models.follow import Follow
+from app.models.follow_request import FollowRequest, FollowRequestStatus
 from app.models.profile_share import ProfileShare
 from app.models.search_cache import SearchCache
 from app.models.user_photo import UserRecordPhoto
@@ -26,6 +27,8 @@ __all__ = [
     "WishlistItem",
     "GiftBooking",
     "Follow",
+    "FollowRequest",
+    "FollowRequestStatus",
     "ProfileShare",
     "SearchCache",
     "UserRecordPhoto",

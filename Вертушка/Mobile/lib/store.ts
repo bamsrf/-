@@ -990,8 +990,9 @@ interface FollowState {
   // Actions
   fetchFollowing: () => Promise<void>;
   fetchFollowers: () => Promise<void>;
-  followUser: (userId: string) => Promise<void>;
+  followUser: (userId: string) => Promise<import('./types').FollowActionResult>;
   unfollowUser: (userId: string) => Promise<void>;
+  cancelFollowRequest: (userId: string) => Promise<void>;
   fetchFeed: () => Promise<void>;
   loadMoreFeed: () => Promise<void>;
 }
@@ -1201,15 +1202,24 @@ export const useFollowStore = create<FollowState>((set, get) => ({
   },
 
   followUser: async (userId) => {
-    await api.followUser(userId);
-    await get().fetchFollowing();
-    // Возможные анлоки: K1 (5 подписок), K7 mutual
-    detectAchievementUnlocks();
+    const result = await api.followUser(userId);
+    // Список «подписки» обновляем только если реально создан Follow.
+    // Для приватных профилей (status='requested') список не меняется.
+    if (result.status === 'followed' || result.status === 'already_following') {
+      await get().fetchFollowing();
+      // Возможные анлоки: K1 (5 подписок), K7 mutual
+      detectAchievementUnlocks();
+    }
+    return result;
   },
 
   unfollowUser: async (userId) => {
     await api.unfollowUser(userId);
     await get().fetchFollowing();
+  },
+
+  cancelFollowRequest: async (userId) => {
+    await api.cancelFollowRequest(userId);
   },
 
   fetchFeed: async () => {

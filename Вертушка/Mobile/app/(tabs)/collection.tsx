@@ -45,6 +45,13 @@ const SEGMENTS: { key: CollectionTab; label: string }[] = [
 type ViewMode = 'grid' | 'list';
 
 type FormatFilter = 'all' | 'vinyl' | 'cd' | 'cassette' | 'box_set';
+type SortMode = 'added_desc' | 'added_asc' | 'title';
+
+const SORT_OPTIONS: { key: SortMode; label: string }[] = [
+  { key: 'added_desc', label: 'Новые → старые' },
+  { key: 'added_asc', label: 'Старые → новые' },
+  { key: 'title', label: 'По названию' },
+];
 
 const FORMAT_OPTIONS: { key: FormatFilter; label: string; match: string[] }[] = [
   { key: 'all', label: 'Все форматы', match: [] },
@@ -66,12 +73,15 @@ export default function CollectionScreen() {
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [viewMode, setViewMode] = useState<ViewMode>('grid');
   const [activeFilter, setActiveFilter] = useState<FormatFilter>('all');
+  const [activeSort, setActiveSort] = useState<SortMode>('added_desc');
   const modeAnim = useRef(new Animated.Value(0)).current;
   const menuAnim = useRef(new Animated.Value(0)).current;
   const viewIconAnim = useRef(new Animated.Value(0)).current; // 0 = grid, 1 = list
   const filterMenuAnim = useRef(new Animated.Value(0)).current; // 0 = closed, 1 = open
+  const sortMenuAnim = useRef(new Animated.Value(0)).current;   // 0 = closed, 1 = open
 
   const filterMenuOpen = useRef(false);
+  const sortMenuOpen = useRef(false);
 
   const [showFolderPicker, setShowFolderPicker] = useState(false);
   const { user } = useAuthStore();
@@ -159,11 +169,23 @@ export default function CollectionScreen() {
     });
   };
 
-  // Открытие/закрытие фильтр-меню с анимацией
+  const smoothCloseSort = (cb?: () => void) => {
+    Animated.timing(sortMenuAnim, {
+      toValue: 0,
+      duration: 220,
+      useNativeDriver: false,
+    }).start(() => {
+      sortMenuOpen.current = false;
+      cb?.();
+    });
+  };
+
+  // Открытие/закрытие фильтр-меню с анимацией (закрывает sort, если открыт)
   const handleToggleFilterMenu = () => {
     if (filterMenuOpen.current) {
       smoothCloseFilter();
     } else {
+      if (sortMenuOpen.current) smoothCloseSort();
       filterMenuOpen.current = true;
       Animated.spring(filterMenuAnim, {
         toValue: 1,
@@ -174,8 +196,27 @@ export default function CollectionScreen() {
     }
   };
 
+  const handleToggleSortMenu = () => {
+    if (sortMenuOpen.current) {
+      smoothCloseSort();
+    } else {
+      if (filterMenuOpen.current) smoothCloseFilter();
+      sortMenuOpen.current = true;
+      Animated.spring(sortMenuAnim, {
+        toValue: 1,
+        tension: 280,
+        friction: 22,
+        useNativeDriver: false,
+      }).start();
+    }
+  };
+
   const handleSelectFilter = (filter: FormatFilter) => {
     smoothCloseFilter(() => setActiveFilter(filter));
+  };
+
+  const handleSelectSort = (sort: SortMode) => {
+    smoothCloseSort(() => setActiveSort(sort));
   };
 
   const handleRefresh = useCallback(async () => {
@@ -449,7 +490,7 @@ export default function CollectionScreen() {
   const rawData = (activeTab === 'collection' ? collectionItems : wishlistItems) as (CollectionItem | WishlistItem)[];
 
   // Фильтрация по формату
-  const data = activeFilter === 'all' ? rawData : rawData.filter(item => {
+  const filtered = activeFilter === 'all' ? rawData : rawData.filter(item => {
     const formatType = (item.record.format_type || '').toLowerCase();
     const formatDesc = (item.record.format_description || '').toLowerCase();
     const matchWords = FORMAT_OPTIONS.find(f => f.key === activeFilter)?.match || [];
@@ -458,6 +499,24 @@ export default function CollectionScreen() {
       return formatType.includes(wLower) || formatDesc.includes(wLower);
     });
   });
+
+  // Сортировка
+  const data = (() => {
+    const arr = [...filtered];
+    const ts = (s?: string | null) => (s ? Date.parse(s) : 0);
+    if (activeSort === 'added_desc') {
+      arr.sort((a, b) => ts(b.added_at) - ts(a.added_at));
+    } else if (activeSort === 'added_asc') {
+      arr.sort((a, b) => {
+        const av = a.added_at ? ts(a.added_at) : Number.POSITIVE_INFINITY;
+        const bv = b.added_at ? ts(b.added_at) : Number.POSITIVE_INFINITY;
+        return av - bv;
+      });
+    } else if (activeSort === 'title') {
+      arr.sort((a, b) => (a.record.title || '').localeCompare(b.record.title || '', 'ru'));
+    }
+    return arr;
+  })();
 
   const selectOpacity = modeAnim.interpolate({ inputRange: [0, 1], outputRange: [1, 0] });
   const selectScale = modeAnim.interpolate({ inputRange: [0, 1], outputRange: [1, 0.85] });
@@ -640,6 +699,17 @@ export default function CollectionScreen() {
               </TouchableOpacity>
             </View>
           )}
+
+          {/* Sort button */}
+          {!isSelectionMode && (
+            <TouchableOpacity
+              style={styles.filterButton}
+              onPress={handleToggleSortMenu}
+              activeOpacity={0.7}
+            >
+              <Icon name="swap-vertical-outline" size={18} color={Colors.royalBlue} />
+            </TouchableOpacity>
+          )}
         </View>
 
         {/* Filter dropdown */}
@@ -662,6 +732,33 @@ export default function CollectionScreen() {
                   {option.label}
                 </Text>
                 {activeFilter === option.key && (
+                  <Icon name="checkmark" size={18} color={Colors.royalBlue} />
+                )}
+              </TouchableOpacity>
+            ))}
+          </View>
+        </Animated.View>
+
+        {/* Sort dropdown */}
+        <Animated.View
+          style={{
+            maxHeight: sortMenuAnim.interpolate({ inputRange: [0, 1], outputRange: [0, 240] }),
+            opacity: sortMenuAnim,
+            overflow: 'hidden',
+          }}
+          pointerEvents="box-none"
+        >
+          <View style={styles.filterDropdown}>
+            {SORT_OPTIONS.map(option => (
+              <TouchableOpacity
+                key={option.key}
+                style={[styles.filterOption, activeSort === option.key && styles.filterOptionActive]}
+                onPress={() => handleSelectSort(option.key)}
+              >
+                <Text style={[styles.filterOptionText, activeSort === option.key && styles.filterOptionTextActive]}>
+                  {option.label}
+                </Text>
+                {activeSort === option.key && (
                   <Icon name="checkmark" size={18} color={Colors.royalBlue} />
                 )}
               </TouchableOpacity>

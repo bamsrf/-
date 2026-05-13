@@ -43,6 +43,9 @@ import {
   MyAchievementsResponse,
   RandomUnlockedResponse,
   CatalogResponse,
+  AchievementStats,
+  FollowRequestItem,
+  FollowActionResult,
 } from './types';
 
 // API сервер
@@ -688,12 +691,47 @@ class ApiClient {
     return response.data;
   }
 
-  async followUser(userId: string): Promise<void> {
-    await this.client.post(`/users/${userId}/follow`);
+  async followUser(userId: string): Promise<FollowActionResult> {
+    const response = await this.client.post<FollowActionResult>(`/users/${userId}/follow`);
+    return response.data;
   }
 
   async unfollowUser(userId: string): Promise<void> {
     await this.client.delete(`/users/${userId}/follow`);
+  }
+
+  // ---- Follow requests (приватные профили) ----
+
+  async cancelFollowRequest(userId: string): Promise<void> {
+    await this.client.delete(`/users/${userId}/follow-request`);
+  }
+
+  async getIncomingFollowRequests(): Promise<FollowRequestItem[]> {
+    const response = await this.client.get<FollowRequestItem[]>('/users/me/follow-requests/incoming');
+    return response.data;
+  }
+
+  async getOutgoingFollowRequests(): Promise<FollowRequestItem[]> {
+    const response = await this.client.get<FollowRequestItem[]>('/users/me/follow-requests/outgoing');
+    return response.data;
+  }
+
+  async getIncomingFollowRequestsCount(): Promise<number> {
+    const response = await this.client.get<{ count: number }>(
+      '/users/me/follow-requests/incoming/count'
+    );
+    return response.data.count;
+  }
+
+  async approveFollowRequest(requestId: string): Promise<FollowActionResult> {
+    const response = await this.client.post<FollowActionResult>(
+      `/users/me/follow-requests/${requestId}/approve`
+    );
+    return response.data;
+  }
+
+  async rejectFollowRequest(requestId: string): Promise<void> {
+    await this.client.post(`/users/me/follow-requests/${requestId}/reject`);
   }
 
   async searchUsers(
@@ -823,6 +861,13 @@ class ApiClient {
   async getAchievementsByUsername(username: string): Promise<MyAchievementsResponse> {
     const { data } = await this.client.get<MyAchievementsResponse>(
       `/achievements/by-username/${encodeURIComponent(username)}`
+    );
+    return data;
+  }
+
+  async getAchievementStats(code: string): Promise<AchievementStats> {
+    const { data } = await this.client.get<AchievementStats>(
+      `/achievements/${encodeURIComponent(code)}/stats`
     );
     return data;
   }

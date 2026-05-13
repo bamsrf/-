@@ -416,6 +416,8 @@ export interface PublicProfileRecord {
   is_collectible?: boolean;
   is_limited?: boolean;
   is_hot?: boolean;
+  /** Дата добавления в коллекцию владельца — для сортировки */
+  added_at?: string | null;
 }
 
 export interface PublicProfile {
@@ -442,6 +444,8 @@ export interface PublicProfile {
   new_releases: PublicProfileRecord[];
 }
 
+export type FollowRequestStatus = 'none' | 'pending' | 'approved' | 'rejected';
+
 export interface UserWithStats {
   id: string;
   username: string;
@@ -453,6 +457,31 @@ export interface UserWithStats {
   following_count: number;
   collection_count: number;
   is_following: boolean;
+  /** Статус заявки на подписку от current_user — 'pending' если уже отправил */
+  follow_request_status?: FollowRequestStatus;
+  /** Профиль приватный — кнопка подписки создаёт заявку, а не follow */
+  is_private_profile?: boolean;
+}
+
+export interface FollowRequestUser {
+  id: string;
+  username: string;
+  display_name?: string;
+  avatar_url?: string;
+}
+
+export interface FollowRequestItem {
+  id: string;
+  requester: FollowRequestUser;
+  target: FollowRequestUser;
+  status: 'pending' | 'approved' | 'rejected';
+  created_at: string;
+  resolved_at?: string | null;
+}
+
+export interface FollowActionResult {
+  status: 'followed' | 'requested' | 'already_following' | 'already_requested';
+  follow_request_id?: string | null;
 }
 
 export interface WishlistPublicItem {
@@ -461,6 +490,7 @@ export interface WishlistPublicItem {
   priority: number;
   notes?: string;
   is_booked: boolean;
+  added_at?: string | null;
 }
 
 export interface WishlistPublicResponse {
@@ -613,4 +643,11 @@ export interface CatalogResponse {
 
 export interface RandomUnlockedResponse {
   items: AchievementItem[];
+}
+
+export interface AchievementStats {
+  code: string;
+  total_users: number;
+  unlocked_users: number;
+  unlocked_pct: number;
 }

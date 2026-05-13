@@ -68,13 +68,14 @@ class WishlistResponse(BaseModel):
 class WishlistPublicItemResponse(BaseModel):
     """Публичная схема элемента вишлиста"""
     model_config = ConfigDict(from_attributes=True)
-    
+
     id: UUID
     record: RecordBrief
     priority: int
     notes: str | None
     is_booked: bool = False
     gifter_name: str | None = None  # Показывается если разрешено
+    added_at: datetime | None = None  # Для сортировки на клиенте
 
 
 class WishlistPublicResponse(BaseModel):

@@ -2,34 +2,40 @@
  * AchievementUnlockOverlay — модальная анимация открытия ачивки.
  *
  * Использование:
- * 1) В корне приложения (`app/_layout.tsx`) монтируется один экземпляр
- *    `<AchievementUnlockHost />`, который слушает события из `achievementBus`.
- * 2) Из любого места (API-обработчики, эмитящие unlock) вызываем
- *    `notifyAchievementUnlocked(codes, fetchOptions?)` — хост подгружает
- *    данные ачивок через API и показывает overlay по одной.
+ * 1) В корне приложения (`app/_layout.tsx`) монтируется `<AchievementUnlockHost />`
+ *    который слушает события из bus.
+ * 2) Из любого места вызываем `notifyAchievementUnlocked(codes)` — хост
+ *    подгружает данные через API и показывает overlay.
  *
- * Анимация:
- * - Затемнение фона
- * - Pin падает и вращается 360°
- * - Появляется лента с названием
- * - Кнопки «Поделиться» / «Закрыть»
+ * Анимация: затемнение → пин падает и вращается → конфетти + haptic →
+ * лента с названием → кнопки «Поделиться» / «Дальше».
+ *
+ * Batch: если открылось 2+ ачивки за один emit_event, показываем стек —
+ * сверху главная (самая редкая), снизу подписные пины с «+N ещё».
  */
 import { useEffect, useRef, useState } from 'react';
 import {
-  View,
-  Text,
-  Modal,
-  StyleSheet,
   Animated,
-  Easing,
-  TouchableOpacity,
   Dimensions,
+  Easing,
+  Modal,
   Share,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
+  Platform,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import * as Haptics from 'expo-haptics';
+import * as Sharing from 'expo-sharing';
+import { File, Paths } from 'expo-file-system';
+
 import { api } from '../lib/api';
 import { AchievementPin } from './AchievementPin';
-import type { AchievementItem } from '../lib/types';
+import { Confetti } from './Confetti';
+import { TIER_AURA } from './achievement-scenes';
+import type { AchievementItem, AchievementTierKey } from '../lib/types';
 
 // ─── Event bus ──────────────────────────────────────────────────────────────
 
@@ -52,36 +58,65 @@ function subscribe(cb: Listener): () => void {
   return () => _listeners.delete(cb);
 }
 
+// ─── Tier ranking для выбора «главной» в batch ─────────────────────────────
+
+const TIER_RANK: Record<AchievementTierKey, number> = {
+  simple: 1,
+  notable: 2,
+  rare: 3,
+  epic: 4,
+  legend: 5,
+};
+
+function pickBatchOrder(items: AchievementItem[]): AchievementItem[] {
+  return [...items].sort((a, b) => {
+    const ra = TIER_RANK[a.tier.key] || 0;
+    const rb = TIER_RANK[b.tier.key] || 0;
+    if (ra !== rb) return rb - ra;
+    // Мета впереди обычных
+    if (a.is_meta !== b.is_meta) return a.is_meta ? -1 : 1;
+    return 0;
+  });
+}
+
 // ─── Host ──────────────────────────────────────────────────────────────────
 
+interface BatchPayload {
+  /** Главная ачивка (самая редкая в batch'е) */
+  main: AchievementItem;
+  /** Остальные ачивки batch'а — подписные пины */
+  others: AchievementItem[];
+}
+
 export function AchievementUnlockHost() {
-  const [queue, setQueue] = useState<AchievementItem[]>([]);
-  const [current, setCurrent] = useState<AchievementItem | null>(null);
+  const [queue, setQueue] = useState<BatchPayload[]>([]);
+  const [current, setCurrent] = useState<BatchPayload | null>(null);
 
   useEffect(() => {
     return subscribe(async (codes) => {
-      // На каждый анлок дёргаем /me и оставляем только переданные коды.
       try {
         const my = await api.getMyAchievements();
         const lookup = new Map<string, AchievementItem>();
         for (const s of my.series) for (const it of s.items) lookup.set(it.code, it);
-        // Рандомные приходят отдельным эндпоинтом
-        const random = await api.getMyRandomUnlocked();
-        for (const it of random.items) lookup.set(it.code, it);
-
+        try {
+          const random = await api.getMyRandomUnlocked();
+          for (const it of random.items) lookup.set(it.code, it);
+        } catch {
+          // тихо
+        }
         const items = codes
           .map((c) => lookup.get(c))
           .filter((x): x is AchievementItem => Boolean(x) && x!.is_unlocked);
-        if (items.length > 0) {
-          setQueue((prev) => [...prev, ...items]);
-        }
+        if (items.length === 0) return;
+        const ordered = pickBatchOrder(items);
+        const [main, ...others] = ordered;
+        setQueue((prev) => [...prev, { main, others }]);
       } catch {
         // тихо
       }
     });
   }, []);
 
-  // Если очередь не пустая и сейчас ничего не показывается — берём следующее
   useEffect(() => {
     if (!current && queue.length > 0) {
       setCurrent(queue[0]);
@@ -93,7 +128,7 @@ export function AchievementUnlockHost() {
 
   return (
     <UnlockModal
-      item={current}
+      payload={current}
       onDismiss={() => setCurrent(null)}
     />
   );
@@ -101,15 +136,29 @@ export function AchievementUnlockHost() {
 
 // ─── Modal ─────────────────────────────────────────────────────────────────
 
-function UnlockModal({ item, onDismiss }: { item: AchievementItem; onDismiss: () => void }) {
+function UnlockModal({
+  payload,
+  onDismiss,
+}: {
+  payload: BatchPayload;
+  onDismiss: () => void;
+}) {
+  const { main, others } = payload;
+  const aura = TIER_AURA[main.tier.key] || TIER_AURA.simple;
+
   const backdrop = useRef(new Animated.Value(0)).current;
   const pinScale = useRef(new Animated.Value(0)).current;
   const pinRotate = useRef(new Animated.Value(0)).current;
-  const pinTranslateY = useRef(new Animated.Value(-100)).current;
+  const pinTranslateY = useRef(new Animated.Value(-120)).current;
   const ribbonOpacity = useRef(new Animated.Value(0)).current;
   const ribbonTranslateY = useRef(new Animated.Value(20)).current;
+  const [sharing, setSharing] = useState(false);
 
   useEffect(() => {
+    // Haptic — сразу
+    if (Platform.OS !== 'web') {
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
+    }
     Animated.parallel([
       Animated.timing(backdrop, {
         toValue: 1,
@@ -152,7 +201,7 @@ function UnlockModal({ item, onDismiss }: { item: AchievementItem; onDismiss: ()
         ]),
       ]),
     ]).start();
-  }, [item.code]);
+  }, [main.code]);
 
   const handleDismiss = () => {
     Animated.timing(backdrop, {
@@ -163,15 +212,41 @@ function UnlockModal({ item, onDismiss }: { item: AchievementItem; onDismiss: ()
   };
 
   const handleShare = async () => {
+    setSharing(true);
+    if (Platform.OS !== 'web') {
+      Haptics.selectionAsync().catch(() => {});
+    }
     try {
-      // Пока без реальной share-card картинки — текстовый шер.
-      // Когда дизайнер сдаст SVG-пины, переключим на fetchShareCardPng() +
-      // expo-sharing / react-native-view-shot.
-      await Share.share({
-        message: `Открыл ачивку «${item.title_ru}» в Вертушке 🎵`,
-      });
+      // Тянем PNG из бэкенда (формат stories — самый широкий)
+      const dataUrl = await api.fetchShareCardPng(main.code, 'stories');
+      // Сохраняем во временный файл (expo-sharing требует file:// URI)
+      const base64 = dataUrl.replace(/^data:image\/png;base64,/, '');
+      const fileName = `vertushka_${main.code}_${Date.now()}.png`;
+      const file = new File(Paths.cache, fileName);
+      file.create({ overwrite: true });
+      file.write(base64, { encoding: 'base64' });
+      const available = await Sharing.isAvailableAsync();
+      if (available) {
+        await Sharing.shareAsync(file.uri, {
+          mimeType: 'image/png',
+          dialogTitle: main.title_ru || 'Ачивка',
+        });
+      } else {
+        // Fallback на стандартный Share с текстом
+        await Share.share({
+          message: `Открыл ачивку «${main.title_ru}» в Вертушке 🎵`,
+        });
+      }
     } catch {
-      // отмена пользователем — ок
+      try {
+        await Share.share({
+          message: `Открыл ачивку «${main.title_ru}» в Вертушке 🎵`,
+        });
+      } catch {
+        // отмена пользователем
+      }
+    } finally {
+      setSharing(false);
     }
   };
 
@@ -185,11 +260,24 @@ function UnlockModal({ item, onDismiss }: { item: AchievementItem; onDismiss: ()
       <Animated.View
         style={[
           styles.backdrop,
-          { opacity: backdrop, backgroundColor: backdropColor(item) },
+          { opacity: backdrop, backgroundColor: backdropColor(main.tier.key) },
         ]}
       >
+        {/* Конфетти на заднем плане */}
+        <Confetti
+          colors={[aura.aura, aura.auraSoft, '#FFFFFF', '#FFD66B']}
+          count={36}
+          duration={2400}
+          triggerKey={main.code}
+        />
+
         <View style={styles.center} pointerEvents="box-none">
-          <Text style={styles.eyebrow}>Открыта новая ачивка</Text>
+          <Text style={styles.eyebrow}>
+            {others.length > 0
+              ? `Открыто ${others.length + 1} ачивки`
+              : 'Открыта новая ачивка'}
+          </Text>
+
           <Animated.View
             style={{
               transform: [
@@ -199,8 +287,9 @@ function UnlockModal({ item, onDismiss }: { item: AchievementItem; onDismiss: ()
               ],
             }}
           >
-            <AchievementPin item={item} size={140} />
+            <AchievementPin item={main} size={140} glowOverride />
           </Animated.View>
+
           <Animated.View
             style={[
               styles.ribbon,
@@ -210,20 +299,49 @@ function UnlockModal({ item, onDismiss }: { item: AchievementItem; onDismiss: ()
               },
             ]}
           >
-            <Text style={styles.title}>{item.title_ru || '❓ Сюрприз'}</Text>
-            <View style={[styles.tierChip, { borderColor: item.tier.color_hex }]}>
-              <Text style={[styles.tierChipText, { color: '#FFFFFF' }]}>
-                {item.tier.label_ru}
-              </Text>
+            <Text style={styles.title}>{main.title_ru || '❓ Сюрприз'}</Text>
+            <View style={[styles.tierChip, { borderColor: aura.aura }]}>
+              <Text style={styles.tierChipText}>{main.tier.label_ru}</Text>
             </View>
-            {item.flavor_ru && (
-              <Text style={styles.flavor}>«{item.flavor_ru}»</Text>
+            {main.flavor_ru && (
+              <Text style={styles.flavor}>«{main.flavor_ru}»</Text>
+            )}
+
+            {/* Batch — подписные пины */}
+            {others.length > 0 && (
+              <View style={styles.batchRow}>
+                <Text style={styles.batchEyebrow}>и ещё:</Text>
+                <View style={styles.batchPinsRow}>
+                  {others.slice(0, 4).map((o) => (
+                    <View key={o.code} style={styles.batchPinCell}>
+                      <AchievementPin item={o} size={56} />
+                      <Text numberOfLines={1} style={styles.batchPinLabel}>
+                        {o.title_ru || '?'}
+                      </Text>
+                    </View>
+                  ))}
+                  {others.length > 4 && (
+                    <View style={styles.batchPinCell}>
+                      <View style={styles.batchPlus}>
+                        <Text style={styles.batchPlusText}>+{others.length - 4}</Text>
+                      </View>
+                    </View>
+                  )}
+                </View>
+              </View>
             )}
           </Animated.View>
+
           <Animated.View style={[styles.actions, { opacity: ribbonOpacity }]}>
-            <TouchableOpacity style={styles.btnPrimary} onPress={handleShare}>
+            <TouchableOpacity
+              style={[styles.btnPrimary, sharing && { opacity: 0.6 }]}
+              onPress={handleShare}
+              disabled={sharing}
+            >
               <Ionicons name="share-outline" size={20} color="#FFFFFF" />
-              <Text style={styles.btnPrimaryText}>Поделиться</Text>
+              <Text style={styles.btnPrimaryText}>
+                {sharing ? 'Готовим…' : 'Поделиться'}
+              </Text>
             </TouchableOpacity>
             <TouchableOpacity style={styles.btnSecondary} onPress={handleDismiss}>
               <Text style={styles.btnSecondaryText}>Дальше</Text>
@@ -235,11 +353,9 @@ function UnlockModal({ item, onDismiss }: { item: AchievementItem; onDismiss: ()
   );
 }
 
-function backdropColor(item: AchievementItem): string {
-  // Тёмные тиры — почти чёрный backdrop, светлые — насыщенный синий.
-  const k = item.tier.key;
-  if (k === 'legend' || k === 'epic') return 'rgba(10, 11, 30, 0.92)';
-  if (k === 'rare') return 'rgba(60, 22, 60, 0.88)';
+function backdropColor(tier: AchievementTierKey): string {
+  if (tier === 'legend' || tier === 'epic') return 'rgba(10, 11, 30, 0.92)';
+  if (tier === 'rare') return 'rgba(60, 22, 60, 0.88)';
   return 'rgba(20, 30, 80, 0.85)';
 }
 
@@ -259,13 +375,13 @@ const styles = StyleSheet.create({
     fontSize: 13,
     letterSpacing: 1.6,
     textTransform: 'uppercase',
-    marginBottom: 32,
+    marginBottom: 28,
     fontWeight: '600',
   },
   ribbon: {
-    marginTop: 32,
+    marginTop: 28,
     alignItems: 'center',
-    maxWidth: SCREEN_W - 80,
+    maxWidth: SCREEN_W - 64,
   },
   title: {
     fontSize: 30,
@@ -285,6 +401,7 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '700',
     letterSpacing: 0.4,
+    color: '#FFFFFF',
   },
   flavor: {
     color: 'rgba(255,255,255,0.75)',
@@ -293,8 +410,50 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     paddingHorizontal: 8,
   },
+  batchRow: {
+    marginTop: 22,
+    alignItems: 'center',
+  },
+  batchEyebrow: {
+    color: 'rgba(255,255,255,0.55)',
+    fontSize: 11,
+    fontWeight: '700',
+    textTransform: 'uppercase',
+    letterSpacing: 1.2,
+    marginBottom: 10,
+  },
+  batchPinsRow: {
+    flexDirection: 'row',
+    gap: 10,
+    flexWrap: 'wrap',
+    justifyContent: 'center',
+  },
+  batchPinCell: {
+    alignItems: 'center',
+    width: 64,
+  },
+  batchPinLabel: {
+    color: 'rgba(255,255,255,0.7)',
+    fontSize: 10,
+    marginTop: 4,
+    textAlign: 'center',
+  },
+  batchPlus: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    borderWidth: 1.5,
+    borderColor: 'rgba(255,255,255,0.35)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  batchPlusText: {
+    color: '#FFFFFF',
+    fontWeight: '800',
+    fontSize: 16,
+  },
   actions: {
-    marginTop: 40,
+    marginTop: 36,
     flexDirection: 'row',
     gap: 12,
   },

@@ -81,6 +81,11 @@ class UserWithStats(UserPublicResponse):
     following_count: int = 0
     collection_count: int = 0
     is_following: bool = False  # Подписан ли текущий пользователь
+    # Приватные профили: статус заявки на подписку от current_user → этого пользователя.
+    # 'none'   — заявки нет (или профиль публичный — кнопка «Подписаться»)
+    # 'pending' — заявка отправлена, ждём подтверждения (кнопка «Запрос отправлен»)
+    follow_request_status: str = "none"
+    is_private_profile: bool = False
 
 
 class NotificationSettingsResponse(BaseModel):
