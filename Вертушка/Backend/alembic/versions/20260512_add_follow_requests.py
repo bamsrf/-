@@ -10,7 +10,7 @@ from sqlalchemy.dialects import postgresql
 
 
 revision = "20260512_follow_requests"
-down_revision = "20260512_achievements"
+down_revision = "20260512_store_offers"
 branch_labels = None
 depends_on = None
 
