@@ -6,7 +6,8 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi.responses import Response
-from sqlalchemy import select
+from pydantic import BaseModel
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.auth import get_current_user
@@ -65,6 +66,26 @@ _SERIES_META: dict[str, dict[str, str]] = {
         "description_ru": "Главная вертикаль — рост коллекции.",
         "icon_emoji": "📚",
     },
+    "rarity": {
+        "title_ru": "Охота за редкостями",
+        "description_ru": "Лимитки, коллекционки, горячие пластинки.",
+        "icon_emoji": "💎",
+    },
+    "geography": {
+        "title_ru": "Кругосветка",
+        "description_ru": "Прессы со всех концов света.",
+        "icon_emoji": "🌍",
+    },
+    "eras": {
+        "title_ru": "Машина времени",
+        "description_ru": "Винил по десятилетиям.",
+        "icon_emoji": "📅",
+    },
+    "genres": {
+        "title_ru": "Жанры",
+        "description_ru": "Глубина и ширина музыкальных вкусов.",
+        "icon_emoji": "🎼",
+    },
     "gifts": {
         "title_ru": "Дарящая рука",
         "description_ru": "Подарки друзьям и близким.",
@@ -74,6 +95,16 @@ _SERIES_META: dict[str, dict[str, str]] = {
         "title_ru": "Сообщество",
         "description_ru": "Подписки, фолловеры, просмотры профиля.",
         "icon_emoji": "👥",
+    },
+    "invitations": {
+        "title_ru": "Глас наружу",
+        "description_ru": "Приглашения и реферальная цепочка.",
+        "icon_emoji": "🗣",
+    },
+    "discography": {
+        "title_ru": "Полная дискография",
+        "description_ru": "Глубокие коллекции артистов, мастеров и лейблов.",
+        "icon_emoji": "🎚",
     },
 }
 
@@ -245,6 +276,55 @@ async def get_catalog(
     )
     random_count = sum(1 for d in defs if d.series == "random")
     return CatalogResponse(series=series, random_count=random_count)
+
+
+class AchievementStats(BaseModel):
+    """Глобальная статистика по ачивке: сколько юзеров уже открыли."""
+    code: str
+    total_users: int               # всего активных юзеров на платформе
+    unlocked_users: int            # из них открыли эту ачивку
+    unlocked_pct: float            # 0.0–1.0 (для UI можно умножить на 100)
+
+
+@router.get("/{code}/stats", response_model=AchievementStats)
+async def get_achievement_stats(
+    code: str,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> AchievementStats:
+    """Сколько юзеров открыли эту ачивку (для подсказки «N% уже открыли»).
+
+    Условия:
+    - Считаем только активных юзеров (User.is_active=true).
+    - Считаем только реально открытые (is_unlocked=true).
+    - Доступно любому залогиненному юзеру для всех неhidden-кодов. Hidden
+      (random) тоже доступно, чтобы клиент мог показать stats после анлока.
+    """
+    defn = get_definition(code)
+    if defn is None:
+        raise HTTPException(status_code=404, detail="Ачивка не найдена")
+
+    total_users = await db.scalar(
+        select(func.count(User.id)).where(User.is_active.is_(True))
+    ) or 0
+
+    unlocked_users = await db.scalar(
+        select(func.count(UserAchievement.id))
+        .join(User, User.id == UserAchievement.user_id)
+        .where(
+            UserAchievement.code == code,
+            UserAchievement.is_unlocked.is_(True),
+            User.is_active.is_(True),
+        )
+    ) or 0
+
+    pct = (unlocked_users / total_users) if total_users > 0 else 0.0
+    return AchievementStats(
+        code=code,
+        total_users=int(total_users),
+        unlocked_users=int(unlocked_users),
+        unlocked_pct=round(pct, 4),
+    )
 
 
 @router.get("/me/share-card/{code}")

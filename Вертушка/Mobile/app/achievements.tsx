@@ -15,16 +15,24 @@ import {
   TouchableOpacity,
   ActivityIndicator,
   RefreshControl,
+  Share,
+  Platform,
 } from 'react-native';
 import { Stack, useRouter, useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import * as Haptics from 'expo-haptics';
+import * as Sharing from 'expo-sharing';
+import { File, Paths } from 'expo-file-system';
 import { api } from '../lib/api';
 import { Colors, Spacing, BorderRadius } from '../constants/theme';
 import { AchievementPin } from '../components/AchievementPin';
+import { AchievementsHero } from '../components/AchievementsHero';
+import { AchievementsTourOverlay } from '../components/AchievementsTourOverlay';
 import type {
   AchievementItem,
   AchievementSeriesItem,
+  AchievementStats,
   MyAchievementsResponse,
 } from '../lib/types';
 
@@ -98,18 +106,16 @@ export default function AchievementsScreen() {
         contentContainerStyle={{ paddingBottom: insets.bottom + 40 }}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
       >
-        {/* Сводка */}
-        <View style={styles.summary}>
-          <Text style={styles.summaryHeader}>{titleText}</Text>
-          <Text style={styles.summaryCount}>
-            открыто {data.unlocked} из {data.total}
-          </Text>
-          {data.random_unlocked > 0 && (
+        {/* Hero — анимированный counter + архетип + самая редкая */}
+        <AchievementsHero data={data} extraRandom={randomItems} username={username} />
+
+        {data.random_unlocked > 0 && (
+          <View style={styles.summary}>
             <Text style={styles.summaryRandom}>
-              ❓ Сюрпризы: {data.random_unlocked}
+              ❓ Сюрпризы открыто: {data.random_unlocked}
             </Text>
-          )}
-        </View>
+          </View>
+        )}
 
         {/* Серии */}
         {data.series.map((series) => (
@@ -134,6 +140,9 @@ export default function AchievementsScreen() {
 
       {/* Bottom-sheet с деталями */}
       {selected && <DetailsSheet item={selected} username={username} onClose={() => setSelected(null)} />}
+
+      {/* Onboarding tour — только на своём профиле */}
+      {!username && <AchievementsTourOverlay />}
     </>
   );
 }
@@ -255,6 +264,45 @@ function SurpriseBlock({
 
 // ─── Деталь ────────────────────────────────────────────────────────────────
 
+const HOW_TO_UNLOCK: Record<string, string> = {
+  // Foundation
+  A1_first_record: 'Добавь первую пластинку в коллекцию.',
+  A2_first_wishlist: 'Добавь первую запись в вишлист.',
+  A3_avatar_set: 'Поставь аватар.',
+  A4_public_profile: 'Активируй публичный профиль в настройках.',
+  A5_second_collection: 'Создай вторую коллекцию вручную.',
+  META_foundation: 'Открой все ачивки серии «Первые шаги».',
+  // Scale (B1-B6 + META_scale) — текст подставляется из progress_target
+  // Gifts
+  J1_first_gift: 'Забронируй первый подарок кому-нибудь.',
+  // Community
+  K1_following_x5: 'Подпишись на 5 коллекций.',
+  K2_first_follower: 'Подожди, пока кто-то подпишется на тебя.',
+  K3_followers_x5: 'Получи 5 подписчиков с реальными коллекциями.',
+  K4_followers_x50: 'Получи 50 подписчиков с реальными коллекциями.',
+  K5_views_x100: 'Поделись профилем — нужно 100 просмотров.',
+  K6_views_x1000: '1 000 просмотров публичного профиля.',
+  K7_mutual_x10: '10 взаимных подписок с активными юзерами.',
+  META_community: 'Закрой K4, K6 и K7 — главные ветки сообщества.',
+};
+
+function howToUnlockText(item: AchievementItem): string | null {
+  if (item.is_unlocked) return null;
+  if (item.is_hidden) {
+    return 'Скрытая ачивка. Откроется внезапно.';
+  }
+  const explicit = HOW_TO_UNLOCK[item.code];
+  if (explicit) return explicit;
+  // Прогресс-серии — динамическая подсказка
+  if (item.code.startsWith('B') && item.progress_target > 0) {
+    return `Собери ${item.progress_target} уникальных пластинок (без удалений в течение 24 часов).`;
+  }
+  if (item.code.startsWith('META_')) {
+    return 'Закрой все ачивки этой серии.';
+  }
+  return item.description_ru || 'Открой действием в приложении.';
+}
+
 function DetailsSheet({
   item,
   username,
@@ -265,6 +313,68 @@ function DetailsSheet({
   onClose: () => void;
 }) {
   const insets = useSafeAreaInsets();
+  const [stats, setStats] = useState<AchievementStats | null>(null);
+  const [sharing, setSharing] = useState(false);
+
+  // Подтягиваем статистику для не-скрытых ачивок (для скрытых до анлока — нет смысла)
+  useEffect(() => {
+    const visible = !item.is_hidden || item.is_unlocked;
+    if (!visible) {
+      setStats(null);
+      return;
+    }
+    let cancelled = false;
+    api
+      .getAchievementStats(item.code)
+      .then((s) => {
+        if (!cancelled) setStats(s);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [item.code, item.is_hidden, item.is_unlocked]);
+
+  const handleShare = async () => {
+    if (!item.is_unlocked) return;
+    if (Platform.OS !== 'web') {
+      Haptics.selectionAsync().catch(() => {});
+    }
+    setSharing(true);
+    try {
+      const dataUrl = await api.fetchShareCardPng(item.code, 'stories');
+      const base64 = dataUrl.replace(/^data:image\/png;base64,/, '');
+      const fileName = `vertushka_${item.code}_${Date.now()}.png`;
+      const file = new File(Paths.cache, fileName);
+      file.create({ overwrite: true });
+      file.write(base64, { encoding: 'base64' });
+      const available = await Sharing.isAvailableAsync();
+      if (available) {
+        await Sharing.shareAsync(file.uri, {
+          mimeType: 'image/png',
+          dialogTitle: item.title_ru || 'Ачивка',
+        });
+      } else {
+        await Share.share({
+          message: `Открыл ачивку «${item.title_ru}» в Вертушке 🎵`,
+        });
+      }
+    } catch {
+      try {
+        await Share.share({
+          message: `Открыл ачивку «${item.title_ru}» в Вертушке 🎵`,
+        });
+      } catch {
+        // отмена
+      }
+    } finally {
+      setSharing(false);
+    }
+  };
+
+  const howTo = howToUnlockText(item);
+  const isMystery = item.is_hidden && !item.is_unlocked;
+
   return (
     <View style={styles.sheetBackdrop} pointerEvents="box-none">
       <TouchableOpacity style={StyleSheet.absoluteFill} onPress={onClose} activeOpacity={1} />
@@ -299,6 +409,8 @@ function DetailsSheet({
         {item.flavor_ru && !item.is_hidden && item.is_unlocked && (
           <Text style={styles.sheetFlavor}>«{item.flavor_ru}»</Text>
         )}
+
+        {/* Прогресс — для счётчиковых ачивок */}
         {item.progress_target > 0 && !item.is_unlocked && (
           <View style={styles.sheetProgressRow}>
             <Text style={styles.sheetProgressText}>
@@ -317,15 +429,61 @@ function DetailsSheet({
             </View>
           </View>
         )}
+
+        {/* Как открыть — для locked */}
+        {howTo && (
+          <View style={styles.howToRow}>
+            <Text style={styles.howToEyebrow}>Как открыть</Text>
+            <Text style={styles.howToText}>{howTo}</Text>
+          </View>
+        )}
+
+        {/* % юзеров — для не-скрытых или уже открытых */}
+        {stats && !isMystery && stats.total_users >= 5 && (
+          <View style={styles.statsRow}>
+            <Ionicons name="people-outline" size={14} color={Colors.textMuted} />
+            <Text style={styles.statsText}>
+              {formatStatsLine(stats)}
+            </Text>
+          </View>
+        )}
+
+        {/* Дата */}
         {item.is_unlocked && item.unlocked_at && (
           <Text style={styles.sheetDate}>Открыто {formatDate(item.unlocked_at)}</Text>
         )}
+
+        {/* Share — для открытых на своём профиле */}
+        {item.is_unlocked && !username && (
+          <TouchableOpacity
+            style={[styles.shareBtn, sharing && { opacity: 0.6 }]}
+            onPress={handleShare}
+            disabled={sharing}
+          >
+            <Ionicons name="share-outline" size={18} color="#FFFFFF" />
+            <Text style={styles.shareBtnText}>
+              {sharing ? 'Готовим…' : 'Поделиться'}
+            </Text>
+          </TouchableOpacity>
+        )}
+
         <TouchableOpacity style={styles.sheetCloseBtn} onPress={onClose}>
           <Ionicons name="close" size={22} color={Colors.text} />
         </TouchableOpacity>
       </View>
     </View>
   );
+}
+
+function formatStatsLine(stats: AchievementStats): string {
+  const pct = stats.unlocked_pct * 100;
+  if (pct < 1) {
+    return `Менее 1% юзеров уже открыли`;
+  }
+  if (pct < 100) {
+    return `${pct.toFixed(pct < 10 ? 1 : 0)}% юзеров уже открыли`;
+  }
+  return `Все юзеры открыли`;
 }
 
 function formatDate(iso: string): string {
@@ -552,5 +710,55 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.surface,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  howToRow: {
+    marginTop: Spacing.lg,
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.sm,
+    backgroundColor: Colors.surface,
+    borderRadius: BorderRadius.md,
+    marginHorizontal: Spacing.sm,
+  },
+  howToEyebrow: {
+    fontSize: 11,
+    fontWeight: '700',
+    letterSpacing: 1.2,
+    textTransform: 'uppercase',
+    color: Colors.textMuted,
+    marginBottom: 4,
+  },
+  howToText: {
+    fontSize: 14,
+    color: Colors.text,
+    lineHeight: 19,
+  },
+  statsRow: {
+    marginTop: Spacing.md,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    justifyContent: 'center',
+  },
+  statsText: {
+    fontSize: 12,
+    color: Colors.textMuted,
+    fontWeight: '500',
+  },
+  shareBtn: {
+    marginTop: Spacing.lg,
+    backgroundColor: Colors.royalBlue || '#3B4BF5',
+    paddingHorizontal: Spacing.lg,
+    paddingVertical: 12,
+    borderRadius: 14,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    alignSelf: 'center',
+    gap: 8,
+  },
+  shareBtnText: {
+    color: '#FFFFFF',
+    fontWeight: '700',
+    fontSize: 15,
   },
 });
