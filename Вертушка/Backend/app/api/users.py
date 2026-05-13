@@ -15,6 +15,8 @@ from sqlalchemy.orm import selectinload
 from app.database import get_db
 from app.models.user import User
 from app.models.follow import Follow
+from app.models.follow_request import FollowRequest, FollowRequestStatus
+from app.models.profile_share import ProfileShare
 from app.models.collection import Collection, CollectionItem
 from app.models.wishlist import Wishlist, WishlistItem
 from app.api.auth import get_current_user, get_current_user_optional
@@ -25,8 +27,37 @@ from app.schemas.user import (
 from app.schemas.collection import CollectionWithItems, CollectionItemResponse
 from app.schemas.wishlist import WishlistPublicResponse, WishlistPublicItemResponse
 from app.schemas.record import RecordBrief
+from app.schemas.follow_request import (
+    FollowRequestResponse,
+    FollowRequestUser,
+    FollowActionResponse,
+)
 
 router = APIRouter()
+
+
+async def _is_profile_private(db: AsyncSession, user_id: UUID) -> bool:
+    """Проверка приватности профиля по записи в profile_shares."""
+    flag = await db.scalar(
+        select(ProfileShare.is_private_profile).where(ProfileShare.user_id == user_id)
+    )
+    return bool(flag)
+
+
+async def _pending_request_id(
+    db: AsyncSession,
+    requester_id: UUID,
+    target_id: UUID,
+) -> UUID | None:
+    """Возвращает id pending-запроса от requester к target, либо None."""
+    result = await db.execute(
+        select(FollowRequest.id).where(
+            FollowRequest.requester_id == requester_id,
+            FollowRequest.target_id == target_id,
+            FollowRequest.status == FollowRequestStatus.PENDING,
+        )
+    )
+    return result.scalar_one_or_none()
 
 
 @router.get("/check-username/{username}", response_model=UsernameCheckResponse)
@@ -104,8 +135,28 @@ async def search_users(
             .exists()
             .label("is_following")
         )
+        has_pending_request_sub = (
+            select(literal(True))
+            .where(
+                FollowRequest.requester_id == current_user.id,
+                FollowRequest.target_id == User.id,
+                FollowRequest.status == FollowRequestStatus.PENDING,
+            )
+            .correlate(User)
+            .exists()
+            .label("has_pending_request")
+        )
     else:
         is_following_sub = literal(False).label("is_following")
+        has_pending_request_sub = literal(False).label("has_pending_request")
+
+    is_private_sub = (
+        select(ProfileShare.is_private_profile)
+        .where(ProfileShare.user_id == User.id)
+        .correlate(User)
+        .scalar_subquery()
+        .label("is_private_profile")
+    )
 
     result = await db.execute(
         select(
@@ -114,6 +165,8 @@ async def search_users(
             following_sub,
             collection_sub,
             is_following_sub,
+            has_pending_request_sub,
+            is_private_sub,
         )
         .where(
             User.is_active == True,
@@ -136,8 +189,10 @@ async def search_users(
             following_count=following_count or 0,
             collection_count=collection_count or 0,
             is_following=bool(is_following),
+            follow_request_status="pending" if bool(has_pending) else "none",
+            is_private_profile=bool(is_private),
         )
-        for user, followers_count, following_count, collection_count, is_following in rows
+        for user, followers_count, following_count, collection_count, is_following, has_pending, is_private in rows
     ]
 
 
@@ -172,6 +227,7 @@ async def get_user_by_username(
     )
 
     is_following = False
+    follow_request_status_value = "none"
     if current_user:
         follow_check = await db.execute(
             select(Follow).where(
@@ -180,6 +236,12 @@ async def get_user_by_username(
             )
         )
         is_following = follow_check.scalar_one_or_none() is not None
+        if not is_following:
+            pending_id = await _pending_request_id(db, current_user.id, user.id)
+            if pending_id:
+                follow_request_status_value = "pending"
+
+    is_private = await _is_profile_private(db, user.id)
 
     return UserWithStats(
         id=user.id,
@@ -191,7 +253,9 @@ async def get_user_by_username(
         followers_count=followers_count or 0,
         following_count=following_count or 0,
         collection_count=collection_count or 0,
-        is_following=is_following
+        is_following=is_following,
+        follow_request_status=follow_request_status_value,
+        is_private_profile=is_private,
     )
 
 
@@ -274,7 +338,8 @@ async def get_user_wishlist_by_username(
                 priority=item.priority,
                 notes=item.notes,
                 is_booked=is_booked,
-                gifter_name=gifter_name
+                gifter_name=gifter_name,
+                added_at=item.added_at,
             ))
 
     public_items.sort(key=lambda x: -x.priority)
@@ -638,6 +703,7 @@ async def get_user_profile(
     )
     
     is_following = False
+    follow_request_status_value = "none"
     if current_user:
         follow_check = await db.execute(
             select(Follow).where(
@@ -646,7 +712,13 @@ async def get_user_profile(
             )
         )
         is_following = follow_check.scalar_one_or_none() is not None
-    
+        if not is_following:
+            pending_id = await _pending_request_id(db, current_user.id, user.id)
+            if pending_id:
+                follow_request_status_value = "pending"
+
+    is_private = await _is_profile_private(db, user.id)
+
     return UserWithStats(
         id=user.id,
         username=user.username,
@@ -657,49 +729,92 @@ async def get_user_profile(
         followers_count=followers_count or 0,
         following_count=following_count or 0,
         collection_count=collection_count or 0,
-        is_following=is_following
+        is_following=is_following,
+        follow_request_status=follow_request_status_value,
+        is_private_profile=is_private,
     )
 
 
-@router.post("/{user_id}/follow", status_code=status.HTTP_201_CREATED)
+@router.post(
+    "/{user_id}/follow",
+    status_code=status.HTTP_201_CREATED,
+    response_model=FollowActionResponse,
+)
 async def follow_user(
     user_id: UUID,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ):
-    """Подписка на пользователя"""
+    """
+    Подписка на пользователя.
+
+    - Публичный профиль (is_private_profile=false): моментальный Follow → status='followed'.
+    - Приватный профиль: создаётся FollowRequest pending → status='requested'.
+      После approve хостом → автоматически создаётся Follow.
+    """
     if user_id == current_user.id:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Нельзя подписаться на себя"
         )
-    
+
     # Проверяем существование пользователя
     result = await db.execute(
         select(User).where(User.id == user_id, User.is_active == True)
     )
-    if not result.scalar_one_or_none():
+    target = result.scalar_one_or_none()
+    if not target:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Пользователь не найден"
         )
-    
-    # Проверяем, не подписаны ли уже
-    result = await db.execute(
+
+    # Уже подписан?
+    existing_follow = await db.execute(
         select(Follow).where(
             Follow.follower_id == current_user.id,
-            Follow.following_id == user_id
+            Follow.following_id == user_id,
         )
     )
-    if result.scalar_one_or_none():
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Вы уже подписаны на этого пользователя"
+    if existing_follow.scalar_one_or_none():
+        return FollowActionResponse(status="already_following")
+
+    is_private = await _is_profile_private(db, user_id)
+
+    if is_private:
+        # Приватный профиль → создаём/возвращаем заявку
+        existing_pending = await _pending_request_id(db, current_user.id, user_id)
+        if existing_pending:
+            return FollowActionResponse(
+                status="already_requested",
+                follow_request_id=existing_pending,
+            )
+
+        # Чистим старую rejected/approved-запись (если есть) — её UniqueConstraint блокирует повторный insert
+        await db.execute(
+            FollowRequest.__table__.delete().where(
+                FollowRequest.requester_id == current_user.id,
+                FollowRequest.target_id == user_id,
+            )
         )
-    
+
+        request = FollowRequest(
+            requester_id=current_user.id,
+            target_id=user_id,
+            status=FollowRequestStatus.PENDING,
+        )
+        db.add(request)
+        await db.commit()
+        await db.refresh(request)
+        return FollowActionResponse(
+            status="requested",
+            follow_request_id=request.id,
+        )
+
+    # Публичный профиль → моментальный Follow
     follow = Follow(
         follower_id=current_user.id,
-        following_id=user_id
+        following_id=user_id,
     )
     db.add(follow)
     await db.commit()
@@ -720,7 +835,7 @@ async def follow_user(
         {"follower_id": current_user.id},
     )
 
-    return {"status": "followed"}
+    return FollowActionResponse(status="followed")
 
 
 @router.delete("/{user_id}/follow", status_code=status.HTTP_204_NO_CONTENT)
@@ -817,4 +932,203 @@ async def get_user_collection(
         ))
 
     return response
+
+
+# ==================== Follow requests ====================
+
+def _request_to_response(req: FollowRequest, requester: User, target: User) -> FollowRequestResponse:
+    return FollowRequestResponse(
+        id=req.id,
+        requester=FollowRequestUser(
+            id=requester.id,
+            username=requester.username,
+            display_name=requester.display_name,
+            avatar_url=requester.avatar_url,
+        ),
+        target=FollowRequestUser(
+            id=target.id,
+            username=target.username,
+            display_name=target.display_name,
+            avatar_url=target.avatar_url,
+        ),
+        status=req.status.value,
+        created_at=req.created_at,
+        resolved_at=req.resolved_at,
+    )
+
+
+@router.get("/me/follow-requests/incoming", response_model=list[FollowRequestResponse])
+async def list_incoming_follow_requests(
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Список входящих pending-заявок на подписку (мне)."""
+    result = await db.execute(
+        select(FollowRequest, User)
+        .join(User, User.id == FollowRequest.requester_id)
+        .where(
+            FollowRequest.target_id == current_user.id,
+            FollowRequest.status == FollowRequestStatus.PENDING,
+        )
+        .order_by(FollowRequest.created_at.desc())
+    )
+    rows = result.all()
+    return [_request_to_response(req, requester, current_user) for req, requester in rows]
+
+
+@router.get("/me/follow-requests/outgoing", response_model=list[FollowRequestResponse])
+async def list_outgoing_follow_requests(
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Список исходящих pending-заявок (которые я отправил)."""
+    result = await db.execute(
+        select(FollowRequest, User)
+        .join(User, User.id == FollowRequest.target_id)
+        .where(
+            FollowRequest.requester_id == current_user.id,
+            FollowRequest.status == FollowRequestStatus.PENDING,
+        )
+        .order_by(FollowRequest.created_at.desc())
+    )
+    rows = result.all()
+    return [_request_to_response(req, current_user, target) for req, target in rows]
+
+
+@router.get("/me/follow-requests/incoming/count")
+async def count_incoming_follow_requests(
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Счётчик pending-заявок для бейджа."""
+    count = await db.scalar(
+        select(func.count(FollowRequest.id)).where(
+            FollowRequest.target_id == current_user.id,
+            FollowRequest.status == FollowRequestStatus.PENDING,
+        )
+    )
+    return {"count": int(count or 0)}
+
+
+@router.post(
+    "/me/follow-requests/{request_id}/approve",
+    response_model=FollowActionResponse,
+)
+async def approve_follow_request(
+    request_id: UUID,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Одобрить заявку — создаётся Follow + status=approved."""
+    result = await db.execute(
+        select(FollowRequest).where(FollowRequest.id == request_id)
+    )
+    req = result.scalar_one_or_none()
+    if not req:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Заявка не найдена",
+        )
+    if req.target_id != current_user.id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Нет доступа к этой заявке",
+        )
+    if req.status != FollowRequestStatus.PENDING:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Заявка уже обработана",
+        )
+
+    # Создаём Follow, если ещё нет (на случай гонок)
+    existing = await db.execute(
+        select(Follow).where(
+            Follow.follower_id == req.requester_id,
+            Follow.following_id == current_user.id,
+        )
+    )
+    if not existing.scalar_one_or_none():
+        db.add(Follow(
+            follower_id=req.requester_id,
+            following_id=current_user.id,
+        ))
+
+    req.status = FollowRequestStatus.APPROVED
+    req.resolved_at = datetime.utcnow()
+    await db.commit()
+
+    # Эмиссия событий ачивок (K-серия) — как при обычном follow
+    from app.services.achievements import emit_event
+    from app.services.achievements.events import FOLLOW_CREATED, FOLLOW_RECEIVED
+    await emit_event(
+        db,
+        req.requester_id,
+        FOLLOW_CREATED,
+        {"following_id": current_user.id},
+    )
+    await emit_event(
+        db,
+        current_user.id,
+        FOLLOW_RECEIVED,
+        {"follower_id": req.requester_id},
+    )
+
+    return FollowActionResponse(status="followed", follow_request_id=req.id)
+
+
+@router.post("/me/follow-requests/{request_id}/reject", status_code=status.HTTP_204_NO_CONTENT)
+async def reject_follow_request(
+    request_id: UUID,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Отклонить заявку. Запись удаляется, чтобы requester мог повторно подать в будущем."""
+    result = await db.execute(
+        select(FollowRequest).where(FollowRequest.id == request_id)
+    )
+    req = result.scalar_one_or_none()
+    if not req:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Заявка не найдена",
+        )
+    if req.target_id != current_user.id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Нет доступа к этой заявке",
+        )
+    if req.status != FollowRequestStatus.PENDING:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Заявка уже обработана",
+        )
+    await db.delete(req)
+    await db.commit()
+
+
+@router.delete("/{user_id}/follow-request", status_code=status.HTTP_204_NO_CONTENT)
+async def cancel_follow_request(
+    user_id: UUID,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Отменить свою исходящую заявку на подписку на пользователя user_id.
+    Удобный shortcut: не нужен id заявки, только id таргета.
+    """
+    result = await db.execute(
+        select(FollowRequest).where(
+            FollowRequest.requester_id == current_user.id,
+            FollowRequest.target_id == user_id,
+            FollowRequest.status == FollowRequestStatus.PENDING,
+        )
+    )
+    req = result.scalar_one_or_none()
+    if not req:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Активная заявка не найдена",
+        )
+    await db.delete(req)
+    await db.commit()
 

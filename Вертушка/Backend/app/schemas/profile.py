@@ -66,6 +66,9 @@ class PublicProfileRecord(BaseModel):
     is_collectible: bool = False
     is_limited: bool = False
     is_hot: bool = False
+    # Дата добавления в коллекцию владельца профиля (для сортировки).
+    # None — если запись не из коллекции (например, рейл новинок).
+    added_at: datetime | None = None
 
 
 class PublicProfileResponse(BaseModel):

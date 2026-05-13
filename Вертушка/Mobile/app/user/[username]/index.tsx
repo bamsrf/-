@@ -43,10 +43,26 @@ import {
 } from '../../../lib/types';
 import { toast } from '../../../lib/toast';
 import { AchievementsBlock } from '../../../components/AchievementsBlock';
+import { ArchetypeChip } from '../../../components/ArchetypeChip';
 
 type ProfileTab = 'collection' | 'wishlist';
 type ViewMode = 'grid' | 'list';
-type FormatFilter = 'all' | 'LP' | 'EP' | '7"';
+type FormatFilter = 'all' | 'vinyl' | 'cd' | 'cassette' | 'box_set';
+type SortMode = 'added_desc' | 'added_asc' | 'title';
+
+const FORMAT_OPTIONS: { id: FormatFilter; label: string; match: string[] }[] = [
+  { id: 'all', label: 'Все форматы', match: [] },
+  { id: 'vinyl', label: 'Винил', match: ['vinyl', 'lp', '12"', '10"', '7"', 'album'] },
+  { id: 'cd', label: 'CD', match: ['cd'] },
+  { id: 'cassette', label: 'Кассета', match: ['cassette'] },
+  { id: 'box_set', label: 'Бокс-сет', match: ['box set', 'box-set', 'boxset'] },
+];
+
+const SORT_OPTIONS: { id: SortMode; label: string }[] = [
+  { id: 'added_desc', label: 'Новые → старые' },
+  { id: 'added_asc', label: 'Старые → новые' },
+  { id: 'title', label: 'По названию' },
+];
 
 const PP = {
   ivory: '#F4EEE6',
@@ -214,42 +230,6 @@ function ViewToggle({ value, onChange }: { value: ViewMode; onChange: (v: ViewMo
   );
 }
 
-function FormatChips({
-  value,
-  onChange,
-}: {
-  value: FormatFilter;
-  onChange: (v: FormatFilter) => void;
-}) {
-  const opts: { id: FormatFilter; label: string }[] = [
-    { id: 'all', label: 'Все' },
-    { id: 'LP', label: 'LP' },
-    { id: 'EP', label: 'EP' },
-    { id: '7"', label: '7"' },
-  ];
-  return (
-    <ScrollView
-      horizontal
-      showsHorizontalScrollIndicator={false}
-      contentContainerStyle={{ gap: 6 }}
-    >
-      {opts.map((o) => {
-        const active = o.id === value;
-        return (
-          <TouchableOpacity
-            key={o.id}
-            onPress={() => onChange(o.id)}
-            style={[styles.formatChip, active && styles.formatChipActive]}
-          >
-            <Text style={[styles.formatChipTxt, active && styles.formatChipTxtActive]}>
-              {o.label}
-            </Text>
-          </TouchableOpacity>
-        );
-      })}
-    </ScrollView>
-  );
-}
 
 /* ---------------- CARDS ---------------- */
 function RecordCardLight({
@@ -343,17 +323,24 @@ export default function UserProfileScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { user: currentUser } = useAuthStore();
-  const { followUser, unfollowUser } = useFollowStore();
+  const { followUser, unfollowUser, cancelFollowRequest } = useFollowStore();
 
   const [pubProfile, setPubProfile] = useState<PublicProfile | null>(null);
   const [wishlist, setWishlist] = useState<WishlistPublicResponse | null>(null);
   const [following, setFollowing] = useState(false);
+  const [requestPending, setRequestPending] = useState(false);
+  const [isPrivateProfile, setIsPrivateProfile] = useState(false);
   const [, setFollowersCount] = useState(0);
   const [profileUserId, setProfileUserId] = useState<string | null>(null);
 
   const [activeTab, setActiveTab] = useState<ProfileTab>('collection');
   const [viewMode, setViewMode] = useState<ViewMode>('grid');
   const [formatFilter, setFormatFilter] = useState<FormatFilter>('all');
+  const [sortMode, setSortMode] = useState<SortMode>('added_desc');
+  const [showFilterMenu, setShowFilterMenu] = useState(false);
+  const [showSortMenu, setShowSortMenu] = useState(false);
+  const filterMenuAnim = useRef(new Animated.Value(0)).current;
+  const sortMenuAnim = useRef(new Animated.Value(0)).current;
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [isFollowLoading, setIsFollowLoading] = useState(false);
@@ -379,6 +366,8 @@ export default function UserProfileScreen() {
         setProfileUserId(userMeta.id);
         setFollowing(userMeta.is_following);
         setFollowersCount(userMeta.followers_count);
+        setRequestPending(userMeta.follow_request_status === 'pending');
+        setIsPrivateProfile(!!userMeta.is_private_profile);
       }
     } catch {
       toast.error('Профиль не найден');
@@ -431,20 +420,34 @@ export default function UserProfileScreen() {
     setIsFollowLoading(true);
     try {
       if (following) {
+        // Отписаться
         await unfollowUser(profileUserId);
         setFollowing(false);
         setFollowersCount((c) => Math.max(0, c - 1));
-      } else {
-        await followUser(profileUserId);
+        return;
+      }
+      if (requestPending) {
+        // Отменить запрос
+        await cancelFollowRequest(profileUserId);
+        setRequestPending(false);
+        toast.success('Запрос отменён');
+        return;
+      }
+      // Подписаться / отправить запрос
+      const result = await followUser(profileUserId);
+      if (result.status === 'followed' || result.status === 'already_following') {
         setFollowing(true);
         setFollowersCount((c) => c + 1);
+      } else if (result.status === 'requested' || result.status === 'already_requested') {
+        setRequestPending(true);
+        toast.success('Запрос отправлен', 'Ждём подтверждения от пользователя');
       }
     } catch (error: any) {
       toast.error('Ошибка', error?.response?.data?.detail || 'Не удалось');
     } finally {
       setIsFollowLoading(false);
     }
-  }, [profileUserId, following, followUser, unfollowUser]);
+  }, [profileUserId, following, requestPending, followUser, unfollowUser, cancelFollowRequest]);
 
   const handleShare = useCallback(async () => {
     try {
@@ -505,30 +508,101 @@ export default function UserProfileScreen() {
   const wishlistItems = wishlist?.items || [];
 
   const baseCollection: PublicProfileRecord[] = pubProfile?.collection ?? [];
+  // Прокидываем added_at у элемента вишлиста в record, чтобы сортировка работала единообразно
   const baseWishlist: PublicProfileRecord[] = wishlistItems.map((it) => ({
     ...it.record,
     is_booked: it.is_booked,
+    added_at: it.added_at ?? it.record.added_at ?? null,
   }));
 
   const applyFilter = useCallback(
     (records: PublicProfileRecord[]) => {
       if (formatFilter === 'all') return records;
+      const opt = FORMAT_OPTIONS.find((o) => o.id === formatFilter);
+      if (!opt) return records;
       return records.filter((r) => {
         if (!r.format_type) return false;
         const f = r.format_type.toLowerCase();
-        if (formatFilter === 'LP') return f.includes('lp') || f.includes('album');
-        if (formatFilter === 'EP') return f.includes('ep');
-        if (formatFilter === '7"') return f.includes('7"') || f.includes("7''") || f.startsWith('7');
-        return true;
+        return opt.match.some((token) => f.includes(token));
       });
     },
     [formatFilter]
   );
 
-  const gridData = useMemo(
-    () => applyFilter(activeTab === 'collection' ? baseCollection : baseWishlist),
-    [applyFilter, activeTab, baseCollection, baseWishlist]
+  const applySort = useCallback(
+    (records: PublicProfileRecord[]) => {
+      const arr = [...records];
+      const ts = (s?: string | null) => (s ? Date.parse(s) : 0);
+      if (sortMode === 'added_desc') {
+        arr.sort((a, b) => ts(b.added_at) - ts(a.added_at));
+      } else if (sortMode === 'added_asc') {
+        arr.sort((a, b) => {
+          const av = a.added_at ? ts(a.added_at) : Number.POSITIVE_INFINITY;
+          const bv = b.added_at ? ts(b.added_at) : Number.POSITIVE_INFINITY;
+          return av - bv;
+        });
+      } else if (sortMode === 'title') {
+        arr.sort((a, b) => (a.title || '').localeCompare(b.title || '', 'ru'));
+      }
+      return arr;
+    },
+    [sortMode]
   );
+
+  const gridData = useMemo(
+    () => applySort(applyFilter(activeTab === 'collection' ? baseCollection : baseWishlist)),
+    [applyFilter, applySort, activeTab, baseCollection, baseWishlist]
+  );
+
+  // ---- dropdown menu toggles (filter / sort) — два эксклюзивных меню
+  const animateMenu = useCallback((anim: Animated.Value, open: boolean) => {
+    Animated.timing(anim, {
+      toValue: open ? 1 : 0,
+      duration: 220,
+      easing: Easing.bezier(0.22, 0.7, 0.18, 1),
+      useNativeDriver: false,
+    }).start();
+  }, []);
+
+  const handleToggleFilterMenu = useCallback(() => {
+    const next = !showFilterMenu;
+    setShowFilterMenu(next);
+    animateMenu(filterMenuAnim, next);
+    if (next && showSortMenu) {
+      setShowSortMenu(false);
+      animateMenu(sortMenuAnim, false);
+    }
+  }, [showFilterMenu, showSortMenu, animateMenu, filterMenuAnim, sortMenuAnim]);
+
+  const handleToggleSortMenu = useCallback(() => {
+    const next = !showSortMenu;
+    setShowSortMenu(next);
+    animateMenu(sortMenuAnim, next);
+    if (next && showFilterMenu) {
+      setShowFilterMenu(false);
+      animateMenu(filterMenuAnim, false);
+    }
+  }, [showSortMenu, showFilterMenu, animateMenu, sortMenuAnim, filterMenuAnim]);
+
+  const handleSelectFilter = useCallback(
+    (id: FormatFilter) => {
+      setFormatFilter(id);
+      setShowFilterMenu(false);
+      animateMenu(filterMenuAnim, false);
+    },
+    [animateMenu, filterMenuAnim]
+  );
+
+  const handleSelectSort = useCallback(
+    (id: SortMode) => {
+      setSortMode(id);
+      setShowSortMenu(false);
+      animateMenu(sortMenuAnim, false);
+    },
+    [animateMenu, sortMenuAnim]
+  );
+
+  const activeFormatLabel = FORMAT_OPTIONS.find((o) => o.id === formatFilter)?.label || 'Все форматы';
 
   if (isLoading) {
     return (
@@ -656,6 +730,9 @@ export default function UserProfileScreen() {
             </View>
             <View style={{ flex: 1, minWidth: 0 }}>
               <Text style={styles.username} numberOfLines={1}>@{pubProfile.username}</Text>
+              <View style={{ marginTop: 4, marginBottom: 2, alignItems: 'flex-start' }}>
+                <ArchetypeChip username={pubProfile.username} />
+              </View>
               {pubProfile.custom_title ? (
                 <Text style={styles.customTitle} numberOfLines={2}>{pubProfile.custom_title}</Text>
               ) : null}
@@ -665,28 +742,38 @@ export default function UserProfileScreen() {
             </View>
           </View>
 
-          {/* Follow button */}
-          {!isOwn && profileUserId ? (
-            <TouchableOpacity
-              style={[styles.followBtn, following && styles.followBtnActive]}
-              onPress={handleFollow}
-              disabled={isFollowLoading}
-            >
-              {isFollowLoading ? (
-                <ActivityIndicator size="small" color={following ? PP.cobalt : '#fff'} />
-              ) : (
-                <>
-                  <Icon
-                    name={following ? 'checkmark' : 'person-add-outline'}
-                    size={16} color={following ? PP.cobalt : '#fff'}
-                  />
-                  <Text style={[styles.followTxt, following && styles.followTxtActive]}>
-                    {following ? 'Вы подписаны' : 'Подписаться'}
-                  </Text>
-                </>
-              )}
-            </TouchableOpacity>
-          ) : null}
+          {/* Follow button — три состояния: следишь / запрос отправлен / подписаться */}
+          {!isOwn && profileUserId ? (() => {
+            const isAlt = following || requestPending; // светлый вариант кнопки
+            const iconName = following
+              ? 'checkmark'
+              : requestPending
+                ? 'time-outline'
+                : (isPrivateProfile ? 'lock-closed-outline' : 'person-add-outline');
+            const label = following
+              ? 'Вы подписаны'
+              : requestPending
+                ? 'Запрос отправлен'
+                : (isPrivateProfile ? 'Запросить подписку' : 'Подписаться');
+            return (
+              <TouchableOpacity
+                style={[styles.followBtn, isAlt && styles.followBtnActive]}
+                onPress={handleFollow}
+                disabled={isFollowLoading}
+              >
+                {isFollowLoading ? (
+                  <ActivityIndicator size="small" color={isAlt ? PP.cobalt : '#fff'} />
+                ) : (
+                  <>
+                    <Icon name={iconName as any} size={16} color={isAlt ? PP.cobalt : '#fff'} />
+                    <Text style={[styles.followTxt, isAlt && styles.followTxtActive]}>
+                      {label}
+                    </Text>
+                  </>
+                )}
+              </TouchableOpacity>
+            );
+          })() : null}
 
           {/* Stats card */}
           {collectionValueRub != null ? (
@@ -751,9 +838,18 @@ export default function UserProfileScreen() {
         {/* Booking hint — только в вишлисте */}
         {activeTab === 'wishlist' && !isOwn ? (
           <View style={styles.bookingHint}>
-            <Text style={styles.bookingHintTxt}>
-              🔒 Бронь анонимна · 🎁 60 дней · ⏰ напоминание за 7
-            </Text>
+            <View style={styles.bookingHintRow}>
+              <Text style={styles.bookingHintEmoji}>🔒</Text>
+              <Text style={styles.bookingHintTxt}>Бронь анонимна</Text>
+            </View>
+            <View style={styles.bookingHintRow}>
+              <Text style={styles.bookingHintEmoji}>🎁</Text>
+              <Text style={styles.bookingHintTxt}>Срок брони — 60 дней</Text>
+            </View>
+            <View style={styles.bookingHintRow}>
+              <Text style={styles.bookingHintEmoji}>⏰</Text>
+              <Text style={styles.bookingHintTxt}>Напоминание за 7 дней</Text>
+            </View>
             {!following ? (
               <Text style={styles.bookingHintSub}>
                 Подпишитесь, чтобы бронировать подарки
@@ -774,13 +870,94 @@ export default function UserProfileScreen() {
           />
         </View>
 
-        {/* Toolbar: формат + view toggle */}
+        {/* Toolbar: format filter (dropdown) + sort (dropdown) + view toggle */}
         <View style={styles.toolbar}>
-          <View style={{ flex: 1, marginRight: 10 }}>
-            <FormatChips value={formatFilter} onChange={setFormatFilter} />
-          </View>
+          <TouchableOpacity
+            activeOpacity={0.85}
+            style={[styles.toolbarBtn, formatFilter !== 'all' && styles.toolbarBtnActive]}
+            onPress={handleToggleFilterMenu}
+          >
+            <Icon
+              name="options-outline"
+              size={16}
+              color={formatFilter !== 'all' ? '#fff' : PP.cobalt}
+            />
+            {formatFilter !== 'all' ? (
+              <Text style={styles.toolbarBtnActiveTxt}>{activeFormatLabel}</Text>
+            ) : null}
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            activeOpacity={0.85}
+            style={styles.toolbarBtn}
+            onPress={handleToggleSortMenu}
+          >
+            <Icon name="swap-vertical-outline" size={16} color={PP.cobalt} />
+          </TouchableOpacity>
+
+          <View style={{ flex: 1 }} />
           <ViewToggle value={viewMode} onChange={setViewMode} />
         </View>
+
+        {/* Filter dropdown */}
+        <Animated.View
+          pointerEvents={showFilterMenu ? 'auto' : 'none'}
+          style={{
+            opacity: filterMenuAnim,
+            maxHeight: filterMenuAnim.interpolate({ inputRange: [0, 1], outputRange: [0, 320] }),
+            overflow: 'hidden',
+            paddingHorizontal: GRID_PADDING,
+            marginTop: 8,
+          }}
+        >
+          <View style={styles.dropdownCard}>
+            {FORMAT_OPTIONS.map((o) => {
+              const active = formatFilter === o.id;
+              return (
+                <TouchableOpacity
+                  key={o.id}
+                  style={[styles.dropdownItem, active && styles.dropdownItemActive]}
+                  onPress={() => handleSelectFilter(o.id)}
+                >
+                  <Text style={[styles.dropdownItemTxt, active && styles.dropdownItemTxtActive]}>
+                    {o.label}
+                  </Text>
+                  {active ? <Icon name="checkmark" size={16} color={PP.cobalt} /> : null}
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+        </Animated.View>
+
+        {/* Sort dropdown */}
+        <Animated.View
+          pointerEvents={showSortMenu ? 'auto' : 'none'}
+          style={{
+            opacity: sortMenuAnim,
+            maxHeight: sortMenuAnim.interpolate({ inputRange: [0, 1], outputRange: [0, 240] }),
+            overflow: 'hidden',
+            paddingHorizontal: GRID_PADDING,
+            marginTop: 8,
+          }}
+        >
+          <View style={styles.dropdownCard}>
+            {SORT_OPTIONS.map((o) => {
+              const active = sortMode === o.id;
+              return (
+                <TouchableOpacity
+                  key={o.id}
+                  style={[styles.dropdownItem, active && styles.dropdownItemActive]}
+                  onPress={() => handleSelectSort(o.id)}
+                >
+                  <Text style={[styles.dropdownItemTxt, active && styles.dropdownItemTxtActive]}>
+                    {o.label}
+                  </Text>
+                  {active ? <Icon name="checkmark" size={16} color={PP.cobalt} /> : null}
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+        </Animated.View>
 
         {/* Grid / List */}
         {renderGrid()}
@@ -1003,14 +1180,24 @@ const styles = StyleSheet.create({
   bookingHint: {
     marginHorizontal: GRID_PADDING,
     marginTop: 14,
-    paddingHorizontal: 14, paddingVertical: 10,
+    paddingHorizontal: 14, paddingVertical: 12,
     borderRadius: 12,
     backgroundColor: 'rgba(255,255,255,0.55)',
     borderWidth: 1, borderColor: PP.hairline,
-    alignItems: 'center',
+    gap: 6,
   },
-  bookingHintTxt: { fontSize: 12, color: PP.slate, fontWeight: '500' },
-  bookingHintSub: { fontSize: 11, color: PP.cobalt, fontWeight: '600', marginTop: 4 },
+  bookingHintRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  bookingHintEmoji: { fontSize: 13, width: 18, textAlign: 'center' },
+  bookingHintTxt: { fontSize: 12.5, color: PP.slate, fontWeight: '500', flex: 1 },
+  bookingHintSub: {
+    fontSize: 11.5, color: PP.cobalt, fontWeight: '600',
+    marginTop: 6, paddingTop: 6,
+    borderTopWidth: 1, borderTopColor: PP.hairline,
+  },
 
   /* Segmented */
   segmentedWrap: {
@@ -1052,19 +1239,46 @@ const styles = StyleSheet.create({
     flexDirection: 'row', alignItems: 'center',
     paddingHorizontal: GRID_PADDING,
     marginTop: 16,
+    gap: 8,
   },
-  formatChip: {
-    paddingHorizontal: 12, paddingVertical: 6,
-    borderRadius: 999,
+  toolbarBtn: {
+    height: 34,
+    paddingHorizontal: 10,
+    borderRadius: 17,
     backgroundColor: 'rgba(255,255,255,0.55)',
     borderWidth: 1, borderColor: PP.hairline,
+    alignItems: 'center', justifyContent: 'center',
+    flexDirection: 'row', gap: 6,
+    minWidth: 34,
   },
-  formatChipActive: {
+  toolbarBtnActive: {
+    backgroundColor: PP.cobalt,
+    borderColor: PP.cobalt,
+    paddingHorizontal: 12,
+  },
+  toolbarBtnActiveTxt: { color: '#fff', fontSize: 12, fontWeight: '700' },
+
+  /* Dropdown menu (filter / sort) */
+  dropdownCard: {
     backgroundColor: '#fff',
-    borderColor: 'rgba(58,75,224,0.30)',
+    borderRadius: 14,
+    borderWidth: 1, borderColor: PP.hairline,
+    padding: 4,
+    shadowColor: PP.ink,
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.08,
+    shadowRadius: 12,
   },
-  formatChipTxt: { fontSize: 12, color: PP.slate, fontWeight: '500' },
-  formatChipTxtActive: { color: PP.cobalt, fontWeight: '700' },
+  dropdownItem: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    paddingHorizontal: 14, paddingVertical: 11,
+    borderRadius: 10,
+  },
+  dropdownItemActive: {
+    backgroundColor: 'rgba(58,75,224,0.08)',
+  },
+  dropdownItemTxt: { fontSize: 13.5, color: PP.ink, fontWeight: '500' },
+  dropdownItemTxtActive: { color: PP.cobalt, fontWeight: '700' },
 
   viewToggle: {
     flexDirection: 'row',

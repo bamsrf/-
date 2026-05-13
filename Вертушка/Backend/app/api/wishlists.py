@@ -381,9 +381,10 @@ async def get_public_wishlist(
                 priority=item.priority,
                 notes=item.notes,
                 is_booked=is_booked,
-                gifter_name=gifter_name
+                gifter_name=gifter_name,
+                added_at=item.added_at,
             ))
-    
+
     # Сортируем по приоритету
     public_items.sort(key=lambda x: -x.priority)
     

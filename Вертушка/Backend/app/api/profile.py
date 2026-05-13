@@ -38,6 +38,7 @@ def _record_to_public(
     is_booked: bool = False,
     discogs_want: int | None = None,
     discogs_have: int | None = None,
+    added_at=None,
 ) -> PublicProfileRecord:
     return PublicProfileRecord(
         id=record.id,
@@ -60,6 +61,7 @@ def _record_to_public(
         is_collectible=bool(record.is_collectible),
         is_limited=bool(record.is_limited),
         is_hot=bool(record.is_hot),
+        added_at=added_at,
     )
 
 
@@ -104,7 +106,7 @@ async def _get_full_collection(user_id: UUID, db: AsyncSession, limit: int = 200
         if not item.record or item.record.id in seen:
             continue
         seen.add(item.record.id)
-        out.append(_record_to_public(item.record))
+        out.append(_record_to_public(item.record, added_at=item.added_at))
     return out
 
 

@@ -39,6 +39,34 @@ import Toast from 'react-native-toast-message';
 import { toastConfig } from '../components/CustomToast';
 import { Colors, Typography, Spacing, BorderRadius, Shadows } from '../constants/theme';
 import { AchievementsBlock } from '../components/AchievementsBlock';
+import { ArchetypeChip } from '../components/ArchetypeChip';
+
+function FollowRequestsMenuItem({ onPress }: { onPress: () => void }) {
+  const [count, setCount] = useState(0);
+  useEffect(() => {
+    let cancelled = false;
+    api
+      .getIncomingFollowRequestsCount()
+      .then((c) => {
+        if (!cancelled) setCount(c);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+  return (
+    <TouchableOpacity style={styles.settingsItem} onPress={onPress}>
+      <Icon name="person-add-outline" size={24} color={Colors.royalBlue} />
+      <Text style={styles.settingsItemText}>Запросы на подписку</Text>
+      {count > 0 ? (
+        <View style={styles.followReqBadge}>
+          <Text style={styles.followReqBadgeTxt}>{count > 99 ? '99+' : count}</Text>
+        </View>
+      ) : null}
+    </TouchableOpacity>
+  );
+}
 
 export default function ProfileScreen() {
   const router = useRouter();
@@ -326,6 +354,9 @@ export default function ProfileScreen() {
           {user?.display_name ? (
             <Text style={styles.displayName}>{user.display_name}</Text>
           ) : null}
+          <View style={styles.archetypeRow}>
+            <ArchetypeChip />
+          </View>
           <Text style={styles.email}>{user?.email}</Text>
         </View>
 
@@ -510,6 +541,10 @@ export default function ProfileScreen() {
             <Text style={styles.settingsItemText}>Уведомления</Text>
           </TouchableOpacity>
 
+          <FollowRequestsMenuItem
+            onPress={() => router.push('/social/follow-requests' as any)}
+          />
+
           <TouchableOpacity
             style={styles.settingsItem}
             onPress={() => router.push('/settings/wishlists')}
@@ -673,6 +708,11 @@ const styles = StyleSheet.create({
     color: Colors.textMuted,
     textAlign: 'center',
   },
+  archetypeRow: {
+    alignItems: 'center',
+    marginTop: 4,
+    marginBottom: 6,
+  },
   statsGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
@@ -762,6 +802,20 @@ const styles = StyleSheet.create({
     ...Typography.body,
     color: Colors.text,
     flex: 1,
+  },
+  followReqBadge: {
+    minWidth: 22,
+    height: 22,
+    borderRadius: 11,
+    paddingHorizontal: 6,
+    backgroundColor: Colors.royalBlue,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  followReqBadgeTxt: {
+    color: '#fff',
+    fontSize: 11,
+    fontWeight: '700',
   },
   logoutSection: {
     marginBottom: Spacing.lg,
