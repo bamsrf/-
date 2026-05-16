@@ -21,7 +21,6 @@ import Animated, {
 import { Colors, Typography, BorderRadius, Shadows, Spacing, Gradients } from '../constants/theme';
 import { RecordSearchResult, VinylRecord, MasterSearchResult, ReleaseSearchResult, PublicProfileRecord } from '../lib/types';
 import { getCoverUrl } from '../lib/api';
-import { cleanArtistName } from '../lib/format';
 import { RarityAura, TierCoverEffects, TierLabel, pickRarityTier, RarityContext, RarityFlags, RARITY_TIERS } from './RarityAura';
 
 const { width } = Dimensions.get('window');
@@ -115,7 +114,6 @@ function RecordCardComponent({
   noRarityAura = false,
 }: RecordCardProps) {
   const imageUrl = getCoverUrl(record);
-  const artistDisplay = cleanArtistName(record.artist);
   const cardWidth = size === 'large' ? width - Spacing.md * 2 : CARD_WIDTH;
   const imageHeight = size === 'large' ? cardWidth * 0.8 : CARD_WIDTH;
   const rarityTier = pickRarityTier(record as RarityFlags, rarityContext);
@@ -222,7 +220,7 @@ function RecordCardComponent({
           style={styles.compactOverlay}
         >
           <Text style={styles.compactArtist} numberOfLines={1}>
-            {artistDisplay}
+            {record.artist}
           </Text>
           <Text style={styles.compactTitle} numberOfLines={2}>
             {record.title}
@@ -289,12 +287,12 @@ function RecordCardComponent({
           {onArtistPress ? (
             <Pressable onPress={() => onArtistPress(record.artist)}>
               <Text style={[styles.listArtist, styles.artistClickable]} numberOfLines={1}>
-                {artistDisplay}
+                {record.artist}
               </Text>
             </Pressable>
           ) : (
             <Text style={styles.listArtist} numberOfLines={1}>
-              {artistDisplay}
+              {record.artist}
             </Text>
           )}
           <Text style={styles.listTitle} numberOfLines={1}>
@@ -390,12 +388,12 @@ function RecordCardComponent({
         {onArtistPress ? (
           <Pressable onPress={() => onArtistPress(record.artist)}>
             <Text style={[styles.expandedArtist, styles.artistClickable]} numberOfLines={1}>
-              {artistDisplay}
+              {record.artist}
             </Text>
           </Pressable>
         ) : (
           <Text style={styles.expandedArtist} numberOfLines={1}>
-            {artistDisplay}
+            {record.artist}
           </Text>
         )}
         <Text style={styles.expandedTitle} numberOfLines={2}>

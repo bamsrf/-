@@ -33,7 +33,6 @@ import { api, resolveMediaUrl } from '../../lib/api';
 import { MasterSearchResult, ReleaseSearchResult, ArtistSearchResult, UserWithStats, PublicProfileRecord } from '../../lib/types';
 import { Colors, Typography, Spacing, BorderRadius, Gradients } from '../../constants/theme';
 import { toast } from '../../lib/toast';
-import { cleanArtistName } from '../../lib/format';
 
 function getFormatDisplayInfo(format?: string): { label: string; verb: string } {
   if (!format) return { label: 'Винил', verb: 'добавлен' };
@@ -503,14 +502,15 @@ export default function SearchScreen() {
   const shouldShowHistory = isHomeView && showHistory && searchHistory.length > 0;
 
   const dedupedArtists = artistResults.reduce<ArtistSearchResult[]>((acc, artist) => {
-    const baseName = cleanArtistName(artist.name).toLowerCase();
-    const hasSuffix = artist.name !== cleanArtistName(artist.name);
+    const baseName = artist.name.replace(/\s*\(\d+\)$/, '').toLowerCase().trim();
+    const hasSuffix = /\s*\(\d+\)$/.test(artist.name);
     const existingIdx = acc.findIndex(
-      a => cleanArtistName(a.name).toLowerCase() === baseName
+      a => a.name.replace(/\s*\(\d+\)$/, '').toLowerCase().trim() === baseName
     );
     if (existingIdx === -1) {
       acc.push(artist);
     } else if (!hasSuffix) {
+      // Prefer the canonical variant without disambig suffix
       acc[existingIdx] = artist;
     }
     return acc;
@@ -794,7 +794,7 @@ export default function SearchScreen() {
                 </View>
               )}
               <View style={styles.suggestInfo}>
-                <Text style={styles.suggestName} numberOfLines={1}>{cleanArtistName(artist.name)}</Text>
+                <Text style={styles.suggestName} numberOfLines={1}>{artist.name}</Text>
                 <Text style={styles.suggestType}>Артист</Text>
               </View>
               <Icon name="arrow-forward-outline" size={16} color={Colors.textMuted} />
@@ -828,7 +828,7 @@ export default function SearchScreen() {
               )}
               <View style={styles.suggestInfo}>
                 <Text style={styles.suggestName} numberOfLines={1}>{master.title}</Text>
-                <Text style={styles.suggestType} numberOfLines={1}>{cleanArtistName(master.artist)}{master.year ? ` · ${master.year}` : ''}</Text>
+                <Text style={styles.suggestType} numberOfLines={1}>{master.artist}{master.year ? ` · ${master.year}` : ''}</Text>
               </View>
               <Icon name="arrow-forward-outline" size={16} color={Colors.textMuted} />
             </TouchableOpacity>
@@ -953,7 +953,7 @@ export default function SearchScreen() {
               </View>
               <View style={styles.topArtistInfo}>
                 <Text style={styles.topArtistLabel}>Артист</Text>
-                <Text style={styles.topArtistName} numberOfLines={1}>{cleanArtistName(dedupedArtists[0].name)}</Text>
+                <Text style={styles.topArtistName} numberOfLines={1}>{dedupedArtists[0].name.replace(/\s*\(\d+\)$/, '')}</Text>
               </View>
               <View style={styles.artistArrowBg}>
               </View>
@@ -985,7 +985,7 @@ export default function SearchScreen() {
               </View>
               <View style={styles.topArtistInfo}>
                 <Text style={styles.secondaryArtistLabel}>Артист</Text>
-                <Text style={styles.secondaryArtistName} numberOfLines={1}>{cleanArtistName(artist.name)}</Text>
+                <Text style={styles.secondaryArtistName} numberOfLines={1}>{artist.name.replace(/\s*\(\d+\)$/, '')}</Text>
               </View>
             </TouchableOpacity>
           ))}

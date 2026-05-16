@@ -13,7 +13,6 @@ import { Image } from 'expo-image';
 import { Icon } from '@/components/ui';
 import { Colors, Typography, BorderRadius, Shadows, Spacing } from '../constants/theme';
 import { ArtistSearchResult } from '../lib/types';
-import { cleanArtistName } from '../lib/format';
 
 const { width } = Dimensions.get('window');
 const CARD_WIDTH = (width - Spacing.md * 3) / 2;
@@ -53,7 +52,7 @@ function ArtistCardComponent({ artist, onPress }: ArtistCardProps) {
       {/* Имя артиста */}
       <View style={styles.info}>
         <Text style={styles.name} numberOfLines={2}>
-          {cleanArtistName(artist.name)}
+          {artist.name}
         </Text>
       </View>
     </TouchableOpacity>

@@ -37,7 +37,6 @@ from app.schemas.record import (
 )
 from app.services.discogs import DiscogsService
 from app.services.rate_limiter import Priority
-from app.services.artist_name import clean_artist_name
 from app.services.openai_vision import OpenAIVisionService, CoverRecognitionError
 
 router = APIRouter()
@@ -931,19 +930,6 @@ async def search_artists(
             page=page,
             per_page=per_page
         )
-        seen: dict[str, int] = {}
-        deduped = []
-        for artist in results.results:
-            cleaned = clean_artist_name(artist.name)
-            if not cleaned:
-                continue
-            key = cleaned.lower()
-            if key in seen:
-                continue
-            artist.name = cleaned
-            seen[key] = len(deduped)
-            deduped.append(artist)
-        results.results = deduped
         return results
     except Exception as e:
         raise HTTPException(

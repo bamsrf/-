@@ -12,7 +12,6 @@ from typing import Any
 
 from app.config import get_settings
 from app.services.rate_limiter import discogs_limiter, Priority
-from app.services.artist_name import clean_artist_name
 from app.services.cache import (
     cache,
     search_cache_key,
@@ -1260,7 +1259,7 @@ class DiscogsService:
             asyncio.create_task(self._collect_artist_master_ids(artist_id, ids_ck))
 
         # --- Шаг 2: Search API — обложки и format[] (логика из оригинала не меняется) ---
-        clean_name = clean_artist_name(artist_name)
+        clean_name = re.sub(r'\s*\(\d+\)\s*$', '', artist_name).strip()
         data = await self._get(
             f"{self.BASE_URL}/database/search",
             params={"type": "master", "artist": clean_name, "page": page, "per_page": per_page},
