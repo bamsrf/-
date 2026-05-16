@@ -14,6 +14,7 @@ import * as Haptics from 'expo-haptics';
 import { AnimatedGradientText } from '../../components/AnimatedGradientText';
 import { GradientText } from '../../components/GradientText';
 import { RecordGrid } from '../../components/RecordGrid';
+import { ZoomableRecordGrid } from '../../components/ZoomableRecordGrid';
 import { FolderPickerModal } from '../../components/FolderPickerModal';
 import { SegmentedControl } from '../../components/ui';
 import { useCollectionStore, useAuthStore } from '../../lib/store';
@@ -773,49 +774,66 @@ export default function CollectionScreen() {
         collapsable={false}
         style={styles.recordGridContainer}
       >
-      <RecordGrid
-        key={viewMode}
-        data={data}
-        cardVariant={viewMode === 'list' ? 'list' : 'expanded'}
-        numColumns={viewMode === 'list' ? 1 : 2}
-        rarityContext={activeTab === 'wishlist' ? 'wishlist' : 'collection'}
-        onRecordPress={isSelectionMode ? undefined : handleRecordPress}
-        onArtistPress={isSelectionMode ? undefined : handleArtistPress}
-        onRemove={
-          (activeTab === 'collection' ? handleRemoveFromCollection : handleRemoveFromWishlist) as any
-        }
-        showActions={false}
-        isLoading={isLoading}
-        isRefreshing={isRefreshing}
-        onRefresh={handleRefresh}
-        onEndReached={activeTab === 'collection' && collectionHasMore && !isLoadingMore ? loadMoreCollectionItems : undefined}
-        emptyTitle={
-          activeTab === 'collection'
-            ? 'Здесь будут твои пластинки'
-            : 'Здесь будет вишлист'
-        }
-        emptyIcon={activeTab === 'collection' ? 'disc-outline' : 'heart-outline'}
-        emptyMessage={
-          activeTab === 'collection'
-            ? 'Сканируй штрихкод или находи через поиск — пластинки приземлятся сюда'
-            : 'Добавляй пластинки, которые хочешь приобрести — друзья смогут забронировать их в подарок'
-        }
-        emptyActions={
-          activeTab === 'collection'
-            ? [
-                { label: 'Сканировать', icon: 'scan-outline', onPress: () => router.push('/(tabs)') },
-                { label: 'Найти', icon: 'search-outline', onPress: () => router.push('/(tabs)/search') },
-              ]
-            : [
-                { label: 'Найти пластинку', icon: 'search-outline', onPress: () => router.push('/(tabs)/search') },
-              ]
-        }
-        ListHeaderComponent={ScrollableHeader}
-        isSelectionMode={isSelectionMode}
-        selectedItems={selectedItems}
-        onToggleItemSelection={handleToggleItemSelection}
-        onLongPressItem={handleLongPressItem}
-      />
+      {viewMode === 'grid' && data.length > 0 ? (
+        <ZoomableRecordGrid
+          data={data as (CollectionItem | WishlistItem)[]}
+          onRecordPress={isSelectionMode ? undefined : handleRecordPress}
+          onLongPress={handleLongPressItem}
+          isSelectionMode={isSelectionMode}
+          selectedItems={selectedItems}
+          onToggleItemSelection={handleToggleItemSelection}
+          isRefreshing={isRefreshing}
+          onRefresh={handleRefresh}
+          onEndReached={activeTab === 'collection' && collectionHasMore && !isLoadingMore ? loadMoreCollectionItems : undefined}
+          isLoadingMore={isLoadingMore}
+          ListHeaderComponent={ScrollableHeader}
+          rarityContext={activeTab === 'wishlist' ? 'wishlist' : 'collection'}
+        />
+      ) : (
+        <RecordGrid
+          key={viewMode}
+          data={data}
+          cardVariant={viewMode === 'list' ? 'list' : 'expanded'}
+          numColumns={viewMode === 'list' ? 1 : 2}
+          rarityContext={activeTab === 'wishlist' ? 'wishlist' : 'collection'}
+          onRecordPress={isSelectionMode ? undefined : handleRecordPress}
+          onArtistPress={isSelectionMode ? undefined : handleArtistPress}
+          onRemove={
+            (activeTab === 'collection' ? handleRemoveFromCollection : handleRemoveFromWishlist) as any
+          }
+          showActions={false}
+          isLoading={isLoading}
+          isRefreshing={isRefreshing}
+          onRefresh={handleRefresh}
+          onEndReached={activeTab === 'collection' && collectionHasMore && !isLoadingMore ? loadMoreCollectionItems : undefined}
+          emptyTitle={
+            activeTab === 'collection'
+              ? 'Здесь будут твои пластинки'
+              : 'Здесь будет вишлист'
+          }
+          emptyIcon={activeTab === 'collection' ? 'disc-outline' : 'heart-outline'}
+          emptyMessage={
+            activeTab === 'collection'
+              ? 'Сканируй штрихкод или находи через поиск — пластинки приземлятся сюда'
+              : 'Добавляй пластинки, которые хочешь приобрести — друзья смогут забронировать их в подарок'
+          }
+          emptyActions={
+            activeTab === 'collection'
+              ? [
+                  { label: 'Сканировать', icon: 'scan-outline', onPress: () => router.push('/(tabs)') },
+                  { label: 'Найти', icon: 'search-outline', onPress: () => router.push('/(tabs)/search') },
+                ]
+              : [
+                  { label: 'Найти пластинку', icon: 'search-outline', onPress: () => router.push('/(tabs)/search') },
+                ]
+          }
+          ListHeaderComponent={ScrollableHeader}
+          isSelectionMode={isSelectionMode}
+          selectedItems={selectedItems}
+          onToggleItemSelection={handleToggleItemSelection}
+          onLongPressItem={handleLongPressItem}
+        />
+      )}
       </View>
 
       {/* Нижний подвал в режиме выбора */}

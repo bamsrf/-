@@ -251,7 +251,7 @@ function RecordCardComponent({
       <AnimatedPressable
         style={[
           styles.listContainer,
-          auraTier ? styles.cardNoMargin : Shadows.sm,
+          auraTier === 'collectible' ? styles.cardNoMargin : Shadows.sm,
           isSelectionMode && isSelected && styles.containerSelected,
           animatedStyle,
         ]}
@@ -346,7 +346,7 @@ function RecordCardComponent({
       style={[
         styles.expandedContainer,
         { width: cardWidth },
-        auraTier ? styles.cardNoMargin : Shadows.md,
+        auraTier === 'collectible' ? null : Shadows.md,
         isSelectionMode && isSelected && styles.containerSelected,
         animatedStyle,
       ]}
@@ -398,7 +398,7 @@ function RecordCardComponent({
             {artistDisplay}
           </Text>
         )}
-        <Text style={styles.expandedTitle} numberOfLines={2}>
+        <Text style={styles.expandedTitle} numberOfLines={1}>
           {record.title}
         </Text>
         <View style={styles.meta}>
@@ -546,7 +546,6 @@ const styles = StyleSheet.create({
   expandedContainer: {
     borderRadius: 16,
     overflow: 'hidden',
-    marginBottom: Spacing.md,
     position: 'relative',
     borderWidth: 2,
     borderColor: 'transparent',
@@ -573,6 +572,8 @@ const styles = StyleSheet.create({
   },
   expandedInfo: {
     padding: 12,
+    height: 92,
+    overflow: 'hidden',
     backgroundColor: '#FFFFFF',
   },
   expandedArtist: {
@@ -594,8 +595,8 @@ const styles = StyleSheet.create({
   meta: {
     flexDirection: 'row',
     alignItems: 'center',
-    flexWrap: 'wrap',
-    maxHeight: 36,
+    flexWrap: 'nowrap',
+    height: 18,
     overflow: 'hidden',
   },
   metaText: {
@@ -734,10 +735,7 @@ const styles = StyleSheet.create({
     marginTop: 6,
     marginBottom: Spacing.md,
   },
-  rarityWrapExpanded: {
-    marginTop: 6,
-    marginBottom: Spacing.lg,
-  },
+  rarityWrapExpanded: {},
   cardNoMargin: {
     marginBottom: 0,
   },

@@ -16,6 +16,7 @@ import { Icon } from '@/components/ui';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Header } from '../../components/Header';
 import { RecordGrid } from '../../components/RecordGrid';
+import { ZoomableRecordGrid } from '../../components/ZoomableRecordGrid';
 import { ActionSheet, ActionSheetAction } from '../../components/ui';
 import { AddRecordsModal } from '../../components/AddRecordsModal';
 import { FolderPickerModal } from '../../components/FolderPickerModal';
@@ -337,23 +338,38 @@ export default function FolderScreen() {
     <View style={styles.container}>
       <Header title="" showBack showProfile={false} />
 
-      <RecordGrid
-        data={items}
-        cardVariant="expanded"
-        rarityContext="collection"
-        onRecordPress={isSelectionMode ? undefined : handleRecordPress}
-        onRemove={handleRemoveItem}
-        showActions={false}
-        isLoading={false}
-        isRefreshing={isRefreshing}
-        onRefresh={handleRefresh}
-        emptyMessage="В этой папке пока нет пластинок."
-        ListHeaderComponent={FolderHeader}
-        isSelectionMode={isSelectionMode}
-        selectedItems={selectedItems}
-        onToggleItemSelection={handleToggleItemSelection}
-        onLongPressItem={handleLongPressItem}
-      />
+      {items.length > 0 ? (
+        <ZoomableRecordGrid
+          data={items}
+          rarityContext="collection"
+          onRecordPress={isSelectionMode ? undefined : (item) => handleRecordPress(item as CollectionItem)}
+          onLongPress={handleLongPressItem}
+          isSelectionMode={isSelectionMode}
+          selectedItems={selectedItems}
+          onToggleItemSelection={handleToggleItemSelection}
+          isRefreshing={isRefreshing}
+          onRefresh={handleRefresh}
+          ListHeaderComponent={FolderHeader}
+        />
+      ) : (
+        <RecordGrid
+          data={items}
+          cardVariant="expanded"
+          rarityContext="collection"
+          onRecordPress={isSelectionMode ? undefined : handleRecordPress}
+          onRemove={handleRemoveItem}
+          showActions={false}
+          isLoading={false}
+          isRefreshing={isRefreshing}
+          onRefresh={handleRefresh}
+          emptyMessage="В этой папке пока нет пластинок."
+          ListHeaderComponent={FolderHeader}
+          isSelectionMode={isSelectionMode}
+          selectedItems={selectedItems}
+          onToggleItemSelection={handleToggleItemSelection}
+          onLongPressItem={handleLongPressItem}
+        />
+      )}
 
       {/* Selection footer */}
       {isSelectionMode && (

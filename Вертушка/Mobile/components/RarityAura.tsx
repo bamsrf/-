@@ -356,10 +356,10 @@ interface RarityAuraProps {
 /**
  * Wraps a card with the tier-specific signal:
  *   collectible   → animated golden ring around the entire card
- *   limited / hot → only a 5px colored strip on the left edge (no animation, no glow)
+ *   limited / hot → no visual aura (signal lives only in the inline TierLabel)
  *
- * One signal per tier — no double effect. When `tier` is null this is a
- * zero-cost passthrough so non-rare cards pay nothing.
+ * One signal per tier — no double effect. When `tier` is null or non-collectible
+ * this is a zero-cost passthrough so non-rare cards pay nothing.
  */
 export function RarityAura({
   tier,
@@ -367,38 +367,12 @@ export function RarityAura({
   style,
   children,
 }: RarityAuraProps) {
-  if (!tier) return <View style={style}>{children}</View>;
+  if (tier !== 'collectible') return <View style={style}>{children}</View>;
 
-  if (tier === 'collectible') {
-    return (
-      <View style={[{ position: 'relative', borderRadius: radius }, style]}>
-        <CollectibleAura radius={radius} />
-        {children}
-      </View>
-    );
-  }
-
-  // limited / hot — calm static left strip, no aura.
-  // Strip is rendered AFTER children so it overlays the card's left edge
-  // (children have their own white background which would otherwise cover it).
-  const tokens = RARITY_TIERS[tier];
   return (
-    <View style={[{ position: 'relative' }, style]}>
+    <View style={[{ position: 'relative', borderRadius: radius }, style]}>
+      <CollectibleAura radius={radius} />
       {children}
-      <View
-        pointerEvents="none"
-        style={[
-          styles.leftEdge,
-          { borderTopLeftRadius: radius, borderBottomLeftRadius: radius },
-        ]}
-      >
-        <LinearGradient
-          colors={tokens.edge}
-          start={{ x: 0.5, y: 0 }}
-          end={{ x: 0.5, y: 1 }}
-          style={StyleSheet.absoluteFill}
-        />
-      </View>
     </View>
   );
 }
