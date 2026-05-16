@@ -258,6 +258,35 @@ class DiscogsService:
             return None
         return re.sub(r'_\d+\.(jpg|jpeg|png)', r'_500.\1', thumb_url)
 
+    async def _single_flight(
+        self,
+        namespace: str,
+        key: str,
+        loader,
+        *,
+        wait_total: float = 25.0,
+        poll_interval: float = 0.2,
+        lock_ttl: int = 30,
+    ):
+        """Single-flight: схлопывает параллельные запросы за одним ресурсом
+        в один HTTP-вызов. Если lock не взят — polling кэша до wait_total
+        секунд, потом fallback на собственный запрос.
+        """
+        got_lock = await cache.set_nx(f"inflight:{namespace}", key, 1, ttl=lock_ttl)
+        if not got_lock:
+            loop = asyncio.get_event_loop()
+            deadline = loop.time() + wait_total
+            while loop.time() < deadline:
+                await asyncio.sleep(poll_interval)
+                cached = await cache.get(namespace, key)
+                if cached is not None:
+                    return cached
+        try:
+            return await loader()
+        finally:
+            if got_lock:
+                await cache.delete(f"inflight:{namespace}", key)
+
     # ------------------------------------------------------------------
     # Автодополнение (suggest)
     # ------------------------------------------------------------------
@@ -581,6 +610,16 @@ class DiscogsService:
         cached = await cache.get("release", release_id)
         if cached is not None:
             return cached
+        return await self._single_flight(
+            "release", release_id,
+            lambda: self._fetch_release_uncached(release_id, priority),
+        )
+
+    async def _fetch_release_uncached(self, release_id: str, priority: int) -> dict[str, Any]:
+        # Повторная проверка кэша — пока ждали lock, кто-то мог записать
+        cached = await cache.get("release", release_id)
+        if cached is not None:
+            return cached
 
         # Запускаем price_stats параллельно с основным запросом
         stats_task = asyncio.create_task(self._get_price_stats(release_id))
@@ -856,6 +895,19 @@ class DiscogsService:
 
     async def get_master(self, master_id: str) -> MasterRelease:
         """Получение информации о мастер-релизе. Кэшируется в Redis."""
+        cached = await cache.get("master", master_id)
+        if cached is not None:
+            return MasterRelease(**cached)
+        result = await self._single_flight(
+            "master", master_id,
+            lambda: self._fetch_master_uncached(master_id),
+        )
+        if isinstance(result, MasterRelease):
+            return result
+        return MasterRelease(**result)
+
+    async def _fetch_master_uncached(self, master_id: str) -> MasterRelease:
+        # Повторная проверка кэша — пока ждали lock, кто-то мог записать
         cached = await cache.get("master", master_id)
         if cached is not None:
             return MasterRelease(**cached)
@@ -1143,10 +1195,13 @@ class DiscogsService:
             return {"cover": None, "release_type": None}
 
     async def _get_artist_thumb(self, artist_id: str) -> str | None:
-        """Получение миниатюры артиста по ID. Кэшируется в Redis на 30 дней."""
+        """Получение миниатюры артиста по ID. Кэшируется в Redis на 30 дней.
+        Negative cache на 404 — артисты без фото не дёргают Discogs повторно."""
         cached = await cache.get("artist_thumb", artist_id)
         if cached is not None:
             return cached
+        if await cache.exists("artist_thumb_404", artist_id):
+            return None
 
         try:
             data = await self._get(f"{self.BASE_URL}/artists/{artist_id}", priority=Priority.ENRICHMENT)
@@ -1155,6 +1210,12 @@ class DiscogsService:
                 thumb = images[0].get("uri150") or images[0].get("uri")
                 await cache.set("artist_thumb", artist_id, thumb, TTL_ARTIST_THUMB)
                 return thumb
+            await cache.set("artist_thumb_404", artist_id, True, TTL_ARTIST_THUMB)
+        except httpx.HTTPStatusError as e:
+            if e.response.status_code == 404:
+                await cache.set("artist_thumb_404", artist_id, True, TTL_ARTIST_THUMB)
+            else:
+                logger.exception("Failed to get artist thumb for %s", artist_id)
         except Exception:
             logger.exception("Failed to get artist thumb for %s", artist_id)
         return None
@@ -1385,10 +1446,12 @@ class DiscogsService:
 
     async def _get_price_stats(self, release_id: str) -> dict | None:
         """Получение статистики цен для релиза (всегда в USD).
-        Кэшируется в Redis на 6 часов."""
+        Кэшируется в Redis на 6 часов. Negative cache на 404."""
         cached = await cache.get("price_stats", release_id)
         if cached is not None:
             return cached
+        if await cache.exists("price_stats_404", release_id):
+            return None
 
         try:
             result = await self._get(
@@ -1399,6 +1462,11 @@ class DiscogsService:
             )
             await cache.set("price_stats", release_id, result, TTL_PRICE_STATS)
             return result
+        except httpx.HTTPStatusError as e:
+            if e.response.status_code == 404:
+                await cache.set("price_stats_404", release_id, True, TTL_PRICE_STATS)
+            else:
+                logger.exception("Failed to get price stats for release %s", release_id)
         except Exception:
             logger.exception("Failed to get price stats for release %s", release_id)
         return None

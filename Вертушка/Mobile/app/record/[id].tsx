@@ -38,6 +38,7 @@ import { VinylRecord, CollectionItem } from '../../lib/types';
 import { Colors, Typography, Spacing, BorderRadius, Gradients } from '../../constants/theme';
 import { VinylColorTag } from '../../components/VinylColorTag';
 import { VinylSpinner } from '../../components/VinylSpinner';
+import { OffersBlock } from '../../components/OffersBlock';
 import { parseVinylColor } from '../../lib/vinylColor';
 import { TierFeatureBlock, allRarityTiers } from '../../components/RarityAura';
 
@@ -101,13 +102,30 @@ const handleArtistNavigation = async (artistName: string, router: ReturnType<typ
 };
 
 export default function RecordDetailScreen() {
-  const { id, folderId, folderItemId } = useLocalSearchParams<{ id: string; folderId?: string; folderItemId?: string }>();
+  const {
+    id,
+    folderId,
+    folderItemId,
+    previewTitle,
+    previewArtist,
+    previewCover,
+    previewYear,
+  } = useLocalSearchParams<{
+    id: string;
+    folderId?: string;
+    folderItemId?: string;
+    previewTitle?: string;
+    previewArtist?: string;
+    previewCover?: string;
+    previewYear?: string;
+  }>();
   const router = useRouter();
   const insets = useSafeAreaInsets();
 
   const [record, setRecord] = useState<VinylRecord | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const hasPreview = Boolean(previewTitle || previewCover || previewArtist);
   const [showActionSheet, setShowActionSheet] = useState(false);
   const [showFolderPicker, setShowFolderPicker] = useState(false);
 
@@ -394,6 +412,52 @@ export default function RecordDetailScreen() {
   };
 
   if (isLoading) {
+    if (hasPreview) {
+      return (
+        <View style={styles.container}>
+          <Header title="" showBack showProfile={false} />
+          <ScrollView
+            contentContainerStyle={[styles.content, { paddingBottom: insets.bottom + 100 }]}
+            showsVerticalScrollIndicator={false}
+          >
+            <View style={styles.coverContainer}>
+              {previewCover ? (
+                <Image source={previewCover} style={styles.cover} contentFit="cover" cachePolicy="disk" />
+              ) : (
+                <View style={[styles.cover, styles.coverPlaceholder]}>
+                  <Icon name="disc-outline" size={80} color={Colors.textMuted} />
+                </View>
+              )}
+            </View>
+            <View style={styles.infoSection}>
+              {previewTitle ? <Text style={styles.title}>{previewTitle}</Text> : null}
+              {previewArtist ? (
+                <View style={styles.artistCard}>
+                  <View style={styles.artistAvatarBorder}>
+                    <View style={styles.artistAvatarPlaceholder}>
+                      <Icon name="person" size={24} color={Colors.textMuted} />
+                    </View>
+                  </View>
+                  <Text style={styles.artistName}>{cleanArtistName(previewArtist)}</Text>
+                </View>
+              ) : null}
+              {previewYear ? (
+                <View style={styles.metaRow}>
+                  <View style={styles.metaItem}>
+                    <Icon name="calendar-outline" size={16} color={Colors.textSecondary} />
+                    <Text style={styles.metaText}>{previewYear}</Text>
+                  </View>
+                </View>
+              ) : null}
+            </View>
+            <View style={styles.skeletonLoader}>
+              <ActivityIndicator size="small" color={Colors.royalBlue} />
+              <Text style={styles.skeletonLoaderText}>Загружаем детали…</Text>
+            </View>
+          </ScrollView>
+        </View>
+      );
+    }
     return (
       <View style={styles.centered}>
         <ActivityIndicator size="large" color={Colors.royalBlue} />
@@ -408,7 +472,10 @@ export default function RecordDetailScreen() {
         <View style={styles.centered}>
           <Icon name="alert-circle-outline" size={64} color={Colors.textMuted} />
           <Text style={styles.errorText}>{error || 'Винил не найден'}</Text>
-          <Button title="Назад" onPress={() => router.back()} variant="outline" />
+          <View style={styles.errorActions}>
+            <Button title="Попробовать ещё раз" onPress={loadRecord} />
+            <Button title="Назад" onPress={() => router.back()} variant="outline" />
+          </View>
         </View>
       </View>
     );
@@ -604,6 +671,9 @@ export default function RecordDetailScreen() {
           );
         })()}
 
+        {/* Где купить — живые предложения магазинов */}
+        {record.discogs_id ? <OffersBlock discogsId={record.discogs_id} /> : null}
+
         {/* Другие версии релиза */}
         {record.discogs_master_id ? (
           <OtherVersionsButton
@@ -729,6 +799,21 @@ const styles = StyleSheet.create({
     color: Colors.textSecondary,
     textAlign: 'center',
     marginVertical: Spacing.lg,
+  },
+  errorActions: {
+    width: '100%',
+    gap: Spacing.sm,
+  },
+  skeletonLoader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: Spacing.sm,
+    paddingVertical: Spacing.lg,
+  },
+  skeletonLoaderText: {
+    ...Typography.bodySmall,
+    color: Colors.textMuted,
   },
   content: {
     padding: Spacing.md,

@@ -550,13 +550,30 @@ async def get_record_by_discogs_id(
         response.vinyl_color_raw = discogs_data.get("vinyl_color_raw")
         return await _enrich_response_with_rub(response, record)
 
-    # Запрос в Discogs
+    # Запрос в Discogs с watchdog: клиент не висит 60 сек.
+    # asyncio.shield + create_task — на таймаут отдаём 503, но запрос
+    # к Discogs продолжается в фоне и кладёт результат в Redis,
+    # так что повторный запрос юзера отвечает мгновенно.
     discogs = DiscogsService()
+    fetch_task = asyncio.create_task(discogs.get_release(discogs_id))
+    fetch_task.add_done_callback(
+        lambda t: t.exception() if not t.cancelled() else None
+    )
 
     try:
-        record_data = await discogs.get_release(discogs_id)
+        record_data = await asyncio.wait_for(asyncio.shield(fetch_task), timeout=20)
+    except asyncio.TimeoutError:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Discogs отвечает медленно. Попробуйте ещё раз через несколько секунд — данные подгружаются в фоне."
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=f"Ошибка при получении данных из Discogs: {str(e)}"
+        )
 
-        # Создаём запись в БД
+    try:
         record = Record(
             discogs_id=record_data.get("id"),
             discogs_master_id=record_data.get("master_id"),
@@ -594,10 +611,21 @@ async def get_record_by_discogs_id(
         response.vinyl_color_raw = record_data.get("vinyl_color_raw")
         return await _enrich_response_with_rub(response, record)
 
-    except Exception as e:
+    except IntegrityError:
+        await db.rollback()
+        result = await db.execute(
+            select(Record).where(Record.discogs_id == discogs_id)
+        )
+        record = result.scalar_one_or_none()
+        if record:
+            response = RecordResponse.model_validate(record)
+            response.artist_id = record_data.get("artist_id")
+            response.artist_thumb_image_url = record_data.get("artist_thumb_image_url")
+            response.vinyl_color_raw = record_data.get("vinyl_color_raw")
+            return await _enrich_response_with_rub(response, record)
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail=f"Ошибка при получении данных из Discogs: {str(e)}"
+            detail="Не удалось сохранить запись",
         )
 
 

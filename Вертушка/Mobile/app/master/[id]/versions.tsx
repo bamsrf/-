@@ -32,7 +32,13 @@ const FORMAT_OPTIONS: { key: FormatFilter; label: string; match: string[] }[] = 
 ];
 
 export default function VersionsScreen() {
-  const { id } = useLocalSearchParams<{ id: string }>();
+  const { id, title, artist, year, cover } = useLocalSearchParams<{
+    id: string;
+    title?: string;
+    artist?: string;
+    year?: string;
+    cover?: string;
+  }>();
   const router = useRouter();
   const insets = useSafeAreaInsets();
 
@@ -80,7 +86,15 @@ export default function VersionsScreen() {
   };
 
   const handleVersionPress = (version: MasterVersion) => {
-    router.push(`/record/${version.release_id}`);
+    router.push({
+      pathname: `/record/${version.release_id}`,
+      params: {
+        previewTitle: version.title || title || '',
+        previewArtist: artist || '',
+        previewCover: version.cover_image_url || version.thumb_image_url || version.cover_url || cover || '',
+        previewYear: version.year?.toString() || year || '',
+      },
+    });
   };
 
   const filteredVersions = useMemo(() => {
