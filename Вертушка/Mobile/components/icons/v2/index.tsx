@@ -189,10 +189,9 @@ export const XV2: React.FC<V2IconProps> = ({ size = 24, color = '#2A4BD7', weigh
 export const XCircleV2: React.FC<V2IconProps> = ({ size = 24, color = '#2A4BD7', weight = 'regular', testID }) => (
   <Canvas size={size} testID={testID}>{(fid) => (
     <>
-      {!isFill(weight) && <Circle cx={128} cy={128} r={112} fill={color} filter={`url(#${fid})`} opacity={haloOp(weight)} />}
-      <Circle cx={128} cy={128} r={108} fill={color} />
-      <Path d="M84 84L172 172" stroke="#fff" strokeWidth={26} strokeLinecap="round" />
-      <Path d="M172 84L84 172" stroke="#fff" strokeWidth={26} strokeLinecap="round" />
+      <Circle cx={128} cy={128} r={104} fill="none" stroke={color} strokeWidth={20} />
+      <Path d="M96 96L160 160" stroke={color} strokeWidth={22} strokeLinecap="round" />
+      <Path d="M160 96L96 160" stroke={color} strokeWidth={22} strokeLinecap="round" />
     </>
   )}</Canvas>
 );

@@ -443,6 +443,9 @@ async def get_notification_settings(
         notify_new_follower=current_user.notify_new_follower,
         notify_gift_booked=current_user.notify_gift_booked,
         notify_app_updates=current_user.notify_app_updates,
+        notify_follow_request=current_user.notify_follow_request,
+        notify_wishlist_in_stock=current_user.notify_wishlist_in_stock,
+        notify_achievement=current_user.notify_achievement,
     )
 
 
@@ -459,6 +462,12 @@ async def update_notification_settings(
         current_user.notify_gift_booked = data.notify_gift_booked
     if data.notify_app_updates is not None:
         current_user.notify_app_updates = data.notify_app_updates
+    if data.notify_follow_request is not None:
+        current_user.notify_follow_request = data.notify_follow_request
+    if data.notify_wishlist_in_stock is not None:
+        current_user.notify_wishlist_in_stock = data.notify_wishlist_in_stock
+    if data.notify_achievement is not None:
+        current_user.notify_achievement = data.notify_achievement
 
     await db.commit()
     await db.refresh(current_user)
@@ -467,6 +476,9 @@ async def update_notification_settings(
         notify_new_follower=current_user.notify_new_follower,
         notify_gift_booked=current_user.notify_gift_booked,
         notify_app_updates=current_user.notify_app_updates,
+        notify_follow_request=current_user.notify_follow_request,
+        notify_wishlist_in_stock=current_user.notify_wishlist_in_stock,
+        notify_achievement=current_user.notify_achievement,
     )
 
 

@@ -95,6 +95,9 @@ class NotificationSettingsResponse(BaseModel):
     notify_new_follower: bool = True
     notify_gift_booked: bool = True
     notify_app_updates: bool = True
+    notify_follow_request: bool = True
+    notify_wishlist_in_stock: bool = True
+    notify_achievement: bool = True
 
 
 class NotificationSettingsUpdate(BaseModel):
@@ -102,6 +105,9 @@ class NotificationSettingsUpdate(BaseModel):
     notify_new_follower: bool | None = None
     notify_gift_booked: bool | None = None
     notify_app_updates: bool | None = None
+    notify_follow_request: bool | None = None
+    notify_wishlist_in_stock: bool | None = None
+    notify_achievement: bool | None = None
 
 
 class PushTokenUpdate(BaseModel):

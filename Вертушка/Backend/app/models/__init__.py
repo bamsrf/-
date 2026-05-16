@@ -17,6 +17,9 @@ from app.models.blocked_contact import BlockedContact, BlockedContactKind
 from app.models.user_achievement import UserAchievement
 from app.models.store import Store
 from app.models.store_listing import StoreListing, ListingStatus, MatchMethod
+from app.models.conversation import Conversation, ConversationParticipant, Message
+from app.models.user_block import UserBlock
+from app.models.notification import Notification
 
 __all__ = [
     "User",
@@ -41,5 +44,10 @@ __all__ = [
     "StoreListing",
     "ListingStatus",
     "MatchMethod",
+    "Conversation",
+    "ConversationParticipant",
+    "Message",
+    "UserBlock",
+    "Notification",
 ]
 

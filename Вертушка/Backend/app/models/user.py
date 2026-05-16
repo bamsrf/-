@@ -117,6 +117,30 @@ class User(Base):
         nullable=False,
         server_default="true"
     )
+    notify_messages: Mapped[bool] = mapped_column(
+        Boolean,
+        default=True,
+        nullable=False,
+        server_default="true"
+    )
+    notify_follow_request: Mapped[bool] = mapped_column(
+        Boolean,
+        default=True,
+        nullable=False,
+        server_default="true"
+    )
+    notify_wishlist_in_stock: Mapped[bool] = mapped_column(
+        Boolean,
+        default=True,
+        nullable=False,
+        server_default="true"
+    )
+    notify_achievement: Mapped[bool] = mapped_column(
+        Boolean,
+        default=True,
+        nullable=False,
+        server_default="true"
+    )
 
     # Soft delete
     deleted_at: Mapped[datetime | None] = mapped_column(

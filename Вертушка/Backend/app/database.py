@@ -58,6 +58,9 @@ async def init_db():
         migrations = [
             "ALTER TABLE gift_bookings ADD COLUMN IF NOT EXISTS expires_at TIMESTAMP",
             "ALTER TABLE gift_bookings ADD COLUMN IF NOT EXISTS reminder_sent_at TIMESTAMP",
+            "ALTER TABLE users ADD COLUMN IF NOT EXISTS notify_follow_request BOOLEAN NOT NULL DEFAULT TRUE",
+            "ALTER TABLE users ADD COLUMN IF NOT EXISTS notify_wishlist_in_stock BOOLEAN NOT NULL DEFAULT TRUE",
+            "ALTER TABLE users ADD COLUMN IF NOT EXISTS notify_achievement BOOLEAN NOT NULL DEFAULT TRUE",
         ]
         for sql in migrations:
             await conn.execute(text(sql))
