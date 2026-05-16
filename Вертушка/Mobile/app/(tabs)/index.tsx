@@ -67,7 +67,7 @@ export default function ScannerScreen() {
       setShowResults(true);
     } catch (error) {
       analytics.scanBarcode(false);
-      toast.info('Не найдено', 'Винил с таким штрихкодом не найден в базе Discogs');
+      toast.info('Не найдено', 'Винил с таким штрихкодом не найден в базе Discogs', { position: 'bottom' });
       setIsScanning(true);
     }
   };
@@ -95,8 +95,12 @@ export default function ScannerScreen() {
       setShowResults(true);
     } catch (error: any) {
       analytics.scanCover(false);
-      const message = error?.response?.data?.detail || 'Не удалось распознать обложку. Попробуйте сфотографировать ещё раз.';
-      toast.error('Не распознано', message);
+      const detail = error?.response?.data?.detail ?? '';
+      const isNoText = detail.includes('определить исполнителя') || detail.includes('artist') || detail.includes('album');
+      const message = isNoText
+        ? 'Обложка без текста — попробуйте режим штрихкода или ручной поиск'
+        : detail || 'Не удалось распознать обложку. Попробуйте сфотографировать ещё раз.';
+      toast.error('Не распознано', message, { position: 'bottom' });
     }
   };
 

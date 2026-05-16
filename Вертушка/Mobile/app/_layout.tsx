@@ -177,7 +177,7 @@ function RootLayout() {
         </Stack>
         <OnboardingOverlay />
         <AchievementUnlockHost />
-        <Toast config={toastConfig} topOffset={56} />
+        <Toast config={toastConfig} topOffset={56} bottomOffset={100} />
       </SafeAreaProvider>
     </GestureHandlerRootView>
   );

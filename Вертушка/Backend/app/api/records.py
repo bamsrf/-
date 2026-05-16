@@ -407,25 +407,62 @@ async def scan_cover(
     artist = recognition["artist"]
     album = recognition["album"]
 
-    query_parts = []
-    if artist:
-        query_parts.append(artist)
-    if album:
-        query_parts.append(album)
-    search_query = " ".join(query_parts)
-
     discogs = DiscogsService()
-    try:
-        search_response = await discogs.search(
-            query=search_query,
-            artist=artist if artist else None,
-            per_page=10,
-        )
-        results = search_response.results
-    except Exception as e:
+
+    async def _search_releases(query: str) -> list:
+        """Поиск релизов без жёсткого artist-фильтра."""
+        try:
+            resp = await discogs.search(query=query, per_page=10)
+            return resp.results
+        except Exception:
+            return []
+
+    async def _search_masters(query: str) -> list:
+        """Поиск мастер-релизов, конвертируем в RecordSearchResult."""
+        try:
+            resp = await discogs.search_masters(query=query, per_page=10)
+            return [
+                RecordSearchResult(
+                    discogs_id=m.master_id,
+                    title=m.title,
+                    artist=m.artist,
+                    year=m.year,
+                    cover_image_url=m.cover_image_url,
+                    thumb_image_url=m.thumb_image_url,
+                )
+                for m in resp.results
+            ]
+        except Exception:
+            return []
+
+    results: list = []
+
+    # Стратегия 1: artist + album (самый точный запрос)
+    if artist and album:
+        results = await _search_releases(f"{artist} {album}")
+
+    # Стратегия 2: только artist
+    if not results and artist:
+        results = await _search_releases(artist)
+
+    # Стратегия 3: только album
+    if not results and album:
+        results = await _search_releases(album)
+
+    # Стратегия 4: masters (artist + album или artist)
+    if not results:
+        master_query = f"{artist} {album}".strip() if artist or album else ""
+        if master_query:
+            results = await _search_masters(master_query)
+
+    # Стратегия 5: masters только по artist
+    if not results and artist:
+        results = await _search_masters(artist)
+
+    if not results:
         raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail=f"Ошибка при поиске в Discogs: {str(e)}"
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Не удалось найти пластинку по распознанной обложке"
         )
 
     return CoverScanResponse(
