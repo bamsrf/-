@@ -53,7 +53,14 @@ class FollowRequest(Base):
     )
 
     status: Mapped[FollowRequestStatus] = mapped_column(
-        Enum(FollowRequestStatus, name="follow_request_status"),
+        Enum(
+            FollowRequestStatus,
+            name="follow_request_status",
+            # БД-ENUM создан со значениями 'pending'|'approved'|'rejected' (см. миграцию).
+            # По умолчанию SQLAlchemy сериализует Python-ENUM по имени (PENDING/APPROVED/…) —
+            # ловим InvalidTextRepresentationError. values_callable заставляет использовать .value.
+            values_callable=lambda enum: [e.value for e in enum],
+        ),
         nullable=False,
         default=FollowRequestStatus.PENDING,
     )

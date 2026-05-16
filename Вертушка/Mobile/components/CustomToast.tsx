@@ -5,21 +5,23 @@ import { BorderRadius, Colors, Shadows, Spacing, Typography } from '../constants
 
 type Variant = 'success' | 'error' | 'info';
 
+// Registry-имена из components/ui/Icon.tsx — Ionicons-имена falls back на 'plus',
+// поэтому используем правильные registry-ключи и проверенные алиасы.
 const VARIANTS: Record<Variant, { accent: string; tint: string; icon: string }> = {
   success: {
     accent: Colors.success,
     tint: 'rgba(48, 164, 108, 0.12)',
-    icon: 'checkmark-circle',
+    icon: 'checkmark-circle', // alias → check-circle
   },
   error: {
     accent: Colors.error,
     tint: 'rgba(229, 72, 77, 0.12)',
-    icon: 'alert-circle',
+    icon: 'warning-circle',   // прямое registry-имя
   },
   info: {
     accent: Colors.royalBlue,
     tint: 'rgba(59, 75, 245, 0.12)',
-    icon: 'information-circle',
+    icon: 'warning-circle',   // отличается цветом cobalt
   },
 };
 
