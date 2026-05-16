@@ -24,6 +24,19 @@ class OfferResponse(BaseModel):
     condition: str | None = None
     vinyl_color: str | None = None
     format: str | None = None
-    url: str = Field(..., description="Partner-wrapped URL if affiliate present, else direct")
+    url: str = Field(
+        ...,
+        description=(
+            "UTM-обогащённая ссылка магазина (без affiliate-subid). "
+            "Mobile перед открытием должен вызвать POST /api/offers/{id}/click "
+            "и использовать оттуда финальный URL с subid для аттрибуции."
+        ),
+    )
     status: str
     last_seen_at: datetime
+
+
+class OfferClickResponse(BaseModel):
+    """Ответ POST /api/offers/{id}/click — финальный URL для Linking.openURL."""
+    click_id: UUID
+    url: str = Field(..., description="Полный URL с affiliate-обёрткой и subid=click_id")

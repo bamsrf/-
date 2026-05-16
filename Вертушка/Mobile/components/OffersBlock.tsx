@@ -107,10 +107,21 @@ function OfferRow({ offer, discogsId }: OfferRowProps) {
       price_rub: Number(offer.price_rub),
       discogs_id: discogsId,
     });
+
+    // 1. Регистрируем клик и получаем финальный URL с affiliate-subid.
+    //    Если бэк упал — открываем preview-URL из offer.url (UTM-only).
+    let urlToOpen = offer.url;
     try {
-      await Linking.openURL(offer.url);
+      const { url } = await api.trackOfferClick(offer.listing_id);
+      urlToOpen = url;
     } catch {
-      // если магазин-URL невалидный — просто игнорим, аналитику уже отправили
+      // network/server error — fallback на preview-URL, не блокируем переход
+    }
+
+    try {
+      await Linking.openURL(urlToOpen);
+    } catch {
+      // магазин-URL невалидный — аналитику уже отправили
     }
   }, [discogsId, offer]);
 

@@ -1,24 +1,31 @@
 """
 API: предложения магазинов для конкретной пластинки.
 
-GET /api/records/{discogs_id}/offers?sort=price|rating
+GET  /api/records/{discogs_id}/offers?sort=price|rating
+POST /api/offers/{listing_id}/click                  ← фаза A affiliate (см. SHOPS_PARSING.md §affiliate)
 """
 from __future__ import annotations
 
+import hashlib
 import logging
 from datetime import datetime, timedelta
-from typing import Literal
+from typing import Literal, Optional
+from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from sqlalchemy import select
 from sqlalchemy.orm import joinedload
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.auth import get_current_user_optional
+from app.config import get_settings
 from app.database import get_db
+from app.models.offer_click import OfferClick
 from app.models.record import Record
 from app.models.store import Store
 from app.models.store_listing import StoreListing, ListingStatus
-from app.schemas.offer import OfferResponse, StoreInfo
+from app.models.user import User
+from app.schemas.offer import OfferClickResponse, OfferResponse, StoreInfo
 from app.services.affiliate import wrap_url
 from app.services.cache import cache
 
@@ -82,6 +89,7 @@ async def get_record_offers(
 
 
 def _to_response(listing: StoreListing) -> OfferResponse:
+    """Preview-URL для GET /offers — без subid (он создаётся при клике)."""
     store = listing.store
     return OfferResponse(
         listing_id=listing.id,
@@ -95,10 +103,79 @@ def _to_response(listing: StoreListing) -> OfferResponse:
         condition=listing.condition,
         vinyl_color=listing.vinyl_color_raw,
         format=listing.format_raw,
+        # Preview-URL: только UTM, без affiliate-subid. Полный wrapped URL с
+        # subid Mobile получит из POST /offers/{id}/click.
         url=wrap_url(store, listing.url),
         status=listing.status,
         last_seen_at=listing.last_seen_at,
     )
+
+
+# ============================================================================
+# Affiliate Phase A — клик-трекинг и финальный wrapped URL
+# ============================================================================
+
+
+@router.post(
+    "/offers/{listing_id}/click",
+    response_model=OfferClickResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Записать клик «Купить» и получить финальный URL для перехода",
+)
+async def track_offer_click(
+    listing_id: UUID,
+    request: Request,
+    current_user: Optional[User] = Depends(get_current_user_optional),
+    db: AsyncSession = Depends(get_db),
+) -> OfferClickResponse:
+    """
+    Mobile/Web вызывают этот эндпоинт ПЕРЕД открытием URL магазина.
+    Эндпоинт:
+        1. Создаёт запись OfferClick с ip_hash + user_agent + (опц.) user_id
+        2. Использует click.id как `subid` для аффилиат-обёртки
+        3. Возвращает финальный URL → клиент делает Linking.openURL(url)
+
+    Идемпотентность: каждый клик = новая строка (это нужно для отчётов).
+    Anti-fraud делается отдельно (rate-limit / DB-аналитика), не здесь.
+    """
+    stmt = (
+        select(StoreListing)
+        .options(joinedload(StoreListing.store))
+        .where(StoreListing.id == listing_id)
+    )
+    listing = (await db.execute(stmt)).unique().scalar_one_or_none()
+    if listing is None or listing.store is None or not listing.store.is_active:
+        raise HTTPException(status_code=404, detail="Listing not found or store inactive")
+
+    click = OfferClick(
+        listing_id=listing.id,
+        user_id=current_user.id if current_user else None,
+        ip_hash=_hash_ip(request),
+        user_agent=(request.headers.get("user-agent") or "")[:500] or None,
+        surface="mobile",
+    )
+    db.add(click)
+    await db.flush()  # получаем click.id для subid
+    final_url = wrap_url(
+        listing.store,
+        listing.url,
+        subid=str(click.id),
+        user_id=str(current_user.id) if current_user else None,
+    )
+    await db.commit()
+
+    return OfferClickResponse(click_id=click.id, url=final_url)
+
+
+def _hash_ip(request: Request) -> str | None:
+    """sha256(ip + SECRET_KEY) — для anti-fraud аналитики без хранения PII."""
+    # Уважаем X-Forwarded-For (за nginx). Берём первый адрес из цепочки.
+    fwd = request.headers.get("x-forwarded-for") or ""
+    ip = fwd.split(",")[0].strip() if fwd else (request.client.host if request.client else "")
+    if not ip:
+        return None
+    secret = get_settings().secret_key
+    return hashlib.sha256(f"{ip}|{secret}".encode("utf-8")).hexdigest()
 
 
 async def invalidate_record_offers(discogs_id: str) -> None:
