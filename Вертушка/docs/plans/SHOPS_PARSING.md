@@ -1,0 +1,343 @@
+# Парсинг магазинов винила — единый документ
+
+> Living document. Обновляй когда меняешь архитектуру, добавляешь магазин или находишь подводный камень.
+
+---
+
+## 1. Зачем мы это делаем
+
+В Вертушке у юзера на карточке пластинки есть **«Примерная стоимость»** (median по Discogs Marketplace USD → ₽). Это справочная цифра — не значит что прямо сейчас её где-то можно купить.
+
+**Цель:** показывать **живые предложения** реальных РФ-магазинов. Юзер открывает Khruangbin – Mordechai → видит «4 990 ₽ в Коробке Винила, [Купить]» → тапает → попадает на сайт магазина → покупает.
+
+Дополнительно: партнёрские ссылки (Admitad/EPN) — пассивный доход с покупок.
+
+---
+
+## 2. Как часто обновляется (точное расписание)
+
+**Парсер обновляется не еженедельно, а намного чаще** — это твоё уточнение из чата. Точная картина:
+
+| Задача | Когда | Что делает | Файл |
+|---|---|---|---|
+| `daily_full_crawl_http` | **каждый день в 02:00** | Полный обход всех HTTP-магазинов (без JS) | `tasks/scraper_tasks.py` |
+| `weekly_full_crawl_browser` | каждую **субботу в 02:00** | Полный обход магазинов с Cloudflare (через Playwright) | там же |
+| `daily_incremental_crawl` | **каждый день в 14:00** | Только новинки (по lastmod из sitemap) | там же |
+| `stock_refresh_active` | **каждые 6 часов** | Перепроверяет цены/наличие только тех листингов что показываются юзерам | там же |
+| `hourly_match_unmatched` | **каждый час**, batch 200 | Привязывает свежие листинги к Record | там же |
+| `weekly_cleanup_stale` | каждое **воскресенье в 04:00** | Удаляет листинги с `last_seen_at > 30 дней` | там же |
+| `invalidate_offers_for_recently_updated` | **каждые 15 минут** | Сбрасывает Redis-кэш `/offers` для свежих изменений | там же |
+
+**Включается флагом** `SCRAPERS_ENABLED=true` в env прод-инстанса. На dev держим `false` — парсим вручную через CLI.
+
+**Что это значит для юзера:**
+- Цена в магазине поменялась → у юзера в приложении актуальная **в течение 6 часов**
+- Новая пластинка появилась в продаже → видна **в течение суток**
+- Снятая с продажи → исчезает **через 30 дней** (стабильно, не моргает на временных недоступностях)
+
+---
+
+## 3. Архитектура одним рисунком
+
+```
+┌──────────────────┐  ежедневно   ┌──────────────────┐
+│ Sitemap магазина │ ──────────► │ Парсер магазина  │
+│ (sitemap.xml/YML)│              │ (BaseStoreParser)│
+└──────────────────┘              └────────┬─────────┘
+                                            │ ListingDTO
+                                            ▼
+                                  ┌──────────────────┐
+                                  │  store_listings  │ ← UPSERT по (store_id, external_id)
+                                  │  (БД, ~600 байт) │
+                                  └────────┬─────────┘
+                                            │ каждый час
+                                            ▼
+                              ┌─────────────────────────┐
+                              │   listing_matcher       │
+                              │ 1. discogs_release_url  │ ─┐
+                              │ 2. barcode (EAN-13)     │ ─┤  каскад до первого
+                              │ 3. catalog_number       │ ─┤  попадания
+                              │ 4. fuzzy (artist+title) │ ─┤
+                              │ 5. on-demand Discogs    │ ─┘  ← создаёт Record
+                              │    (если нет в БД)      │     если в Discogs нашёлся
+                              └────────┬────────────────┘
+                                       │ matched_record_id
+                                       ▼
+                            ┌──────────────────┐
+                            │     records      │ ← уже есть от Discogs
+                            │  (БД, ~5 КБ)     │
+                            └────────┬─────────┘
+                                     │
+                                     ▼
+                       ┌──────────────────────────────────┐
+                       │ GET /api/records/{discogs_id}/   │ ← Mobile дёргает
+                       │     offers   (Redis кэш 30 мин)  │
+                       └──────────────┬───────────────────┘
+                                      ▼
+                          ┌────────────────────┐
+                          │  <OffersBlock />   │ ← на карточке пластинки
+                          │  [4 990 ₽ Купить]  │
+                          └────────────────────┘
+```
+
+---
+
+## 4. Что видит конечный юзер
+
+На экране пластинки между блоками «Примерная стоимость» и «Треклист»:
+
+```
+┌──────────────────────────────────────────┐
+│  ГДЕ КУПИТЬ                              │
+│                                          │
+│  🏪 Коробка Винила     4 990 ₽  Купить → │
+│      LP · Red                             │
+│                                          │
+│  🏪 Plastinka.com      4 890 ₽  Купить → │
+│      LP · Black                           │
+│                                          │
+│  🏪 Vinyla.ru          5 200 ₽  Купить → │
+│      LP · Black · Предзаказ              │
+│                                          │
+│  Цены и наличие — со страниц магазинов,  │
+│  обновляются ежедневно.                  │
+└──────────────────────────────────────────┘
+```
+
+При тапе «Купить» → `Linking.openURL(offer.url)` открывает страницу магазина в браузере / приложении. Через Admitad-link если у магазина есть партнёрка.
+
+**Что НЕ показываем:**
+- Out of stock (отфильтрованы)
+- «По запросу» без цены
+- Старее 7 дней `last_seen_at` (на случай если парсер сломался — лучше пусто чем устаревшая цена)
+
+---
+
+## 5. Что лежит в БД
+
+| Таблица | Сколько строк на 30 магазинов | Размер |
+|---|---|---|
+| `stores` | 30 | ~5 КБ |
+| `store_listings` | ~150 000 | **~100 МБ** + индексы |
+| `records` (новые от on-demand) | +50-100к (поверх существующих 442) | **+250-500 МБ** |
+| **Итого +/- в БД** | | **~400-700 МБ** разово |
+
+Растёт незначительно: при следующих прогонах UPSERT, не append. Cleanup раз в неделю чистит stale.
+
+---
+
+## 6. Текущий статус (16.05.2026)
+
+### ✅ Готово (закоммичено)
+- [x] **Backend инфра**: модели Store/StoreListing, миграция с pg_trgm, парсер-фреймворк, matcher, API endpoint
+- [x] **Cron-задачи** для APScheduler (под флагом)
+- [x] **CLI**: `python -m app.scripts.scrape_all` (для ручных прогонов и backfill)
+- [x] **Сидинг магазинов**: `python -m app.scripts.seed_stores`
+- [x] **Dev-среда**: локальный Supabase + Redis в Docker, Makefile-команды
+- [x] **Пилотный парсер**: `korobkavinyla` — Tilda-магазин, ~3500 товаров. **Проверено на 200 — 199 matched (99.5%)**
+- [x] **Mobile**: типы Offer/Store, `api.getRecordOffers()`, `<OffersBlock />`, analytics
+- [x] Документация: [DEV_SETUP_LOCAL.md](dev/DEV_SETUP_LOCAL.md), этот файл
+
+### ⚠️ В работе / не закоммичено
+- [ ] **Встройка `<OffersBlock />` в `Mobile/app/record/[id].tsx`** — лежит в твоём working tree, отделена от твоей параллельной работы над preview-mode. Закоммить когда сольёшь preview-mode.
+- [ ] **Фикс `rate_limiter` для `Priority.ENRICHMENT`** — застревает на 30s timeout, on-demand Discogs fetch фейлится. Сейчас обход через CLI-скрипт. Перед включением `SCRAPERS_ENABLED=true` на проде — обязательно фикс.
+
+### ⏳ Не начато
+- [ ] Сидинг следующих магазинов
+- [ ] Парсеры для них (по одному, ~30 мин на магазин)
+- [ ] Playwright pool (нужен для магазинов под Cloudflare)
+- [ ] Affiliate-овлэй (Admitad / EPN — пока нет договорённостей)
+- [ ] Админ-страница `/admin/unmatched` для ручной привязки
+- [ ] Smoke-tests парсеров (заметить когда сайт магазина поменял HTML)
+- [ ] Кнопка «Не нашёл? Запросить парсинг» — для отсутствующих магазинов
+- [ ] Расширение «source=store Record» (релизы которых нет в Discogs) — **только если будет нужно** после реальных цифр
+
+---
+
+## 7. Roadmap по фазам
+
+### Фаза 0 — фундамент ✅ **DONE**
+Парсер-фреймворк + 1 пилотный магазин + Mobile блок. Доказано что цепочка работает.
+
+### Фаза 1 — 5-10 магазинов (2-3 недели) ← **СЛЕДУЮЩИЙ ШАГ**
+1. Фиксануть `rate_limiter` (Priority.ENRICHMENT timeout)
+2. Добавить 5-9 парсеров для магазинов **с sitemap + JSON-LD** (это самые простые)
+3. Локальный smoke-тест каждого
+4. Включить `SCRAPERS_ENABLED=true` на staging
+5. Неделю наблюдать: % matched, ошибки, нагрузка
+
+### Фаза 2 — все 30+ магазинов + сложные кейсы (3-4 недели)
+1. Playwright pool для магазинов под Cloudflare
+2. Парсеры для оставшихся ~20 магазинов
+3. Прокси-пул (через env `SCRAPER_PROXIES`)
+4. Initial backfill через CLI (по 2-3 магазина в день)
+
+### Фаза 3 — мониторинг и оптимизация (2-3 недели)
+1. `parsers_smoke_test` cron — каждую ночь сверяет 3 эталонных URL с фикстурой
+2. Sentry/Slack-алерт если smoke fail → автодеактивация магазина
+3. Дашборд «здоровье парсеров» (`/admin/scrapers`)
+4. История цен (`listing_price_history`) + график на карточке
+5. Click-tracking (`offer_clicks`) для CTR-метрик
+
+### Фаза 4 — монетизация
+1. Affiliate-программы (Admitad, EPN, прямые)
+2. Аналитика конверсий
+3. UX-эксперименты (порядок магазинов, рейтинг, отзывы)
+
+---
+
+## 8. Список магазинов (план)
+
+> Заполняй по мере того как реально парсишь. Колонка «Сложность» — на глаз: sitemap+JSON-LD = easy, нужен JS-рендеринг или CF = hard.
+
+| # | Магазин | URL | Статус | Сложность | Заметки |
+|---|---|---|---|---|---|
+| 1 | Коробка Винила | korobkavinyla.ru | ✅ Парсер готов, 199/200 match | easy (Tilda) | `tproduct/`, sku=EAN-13 |
+| 2 | Plastinka.com | plastinka.com | ⏳ | ? | проверить sitemap |
+| 3 | Vinyla.ru | vinyla.ru | ⏳ | ? | под CF? |
+| 4 | DTH | dth-music.ru | ⏳ | ? | OpenCart? |
+| 5 | Союз | soyuz.ru | ⏳ | ? | InSales/Битрикс? |
+| 6 | Vinyl Centre | vinylcentre.ru | ⏳ | ? | |
+| 7 | Records.ru | records.ru | ⏳ | ? | |
+| ... | | | | | |
+
+---
+
+## 9. Чек-лист «как добавить новый магазин»
+
+Шаги примерно по 30 минут на магазин (опытно):
+
+1. **Разведка URL** (5 мин):
+   ```bash
+   curl -s https://shop.ru/robots.txt | head
+   curl -s https://shop.ru/sitemap.xml | head -20
+   ```
+   Если sitemap пустой — поискать sitemap-products.xml, /yml.xml, /feed.xml.
+
+2. **Посмотреть HTML товара** (10 мин):
+   - Найти 2-3 случайных товара
+   - Проверить наличие JSON-LD (`<script type="application/ld+json">`)
+   - Если есть — извлечение тривиальное
+   - Если нет — изучить CSS-классы / microdata
+
+3. **Написать парсер** (10 мин): скопировать `shops/_template.py.example` → `shops/{slug}.py`, заполнить `parse_listing()`.
+
+4. **Зарегистрировать** в `shops/__init__.py`: `from app.services.scrapers.shops import {slug}`
+
+5. **Добавить в сидинг** `app/scripts/seed_stores.py` → STORES list.
+
+6. **Локальный тест**:
+   ```bash
+   make seed
+   ./venv/bin/python -m app.scripts.scrape_all --slug={slug} --limit=20 --no-match
+   docker exec supabase_db_vertushka psql -U postgres -d postgres \
+     -c "SELECT count(*), count(price_rub IS NOT NULL) FROM store_listings WHERE store_id IN (SELECT id FROM stores WHERE slug='{slug}');"
+   ```
+
+7. **Проверить match-rate**: `make scrape-match`.
+
+8. **Если match-rate < 90%** — посмотреть какие поля плохо извлекаются (barcode? catalog?).
+
+---
+
+## 10. Деплой на прод
+
+### Первый раз
+```bash
+# 1. Деплой кода
+git push origin main
+ssh deploy@85.198.85.12 'cd ~/vertushka && bash Backend/scripts/deploy.sh'
+
+# 2. На проде применить миграции (deploy.sh должен это делать сам)
+ssh deploy@85.198.85.12 'cd ~/vertushka/Backend && alembic upgrade head'
+
+# 3. Засеять магазины
+ssh deploy@85.198.85.12 'cd ~/vertushka/Backend && python -m app.scripts.seed_stores'
+
+# 4. ВРУЧНУЮ прогнать 1 магазин с ограничением (НЕ включать cron!):
+ssh deploy@85.198.85.12 'cd ~/vertushka/Backend && python -m app.scripts.scrape_all --slug=korobkavinyla --limit=50'
+
+# 5. Проверить через API:
+curl https://api.vinyl-vertushka.ru/api/records/7782094/offers | jq
+
+# 6. Если ОК — включить cron:
+# в .env прода: SCRAPERS_ENABLED=true
+# рестарт API сервиса
+```
+
+### Кнопка «выключить парсер»
+В случае проблем:
+```sql
+UPDATE stores SET is_active=false WHERE slug='{slug}';
+-- ИЛИ всех:
+UPDATE stores SET is_active=false;
+```
++ убрать env-флаг и рестарт.
+
+---
+
+## 11. Подводные камни
+
+### Юридические
+- **Чистый скрапинг без договорённостей** — техническая зона риска (ст. 1276 ГК, нарушение ToS магазинов).
+- **Митигация:**
+  - Уважение `robots.txt` (автоматически в `app/services/scrapers/robots.py`)
+  - Низкий rate-limit `0.5 req/sec` per-shop (1 запрос в 2 секунды)
+  - Атрибуция «Данные с сайта *plastinka.com*» в UI (пока нет — добавить в Фазе 3)
+  - Готов kill-switch `is_active=false` для любого магазина
+  - Магазины-«доски» (где продавцы-частники, типа Avito) — **не парсим** (152-ФЗ риски)
+
+### Технические
+| Риск | Защита |
+|---|---|
+| Магазин поменял HTML → парсер ломается | smoke-test (Фаза 3) + auto-disable магазина |
+| Cloudflare блокирует | автодетект → Playwright + `cloudscraper` |
+| Прод-инстанс на иностранном IP → 403 от РФ-магазинов | парсер-воркер должен быть на РФ-IP (Selectel/Timeweb) |
+| Discogs hourly cap (60 req/min) | per-priority rate-limiter, on-demand cap 50/час |
+| Postgres рост | autovacuum + еженедельный cleanup_stale + опционально партиционирование price_history |
+
+### Качество данных
+| Проблема | Что делаем |
+|---|---|
+| Магазин неверно указал год/формат | Парсер «робко» (`try/except` на каждом поле, `None` допустим) |
+| «По запросу» без цены | Статус `on_request`, не отдаём в API |
+| Разные варианты pressing (оригинал/репресс) | `ListingDTO.variants` → разные `external_id` |
+| Дубликаты между магазинами | Норма! Разные магазины ➜ разные листинги ➜ один Record |
+
+---
+
+## 12. Метрики успеха
+
+Что мерять чтобы понять «работает или нет»:
+
+| Метрика | Цель | Где смотреть |
+|---|---|---|
+| **% matched** среди свежих листингов | >85% | `SELECT match_method, count(*) FROM store_listings GROUP BY 1` |
+| Coverage: сколько пластинок в БД имеют хотя бы 1 offer | >40% (по Mobile-юзерам) | `SELECT count(DISTINCT matched_record_id) FROM store_listings` |
+| **CTR кнопки «Купить»** | >15% от просмотров карточки | Amplitude: `offer_click` / `view_record` |
+| Smoke-test pass-rate | 100% (автодизайбл при fail) | дашборд `/admin/scrapers` (Фаза 3) |
+| Среднее время первого UX `/offers` | <300 мс | Sentry performance |
+| Конверсия в покупку (Phase 4) | TBD | Affiliate-партнёрка отчёты |
+
+---
+
+## 13. Что от тебя сейчас
+
+В порядке приоритета:
+
+1. **Слить твою preview-mode правку** в `Mobile/app/record/[id].tsx` + закоммитить вместе с добавленной строкой `<OffersBlock />`.
+2. **Прислать мне список магазинов** (топ-10 которые хочешь подключить первыми) — для каждого пройду чек-лист §9 (по 30 мин).
+3. **Решить про rate_limiter фикс** — взять отдельной задачей до включения cron на проде.
+4. **Подумать про affiliate** — есть ли уже договорённости с кем-то? Параметры Admitad/EPN?
+5. **Когда будут 5+ магазинов** — задеплоить и неделю наблюдать (фаза 1).
+
+---
+
+## Связанные документы
+
+- [DEV_SETUP_LOCAL.md](dev/DEV_SETUP_LOCAL.md) — как поднять локально
+- `~/.claude/plans/compiled-churning-taco.md` — исходный архитектурный план (тех-уровень)
+- [Backend/app/services/scrapers/](../../Backend/app/services/scrapers/) — код парсер-фреймворка
+- [Backend/app/services/listing_matcher.py](../../Backend/app/services/listing_matcher.py) — каскад матчинга
+- [Backend/app/api/offers.py](../../Backend/app/api/offers.py) — API endpoint
+- [Mobile/components/OffersBlock.tsx](../../Mobile/components/OffersBlock.tsx) — Mobile блок
