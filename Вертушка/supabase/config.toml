@@ -1,11 +1,8 @@
 # Локальный Supabase для разработки Вертушки.
-# Нам нужен только Postgres + Studio (UI). Auth/Storage/Realtime/Edge мы не
-# используем — отключены чтобы экономить RAM/CPU.
+# Нам нужен только Postgres + Studio (UI). Остальное выключено для экономии RAM/CPU.
 #
-# Запуск:  supabase start
-# Стоп:    supabase stop
-# Reset:   supabase db reset    (накатит миграции из ./supabase/migrations
-#                                — у нас их нет, мы используем Alembic)
+# Запуск:  npx supabase start
+# Стоп:    npx supabase stop
 #
 # Подключиться извне:
 #   - Postgres:  postgresql://postgres:postgres@127.0.0.1:54322/postgres
@@ -14,7 +11,11 @@
 project_id = "vertushka"
 
 [api]
-enabled = false  # используем свой FastAPI, не PostgREST
+enabled = true   # нужно для Supabase Studio (метаданные через PostgREST)
+port = 54321
+schemas = ["public"]
+extra_search_path = ["public"]
+max_rows = 1000
 
 [db]
 port = 54322
@@ -30,7 +31,7 @@ port = 54323
 api_url = "http://127.0.0.1"
 
 [inbucket]
-enabled = false  # email-сервер для Auth — не нужен
+enabled = false
 
 [storage]
 enabled = false
@@ -38,14 +39,8 @@ enabled = false
 [auth]
 enabled = false
 
-[edge_runtime]
+[realtime]
 enabled = false
 
 [analytics]
-enabled = false
-
-[functions]
-enabled = false
-
-[realtime]
 enabled = false
