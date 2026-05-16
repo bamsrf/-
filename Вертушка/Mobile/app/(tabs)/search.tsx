@@ -941,8 +941,6 @@ export default function SearchScreen() {
                 <Text style={styles.topArtistLabel}>Артист</Text>
                 <Text style={styles.topArtistName} numberOfLines={1}>{cleanArtistName(artistResults[0].name)}</Text>
               </View>
-              <View style={styles.artistArrowBg}>
-              </View>
             </LinearGradient>
           </TouchableOpacity>
 
@@ -1311,14 +1309,6 @@ const styles = StyleSheet.create({
     fontFamily: 'Inter_700Bold',
     color: '#FFFFFF',
     marginTop: 2,
-  },
-  artistArrowBg: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: 'rgba(255,255,255,0.2)',
-    alignItems: 'center',
-    justifyContent: 'center',
   },
   suggestDropdown: {
     marginTop: Spacing.sm,
