@@ -33,6 +33,7 @@ import { api, resolveMediaUrl } from '../../lib/api';
 import { MasterSearchResult, ReleaseSearchResult, ArtistSearchResult, UserWithStats, PublicProfileRecord } from '../../lib/types';
 import { Colors, Typography, Spacing, BorderRadius, Gradients } from '../../constants/theme';
 import { toast } from '../../lib/toast';
+import { cleanArtistName } from '../../lib/format';
 
 function getFormatDisplayInfo(format?: string): { label: string; verb: string } {
   if (!format) return { label: 'Винил', verb: 'добавлен' };
@@ -501,22 +502,7 @@ export default function SearchScreen() {
   // История появляется только после взаимодействия с полем (showHistory выставляется в onFocus)
   const shouldShowHistory = isHomeView && showHistory && searchHistory.length > 0;
 
-  const dedupedArtists = artistResults.reduce<ArtistSearchResult[]>((acc, artist) => {
-    const baseName = artist.name.replace(/\s*\(\d+\)$/, '').toLowerCase().trim();
-    const hasSuffix = /\s*\(\d+\)$/.test(artist.name);
-    const existingIdx = acc.findIndex(
-      a => a.name.replace(/\s*\(\d+\)$/, '').toLowerCase().trim() === baseName
-    );
-    if (existingIdx === -1) {
-      acc.push(artist);
-    } else if (!hasSuffix) {
-      // Prefer the canonical variant without disambig suffix
-      acc[existingIdx] = artist;
-    }
-    return acc;
-  }, []);
-
-  const visibleArtists = showAllArtists ? dedupedArtists : dedupedArtists.slice(0, 3);
+  const visibleArtists = showAllArtists ? artistResults : artistResults.slice(0, 3);
 
   const HISTORY_PREVIEW_LIMIT = 5;
   const visibleHistory = historyExpanded
@@ -794,7 +780,7 @@ export default function SearchScreen() {
                 </View>
               )}
               <View style={styles.suggestInfo}>
-                <Text style={styles.suggestName} numberOfLines={1}>{artist.name}</Text>
+                <Text style={styles.suggestName} numberOfLines={1}>{cleanArtistName(artist.name)}</Text>
                 <Text style={styles.suggestType}>Артист</Text>
               </View>
               <Icon name="arrow-forward-outline" size={16} color={Colors.textMuted} />
@@ -828,7 +814,7 @@ export default function SearchScreen() {
               )}
               <View style={styles.suggestInfo}>
                 <Text style={styles.suggestName} numberOfLines={1}>{master.title}</Text>
-                <Text style={styles.suggestType} numberOfLines={1}>{master.artist}{master.year ? ` · ${master.year}` : ''}</Text>
+                <Text style={styles.suggestType} numberOfLines={1}>{cleanArtistName(master.artist)}{master.year ? ` · ${master.year}` : ''}</Text>
               </View>
               <Icon name="arrow-forward-outline" size={16} color={Colors.textMuted} />
             </TouchableOpacity>
@@ -923,11 +909,11 @@ export default function SearchScreen() {
         </View>
       )}
 
-      {dedupedArtists.length > 0 && (
+      {artistResults.length > 0 && (
         <View>
           {/* Первый артист — крупная gradient-карточка */}
           <TouchableOpacity
-            onPress={() => handleArtistPress(dedupedArtists[0])}
+            onPress={() => handleArtistPress(artistResults[0])}
             activeOpacity={0.8}
           >
             <LinearGradient
@@ -937,9 +923,9 @@ export default function SearchScreen() {
               style={styles.topArtistCard}
             >
               <View style={styles.topArtistImageContainer}>
-                {!topArtistImgError && (dedupedArtists[0].cover_image_url || dedupedArtists[0].thumb_image_url) ? (
+                {!topArtistImgError && (artistResults[0].cover_image_url || artistResults[0].thumb_image_url) ? (
                   <Image
-                    source={dedupedArtists[0].cover_image_url || dedupedArtists[0].thumb_image_url}
+                    source={artistResults[0].cover_image_url || artistResults[0].thumb_image_url}
                     style={styles.topArtistImage}
                     contentFit="cover"
                     cachePolicy="disk"
@@ -953,7 +939,7 @@ export default function SearchScreen() {
               </View>
               <View style={styles.topArtistInfo}>
                 <Text style={styles.topArtistLabel}>Артист</Text>
-                <Text style={styles.topArtistName} numberOfLines={1}>{dedupedArtists[0].name.replace(/\s*\(\d+\)$/, '')}</Text>
+                <Text style={styles.topArtistName} numberOfLines={1}>{cleanArtistName(artistResults[0].name)}</Text>
               </View>
               <View style={styles.artistArrowBg}>
               </View>
@@ -985,20 +971,20 @@ export default function SearchScreen() {
               </View>
               <View style={styles.topArtistInfo}>
                 <Text style={styles.secondaryArtistLabel}>Артист</Text>
-                <Text style={styles.secondaryArtistName} numberOfLines={1}>{artist.name.replace(/\s*\(\d+\)$/, '')}</Text>
+                <Text style={styles.secondaryArtistName} numberOfLines={1}>{cleanArtistName(artist.name)}</Text>
               </View>
             </TouchableOpacity>
           ))}
 
           {/* Кнопка "Ещё X артистов" */}
-          {!showAllArtists && dedupedArtists.length > 3 && (
+          {!showAllArtists && artistResults.length > 3 && (
             <TouchableOpacity
               style={styles.showMoreArtistsButton}
               onPress={() => setShowAllArtists(true)}
               activeOpacity={0.7}
             >
               <Text style={styles.showMoreArtistsText}>
-                Ещё {dedupedArtists.length - 3} артистов
+                Ещё {artistResults.length - 3} артистов
               </Text>
             </TouchableOpacity>
           )}
@@ -1017,13 +1003,13 @@ export default function SearchScreen() {
         <Text style={styles.sectionTitle}>Релизы</Text>
       )}
 
-      {isLoading && results.length === 0 && dedupedArtists.length === 0 && (
+      {isLoading && results.length === 0 && artistResults.length === 0 && (
         <View style={styles.loadingContainer}>
           <Text style={styles.loadingText}>Загрузка...</Text>
         </View>
       )}
 
-      {!isLoading && results.length === 0 && dedupedArtists.length === 0 && query && (
+      {!isLoading && results.length === 0 && artistResults.length === 0 && query && (
         <View style={styles.emptyContainer}>
           <Text style={styles.emptyText}>
             Ничего не найдено. Попробуйте изменить запрос.
@@ -1031,7 +1017,7 @@ export default function SearchScreen() {
         </View>
       )}
 
-      {!isLoading && results.length === 0 && dedupedArtists.length === 0 && !query && (
+      {!isLoading && results.length === 0 && artistResults.length === 0 && !query && (
         <View style={styles.emptyContainer}>
           <Text style={styles.emptyText}>
             Введите название альбома, артиста или @username
