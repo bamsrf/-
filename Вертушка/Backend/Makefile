@@ -22,7 +22,7 @@ help:  ## показать список команд
 # ---- Инфраструктура ---------------------------------------------------- #
 
 dev-up:  ## supabase start + docker compose up redis
-	cd $(SUPABASE_DIR)/.. && supabase start
+	cd $(SUPABASE_DIR)/.. && npx supabase start
 	docker compose -f docker-compose.dev.yml up -d
 	@echo ""
 	@echo "✅ Локальная среда поднята:"
@@ -32,10 +32,10 @@ dev-up:  ## supabase start + docker compose up redis
 
 dev-down:  ## остановить supabase + redis
 	docker compose -f docker-compose.dev.yml down
-	cd $(SUPABASE_DIR)/.. && supabase stop
+	cd $(SUPABASE_DIR)/.. && npx supabase stop
 
 dev-status:  ## статус контейнеров
-	cd $(SUPABASE_DIR)/.. && supabase status
+	cd $(SUPABASE_DIR)/.. && npx supabase status
 	docker compose -f docker-compose.dev.yml ps
 
 studio:  ## открыть Supabase Studio в браузере

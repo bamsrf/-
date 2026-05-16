@@ -46,6 +46,8 @@ import {
   AchievementStats,
   FollowRequestItem,
   FollowActionResult,
+  Offer,
+  OfferSort,
 } from './types';
 
 // API сервер
@@ -427,6 +429,15 @@ class ApiClient {
 
   async getRecordByDiscogsId(discogsId: string): Promise<VinylRecord> {
     return this.deduplicatedGet<VinylRecord>(`/records/discogs/${discogsId}`);
+  }
+
+  /**
+   * Предложения магазинов для данной пластинки.
+   * Возвращает только in_stock + preorder, со свежим last_seen_at (< 7 дней),
+   * с уже завёрнутыми affiliate-ссылками (если у магазина есть программа).
+   */
+  async getRecordOffers(discogsId: string, sort: OfferSort = 'price'): Promise<Offer[]> {
+    return this.deduplicatedGet<Offer[]>(`/records/${discogsId}/offers`, { params: { sort } });
   }
 
   // ==================== Masters ====================

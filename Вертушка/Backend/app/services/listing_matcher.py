@@ -76,24 +76,28 @@ async def _fuzzy_candidates(
     """Кандидаты через pg_trgm. Если нет ни artist, ни title — пусто."""
     if not artist and not title:
         return []
-    # Берём по top-N кандидатам по similarity на title (если есть) либо artist
+    # Берём top-N кандидатов по similarity. Используем функцию `similarity()`
+    # вместо оператора `%` — asyncpg не любит `%` в подготовленных запросах
+    # (`UndefinedFunctionError` даже когда оператор есть в БД).
+    # На малых records-таблицах seqscan мгновенный; на больших — pg_trgm GIN
+    # индекс по `gin_trgm_ops` всё равно ускоряет similarity-сортировку.
     if title:
         sql = text(
             "SELECT * FROM records "
-            "WHERE title %% :q "
-            "ORDER BY similarity(title, :q) DESC "
+            "WHERE similarity(title::text, cast(:q as text)) >= :thr "
+            "ORDER BY similarity(title::text, cast(:q as text)) DESC "
             "LIMIT :lim"
         )
         q = title
     else:
         sql = text(
             "SELECT * FROM records "
-            "WHERE artist %% :q "
-            "ORDER BY similarity(artist, :q) DESC "
+            "WHERE similarity(artist::text, cast(:q as text)) >= :thr "
+            "ORDER BY similarity(artist::text, cast(:q as text)) DESC "
             "LIMIT :lim"
         )
         q = artist  # type: ignore[assignment]
-    res = await db.execute(sql, {"q": q, "lim": FUZZY_CANDIDATES_LIMIT})
+    res = await db.execute(sql, {"q": q, "lim": FUZZY_CANDIDATES_LIMIT, "thr": 0.25})
     ids = [row.id for row in res.fetchall()]
     if not ids:
         return []
@@ -278,10 +282,15 @@ async def match_unmatched_batch(batch_size: int = 200) -> dict[str, int]:
 
         for listing in listings:
             counters["processed"] += 1
+            # SAVEPOINT — если match_listing уронит транзакцию, откатываем
+            # только этот savepoint, остальные листинги продолжаем матчить.
+            sp = await db.begin_nested()
             try:
                 ok = await match_listing(listing, db)
+                await sp.commit()
                 counters["matched" if ok else "unmatched"] += 1
             except Exception:
+                await sp.rollback()
                 counters["errors"] += 1
                 logger.exception("match failed for listing %s", listing.id)
                 continue

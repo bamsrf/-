@@ -95,6 +95,29 @@ export interface Track {
   duration?: string;
 }
 
+// ==================== Offers (предложения магазинов) ====================
+
+export interface OfferStoreInfo {
+  slug: string;
+  name: string;
+  logo_url?: string | null;
+  rating: number;
+}
+
+export interface Offer {
+  listing_id: string;
+  store: OfferStoreInfo;
+  price_rub: string; // Decimal приходит строкой
+  condition?: string | null;
+  vinyl_color?: string | null;
+  format?: string | null;
+  url: string;            // уже завёрнут в affiliate если применимо
+  status: 'in_stock' | 'preorder';
+  last_seen_at: string;   // ISO
+}
+
+export type OfferSort = 'price' | 'rating';
+
 export interface RecordSearchResult {
   discogs_id: string;
   title: string;

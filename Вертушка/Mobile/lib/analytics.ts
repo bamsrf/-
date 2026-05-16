@@ -84,4 +84,10 @@ export const analytics = {
   // --- Social ---
   followUser: (targetUserId: string) => track('follow_user', { target_user_id: targetUserId }),
   bookGift: (recordId: string) => track('book_gift', { record_id: recordId }),
+
+  // --- Offers (магазины) ---
+  viewOffers: (discogsId: string, count: number) =>
+    track('view_offers', { discogs_id: discogsId, count }),
+  offerClick: (params: { listing_id: string; store_slug: string; price_rub: number; discogs_id: string }) =>
+    track('offer_click', params),
 };
