@@ -1,0 +1,280 @@
+"""
+Бизнес-логика личных сообщений: создание диалога, отправка, чтение, права.
+Сюда вынесены pure-функции, чтобы роутер оставался тонким.
+"""
+import logging
+from datetime import datetime
+from uuid import UUID
+
+from fastapi import HTTPException, status
+from sqlalchemy import select, and_, or_, func
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
+
+from app.models.conversation import (
+    Conversation,
+    ConversationParticipant,
+    Message,
+)
+from app.models.user_block import UserBlock
+from app.models.follow import Follow
+from app.models.profile_share import ProfileShare
+from app.models.user import User
+
+logger = logging.getLogger(__name__)
+
+
+def _pair(u1: UUID, u2: UUID) -> tuple[UUID, UUID]:
+    """Каноничный порядок пары — гарантия одного диалога на двоих."""
+    return (u1, u2) if str(u1) < str(u2) else (u2, u1)
+
+
+async def is_user_blocked(db: AsyncSession, a_id: UUID, b_id: UUID) -> bool:
+    """True если кто-то из пары заблокировал другого (в любую сторону)."""
+    row = await db.execute(
+        select(UserBlock.id).where(
+            or_(
+                and_(UserBlock.blocker_id == a_id, UserBlock.blocked_id == b_id),
+                and_(UserBlock.blocker_id == b_id, UserBlock.blocked_id == a_id),
+            )
+        ).limit(1)
+    )
+    return row.scalar_one_or_none() is not None
+
+
+async def is_following(db: AsyncSession, follower_id: UUID, following_id: UUID) -> bool:
+    """True если follower_id подписан на following_id."""
+    row = await db.execute(
+        select(Follow.id).where(
+            Follow.follower_id == follower_id,
+            Follow.following_id == following_id,
+        ).limit(1)
+    )
+    return row.scalar_one_or_none() is not None
+
+
+async def is_private_profile(db: AsyncSession, user_id: UUID) -> bool:
+    flag = await db.scalar(
+        select(ProfileShare.is_private_profile).where(ProfileShare.user_id == user_id)
+    )
+    return bool(flag)
+
+
+async def check_can_send(
+    db: AsyncSession,
+    sender: User,
+    recipient_id: UUID,
+) -> tuple[User, bool]:
+    """Проверка прав отправки. Возвращает (recipient, goes_to_requests).
+
+    Бросает HTTPException при недопустимых случаях.
+    goes_to_requests=True означает, что у получателя тред окажется в папке «Запросы»
+    (актуально на M3; в M1 значение вычисляется, но не влияет на UX).
+    """
+    if recipient_id == sender.id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Нельзя написать самому себе",
+        )
+
+    recipient = await db.get(User, recipient_id)
+    if not recipient or not recipient.is_active or recipient.deleted_at is not None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Пользователь не найден",
+        )
+
+    if await is_user_blocked(db, sender.id, recipient.id):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Сообщения недоступны",
+        )
+
+    recipient_follows_sender = await is_following(db, recipient.id, sender.id)
+
+    if await is_private_profile(db, recipient.id) and not recipient_follows_sender:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Этот профиль приватный — сообщения принимаются только от взаимных подписчиков",
+        )
+
+    goes_to_requests = not recipient_follows_sender
+    return recipient, goes_to_requests
+
+
+async def get_or_create_conversation(
+    db: AsyncSession,
+    sender_id: UUID,
+    recipient_id: UUID,
+    goes_to_requests: bool,
+) -> Conversation:
+    """Возвращает существующий диалог пары или создаёт новый с participants.
+
+    request_status получателя:
+    - 'accepted' если получатель подписан на отправителя ИЛИ диалог уже существует
+    - 'pending' иначе (попадёт в папку «Запросы» — учитывается на M3)
+    """
+    user_a_id, user_b_id = _pair(sender_id, recipient_id)
+
+    existing = await db.execute(
+        select(Conversation)
+        .where(
+            Conversation.user_a_id == user_a_id,
+            Conversation.user_b_id == user_b_id,
+        )
+        .options(selectinload(Conversation.participants))
+    )
+    conv = existing.scalar_one_or_none()
+    if conv:
+        return conv
+
+    conv = Conversation(user_a_id=user_a_id, user_b_id=user_b_id)
+    db.add(conv)
+    await db.flush()
+
+    sender_part = ConversationParticipant(
+        conversation_id=conv.id,
+        user_id=sender_id,
+        request_status="accepted",
+    )
+    recipient_part = ConversationParticipant(
+        conversation_id=conv.id,
+        user_id=recipient_id,
+        request_status="pending" if goes_to_requests else "accepted",
+    )
+    db.add_all([sender_part, recipient_part])
+    await db.flush()
+    return conv
+
+
+async def get_participant(
+    db: AsyncSession, conversation_id: UUID, user_id: UUID
+) -> ConversationParticipant | None:
+    row = await db.execute(
+        select(ConversationParticipant).where(
+            ConversationParticipant.conversation_id == conversation_id,
+            ConversationParticipant.user_id == user_id,
+        )
+    )
+    return row.scalar_one_or_none()
+
+
+async def require_participant(
+    db: AsyncSession, conversation_id: UUID, user_id: UUID
+) -> ConversationParticipant:
+    part = await get_participant(db, conversation_id, user_id)
+    if not part:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Диалог не найден"
+        )
+    return part
+
+
+async def find_existing_message_by_nonce(
+    db: AsyncSession, sender_id: UUID, client_nonce: str
+) -> Message | None:
+    row = await db.execute(
+        select(Message).where(
+            Message.sender_id == sender_id,
+            Message.client_nonce == client_nonce,
+        )
+    )
+    return row.scalar_one_or_none()
+
+
+async def post_message(
+    db: AsyncSession,
+    conversation: Conversation,
+    sender_id: UUID,
+    body: str,
+    client_nonce: str | None,
+) -> Message:
+    """Сохраняет сообщение и обновляет агрегаты на conversation.
+
+    Идемпотентность: если (sender_id, client_nonce) уже существует — возвращаем то же.
+    """
+    if client_nonce:
+        existing = await find_existing_message_by_nonce(db, sender_id, client_nonce)
+        if existing and existing.conversation_id == conversation.id:
+            return existing
+
+    now = datetime.utcnow()
+    message = Message(
+        conversation_id=conversation.id,
+        sender_id=sender_id,
+        body=body,
+        client_nonce=client_nonce,
+        created_at=now,
+    )
+    db.add(message)
+
+    conversation.last_message_at = now
+    conversation.last_message_preview = body[:160]
+    conversation.last_message_sender_id = sender_id
+    await db.flush()
+    return message
+
+
+async def mark_read(
+    db: AsyncSession,
+    participant: ConversationParticipant,
+    up_to_message_id: UUID,
+) -> None:
+    """Обновляет last_read_at участника по created_at указанного сообщения."""
+    message = await db.get(Message, up_to_message_id)
+    if not message or message.conversation_id != participant.conversation_id:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Сообщение не найдено"
+        )
+
+    if participant.last_read_at is None or message.created_at > participant.last_read_at:
+        participant.last_read_at = message.created_at
+        await db.flush()
+
+
+async def count_unread_in_conversation(
+    db: AsyncSession,
+    conversation_id: UUID,
+    user_id: UUID,
+    last_read_at: datetime | None,
+) -> int:
+    """Сколько непрочитанных входящих сообщений в диалоге."""
+    stmt = select(func.count(Message.id)).where(
+        Message.conversation_id == conversation_id,
+        Message.sender_id != user_id,
+        Message.deleted_at.is_(None),
+    )
+    if last_read_at is not None:
+        stmt = stmt.where(Message.created_at > last_read_at)
+    return int(await db.scalar(stmt) or 0)
+
+
+async def compute_total_unread(
+    db: AsyncSession, user_id: UUID
+) -> tuple[int, int]:
+    """Возвращает (primary_unread, requests_unread) — для бейджа в табе."""
+    parts_q = await db.execute(
+        select(ConversationParticipant).where(
+            ConversationParticipant.user_id == user_id,
+            ConversationParticipant.archived_at.is_(None),
+        )
+    )
+    parts = parts_q.scalars().all()
+
+    primary = 0
+    requests = 0
+    for p in parts:
+        n = await count_unread_in_conversation(
+            db, p.conversation_id, user_id, p.last_read_at
+        )
+        if n <= 0:
+            continue
+        if p.request_status == "pending":
+            requests += n
+        else:
+            primary += n
+    return primary, requests
+
+
+def partner_id_of(conv: Conversation, my_user_id: UUID) -> UUID:
+    return conv.user_b_id if conv.user_a_id == my_user_id else conv.user_a_id
