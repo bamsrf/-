@@ -16,6 +16,7 @@ import { Icon } from '@/components/ui';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Header } from '../../../components/Header';
 import { api } from '../../../lib/api';
+import { cleanArtistName } from '../../../lib/format';
 import { MasterRelease, Track } from '../../../lib/types';
 import { Colors, Typography, Spacing, BorderRadius } from '../../../constants/theme';
 
@@ -165,7 +166,7 @@ export default function MasterScreen() {
               <Icon name="person" size={24} color={Colors.textMuted} />
             </View>
           )}
-          <Text style={styles.artistName}>{master.artist}</Text>
+          <Text style={styles.artistName}>{cleanArtistName(master.artist)}</Text>
         </TouchableOpacity>
 
         {/* First Released */}

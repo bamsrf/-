@@ -42,6 +42,7 @@ import {
   WishlistPublicResponse,
 } from '../../../lib/types';
 import { toast } from '../../../lib/toast';
+import { cleanArtistName } from '../../../lib/format';
 import { AchievementsBlock } from '../../../components/AchievementsBlock';
 import { ArchetypeChip } from '../../../components/ArchetypeChip';
 
@@ -260,7 +261,7 @@ function RecordCardLight({
       </View>
       <View style={{ paddingTop: 8, paddingHorizontal: 1 }}>
         <Text numberOfLines={1} style={styles.cardArtist}>
-          {record.artist}
+          {cleanArtistName(record.artist)}
         </Text>
         <Text numberOfLines={1} style={styles.cardTitle}>
           {record.title}
@@ -302,7 +303,7 @@ function RecordRowLight({
         )}
       </View>
       <View style={{ flex: 1, minWidth: 0 }}>
-        <Text numberOfLines={1} style={styles.cardArtist}>{record.artist}</Text>
+        <Text numberOfLines={1} style={styles.cardArtist}>{cleanArtistName(record.artist)}</Text>
         <Text numberOfLines={1} style={[styles.cardTitle, { fontSize: 14 }]}>{record.title}</Text>
         <Text style={styles.cardInfo} numberOfLines={1}>
           {record.year || ''}
@@ -1022,7 +1023,7 @@ export default function UserProfileScreen() {
                 </View>
                 <View style={{ flex: 1, minWidth: 0 }}>
                   <Text numberOfLines={1} style={styles.cardArtist}>
-                    {bookingItem.record.artist}
+                    {cleanArtistName(bookingItem.record.artist)}
                   </Text>
                   <Text numberOfLines={2} style={styles.modalRecTitle}>
                     {bookingItem.record.title}

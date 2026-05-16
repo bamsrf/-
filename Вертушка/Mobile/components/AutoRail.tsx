@@ -28,6 +28,7 @@ import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
 import { resolveMediaUrl } from '../lib/api';
+import { cleanArtistName } from '../lib/format';
 import { PublicProfileRecord } from '../lib/types';
 
 const PALETTE = {
@@ -226,7 +227,7 @@ export function AutoRail({
           { color: titleColor === PALETTE.cobalt ? PALETTE.cobalt : PALETTE.mute },
         ]}
       >
-        {r.artist}
+        {cleanArtistName(r.artist)}
       </Text>
       <Text numberOfLines={1} style={styles.railTitleSmall}>
         {r.title}

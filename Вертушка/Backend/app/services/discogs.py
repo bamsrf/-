@@ -1175,6 +1175,25 @@ class DiscogsService:
             return "album"
         return "album"
 
+    async def _fetch_first_page_master_ids(self, artist_id: str) -> set[str]:
+        """Синхронно тянет первую страницу /artists/{id}/releases для немедленного
+        фильтра однофамильцев. Используется при cache-miss, пока фоновая задача
+        собирает все страницы. Возвращает пустой set при ошибке — тогда фильтр
+        пропустится (старое поведение)."""
+        try:
+            data = await self._get(
+                f"{self.BASE_URL}/artists/{artist_id}/releases",
+                params={"page": 1, "per_page": 100},
+                priority=Priority.DETAIL,
+            )
+        except Exception:
+            return set()
+        return {
+            str(item["id"])
+            for item in data.get("releases", [])
+            if item.get("type") == "master" and item.get("id")
+        }
+
     async def _collect_artist_master_ids(self, artist_id: str, cache_key: str) -> None:
         """Фоновый сбор master ID артиста по всем страницам /artists/{id}/releases.
 
@@ -1244,19 +1263,18 @@ class DiscogsService:
         if not artist_name:
             return MasterSearchResponse(results=[], total=0, page=page, per_page=per_page)
 
-        # --- Шаг 1: получаем точный список master ID для этого артиста ---
+        # --- Шаг 1: получаем список master ID для этого артиста ---
         # Используется для отсечки однофамильцев (Mac Miller (2), Jimmy Justice).
-        # Пагинируем /artists/{id}/releases — у плодовитых артистов это до 15
-        # запросов и до 15+ сек на холодном кэше, поэтому при cache-miss
-        # запускаем сбор в фоне (asyncio.create_task) с Priority.ENRICHMENT.
-        # Первый sync-ответ идёт без фильтра (может включать однофамильцев);
-        # следующий заход юзера получит обогащённый кэш и чистый результат.
+        # При cache-miss синхронно запрашиваем первую страницу /artists/{id}/releases
+        # (до 100 мастер-релизов) — этого хватает для большинства артистов и даёт
+        # чистый результат с первого захода. Полный сбор всех страниц идёт в фоне
+        # для плодовитых артистов; следующий заход получит обогащённый кэш.
         ids_ck = f"{artist_id}:master_ids:v1"
         cached_ids = await cache.get("artist_master_ids", ids_ck)
         if cached_ids is not None:
             valid_master_ids: set[str] = set(cached_ids)
         else:
-            valid_master_ids = set()
+            valid_master_ids = await self._fetch_first_page_master_ids(artist_id)
             asyncio.create_task(self._collect_artist_master_ids(artist_id, ids_ck))
 
         # --- Шаг 2: Search API — обложки и format[] (логика из оригинала не меняется) ---

@@ -28,6 +28,7 @@ import Animated, {
 import { Header } from '../../components/Header';
 import { useCollectionStore } from '../../lib/store';
 import { CollectionItem } from '../../lib/types';
+import { cleanArtistName } from '../../lib/format';
 import { Colors, Typography, Spacing, BorderRadius, Shadows } from '../../constants/theme';
 
 
@@ -156,7 +157,7 @@ export default function CollectionValueScreen() {
         />
         <View style={styles.listInfo}>
           <Text style={styles.listTitle} numberOfLines={1}>{record.title}</Text>
-          <Text style={styles.listArtist} numberOfLines={1}>{record.artist}</Text>
+          <Text style={styles.listArtist} numberOfLines={1}>{cleanArtistName(record.artist)}</Text>
         </View>
         <Text style={styles.listPrice}>
           ~{formatRub(item.estimated_price_rub || 0)} ₽
@@ -272,7 +273,7 @@ export default function CollectionValueScreen() {
                       {stats.most_expensive.title}
                     </Text>
                     <Text style={styles.expensiveArtist} numberOfLines={1}>
-                      {stats.most_expensive.artist}
+                      {cleanArtistName(stats.most_expensive.artist)}
                     </Text>
                     <Text style={styles.expensivePrice}>
                       ~{formatRub(stats.most_expensive_price_rub || 0)} ₽

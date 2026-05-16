@@ -32,6 +32,7 @@ import { GradientText } from '../../components/GradientText';
 import { FolderPickerModal } from '../../components/FolderPickerModal';
 import { Button, Card, ActionSheet, ActionSheetAction } from '../../components/ui';
 import { api } from '../../lib/api';
+import { cleanArtistName } from '../../lib/format';
 import { useCollectionStore } from '../../lib/store';
 import { VinylRecord, CollectionItem } from '../../lib/types';
 import { Colors, Typography, Spacing, BorderRadius, Gradients } from '../../constants/theme';
@@ -465,7 +466,7 @@ export default function RecordDetailScreen() {
                 </View>
               )}
             </LinearGradient>
-            <Text style={styles.artistName}>{record.artist}</Text>
+            <Text style={styles.artistName}>{cleanArtistName(record.artist)}</Text>
           </TouchableOpacity>
 
           <View style={styles.metaRow}>

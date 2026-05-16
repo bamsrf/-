@@ -33,6 +33,7 @@ import { AnimatedGradientText } from '../components/AnimatedGradientText';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as ImagePicker from 'expo-image-picker';
 import { api, resolveMediaUrl } from '../lib/api';
+import { cleanArtistName } from '../lib/format';
 import { detectAchievementUnlocks } from '../lib/achievementsBus';
 import { toast } from '../lib/toast';
 import Toast from 'react-native-toast-message';
@@ -460,7 +461,7 @@ export default function ProfileScreen() {
                     {gift.record.title}
                   </Text>
                   <Text style={styles.giftCardArtist} numberOfLines={1}>
-                    {gift.record.artist}
+                    {cleanArtistName(gift.record.artist)}
                   </Text>
                   <View style={styles.giftCardRecipient}>
                     {gift.for_user.avatar_url ? (

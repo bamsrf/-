@@ -17,6 +17,7 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Icon } from '@/components/ui';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { api } from '../../lib/api';
+import { cleanArtistName } from '../../lib/format';
 import { toast } from '../../lib/toast';
 import { useGiftStore, useCollectionStore } from '../../lib/store';
 import { GiftGivenItem, GiftReceivedItem } from '../../lib/types';
@@ -255,7 +256,7 @@ export default function GiftDetailScreen() {
         </View>
 
         {/* Метаданные */}
-        <Text style={styles.artist}>{gift.record.artist}</Text>
+        <Text style={styles.artist}>{cleanArtistName(gift.record.artist)}</Text>
         <Text style={styles.title}>{gift.record.title}</Text>
 
         <View style={styles.chipsRow}>

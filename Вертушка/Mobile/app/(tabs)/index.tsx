@@ -13,6 +13,7 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import { toast } from '../../lib/toast';
+import { cleanArtistName } from '../../lib/format';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import { useRouter, useFocusEffect } from 'expo-router';
 import { Icon } from '@/components/ui';
@@ -320,7 +321,7 @@ export default function ScannerScreen() {
             <View style={styles.recognizedBanner}>
               <Icon name="sparkles" size={16} color={Colors.royalBlue} />
               <Text style={styles.recognizedText} numberOfLines={1}>
-                {recognizedInfo.artist}
+                {cleanArtistName(recognizedInfo.artist)}
                 {recognizedInfo.album ? ` — ${recognizedInfo.album}` : ''}
               </Text>
             </View>

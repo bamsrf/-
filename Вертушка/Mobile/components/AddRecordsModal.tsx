@@ -19,6 +19,7 @@ import Toast from 'react-native-toast-message';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useCollectionStore } from '../lib/store';
 import { CollectionItem } from '../lib/types';
+import { cleanArtistName } from '../lib/format';
 import { Colors, Spacing, Typography, BorderRadius } from '../constants/theme';
 import { toastConfig } from './CustomToast';
 
@@ -101,7 +102,7 @@ export function AddRecordsModal({
             style={[styles.recordArtist, isInFolder && styles.textDisabled]}
             numberOfLines={1}
           >
-            {item.record.artist}
+            {cleanArtistName(item.record.artist)}
           </Text>
         </View>
 

@@ -18,6 +18,7 @@ import { Icon } from '@/components/ui';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useGiftStore } from '../../lib/store';
 import { GiftGivenItem, GiftReceivedItem } from '../../lib/types';
+import { cleanArtistName } from '../../lib/format';
 import { SegmentedControl } from '../../components/ui';
 import { Colors, Typography, Spacing, BorderRadius } from '../../constants/theme';
 
@@ -117,7 +118,7 @@ export default function WishlistsScreen() {
     <GiftRow
       cover={item.record.cover_image_url}
       title={item.record.title}
-      subtitle={`${item.record.artist} · для @${item.for_user.username}`}
+      subtitle={`${cleanArtistName(item.record.artist)} · для @${item.for_user.username}`}
       status={item.status as GiftStatus}
       onPress={() => handlePress(item.id, 'given')}
     />
@@ -127,7 +128,7 @@ export default function WishlistsScreen() {
     <GiftRow
       cover={item.record.cover_image_url}
       title={item.record.title}
-      subtitle={item.record.artist}
+      subtitle={cleanArtistName(item.record.artist)}
       status={item.status}
       onPress={() => handlePress(item.id, 'received')}
     />
