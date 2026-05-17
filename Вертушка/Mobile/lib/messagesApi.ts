@@ -79,10 +79,15 @@ export const messagesApi = {
     conversationId: string,
     body: string,
     clientNonce: string,
+    replyToMessageId?: string | null,
   ): Promise<Message> {
     const r = await getClient().post(
       `/messages/conversations/${conversationId}/messages/`,
-      { body, client_nonce: clientNonce },
+      {
+        body,
+        client_nonce: clientNonce,
+        reply_to_message_id: replyToMessageId ?? null,
+      },
     );
     return r.data;
   },

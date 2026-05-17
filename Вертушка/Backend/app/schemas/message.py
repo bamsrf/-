@@ -22,6 +22,16 @@ class ConversationPartner(BaseModel):
     avatar_url: str | None = None
 
 
+class ReplyPreview(BaseModel):
+    """Превью сообщения, на которое отвечают."""
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    sender_id: UUID
+    body: str | None = None
+    deleted_at: datetime | None = None
+
+
 class MessageRead(BaseModel):
     """Одно сообщение для отдачи на клиент."""
     model_config = ConfigDict(from_attributes=True)
@@ -34,6 +44,8 @@ class MessageRead(BaseModel):
     edited_at: datetime | None = None
     deleted_at: datetime | None = None
     client_nonce: str | None = None
+    reply_to_message_id: UUID | None = None
+    reply_to: ReplyPreview | None = None
 
 
 class ConversationRead(BaseModel):
@@ -70,6 +82,7 @@ class MessageCreate(BaseModel):
     """Новое сообщение в диалоге."""
     body: str = Field(..., min_length=1, max_length=4000)
     client_nonce: str | None = Field(None, max_length=64)
+    reply_to_message_id: UUID | None = None
 
 
 class ReadMarker(BaseModel):

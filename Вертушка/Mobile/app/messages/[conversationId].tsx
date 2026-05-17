@@ -27,6 +27,7 @@ import {
   ActionSheetIOS,
   Alert,
 } from 'react-native';
+import * as Clipboard from 'expo-clipboard';
 import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useLocalSearchParams, useRouter } from 'expo-router';
@@ -168,6 +169,7 @@ function MessageBubble({
   selectionMode,
   onLongPress,
   onPress,
+  onReplyHint,
 }: {
   message: Message;
   isMine: boolean;
@@ -177,6 +179,7 @@ function MessageBubble({
   selectionMode: boolean;
   onLongPress: () => void;
   onPress: () => void;
+  onReplyHint?: () => void;
 }) {
   if (message.deleted_at) {
     return (
@@ -194,7 +197,11 @@ function MessageBubble({
     <TouchableOpacity
       activeOpacity={0.75}
       onLongPress={isMine ? onLongPress : undefined}
-      onPress={selectionMode && isMine ? onPress : undefined}
+      onPress={
+        selectionMode && isMine
+          ? onPress
+          : onReplyHint
+      }
       style={[
         styles.bubbleRow,
         isMine ? styles.bubbleRowMine : styles.bubbleRowOther,
@@ -210,6 +217,24 @@ function MessageBubble({
           isSelected && styles.bubbleSelected,
         ]}
       >
+        {message.reply_to ? (
+          <View
+            style={[
+              styles.bubbleReply,
+              isMine ? styles.bubbleReplyMineLine : styles.bubbleReplyOtherLine,
+            ]}
+          >
+            <Text
+              numberOfLines={2}
+              style={[
+                styles.bubbleReplyText,
+                isMine ? styles.bubbleReplyTextMine : styles.bubbleReplyTextOther,
+              ]}
+            >
+              {message.reply_to.deleted_at ? 'Сообщение удалено' : message.reply_to.body}
+            </Text>
+          </View>
+        ) : null}
         <Text style={[styles.bubbleBody, isMine && styles.bubbleBodyMine]}>
           {message.body}
         </Text>
@@ -319,6 +344,7 @@ export default function ConversationScreen() {
   );
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [presence, setPresence] = useState<PresenceInfo | null>(null);
+  const [replyTo, setReplyTo] = useState<Message | null>(null);
   const listRef = useRef<FlatList<FeedItem>>(null);
 
   const selectionMode = selected.size > 0;
@@ -444,10 +470,12 @@ export default function ConversationScreen() {
   const handleSend = useCallback(async () => {
     if (!conversationId || !draft.trim()) return;
     const text = draft;
+    const rt = replyTo?.id ?? null;
     setDraft('');
-    await sendMessage(conversationId, text);
+    setReplyTo(null);
+    await sendMessage(conversationId, text, rt);
     setTimeout(() => listRef.current?.scrollToEnd({ animated: true }), 50);
-  }, [conversationId, draft, sendMessage]);
+  }, [conversationId, draft, replyTo, sendMessage]);
 
   const handleRetry = useCallback(
     (msg: Message) => {
@@ -455,6 +483,56 @@ export default function ConversationScreen() {
       retrySend(conversationId, msg.id);
     },
     [conversationId, retrySend]
+  );
+
+  const openBubbleMenu = useCallback(
+    (m: Message, isMine: boolean) => {
+      const baseOptions = ['Ответить', 'Скопировать'];
+      const options = isMine
+        ? [...baseOptions, 'Удалить', 'Отмена']
+        : [...baseOptions, 'Отмена'];
+      const cancel = options.length - 1;
+      const destructive = isMine ? 2 : undefined;
+
+      const exec = (i: number) => {
+        if (i === 0) setReplyTo(m);
+        else if (i === 1 && m.body) Clipboard.setStringAsync(m.body);
+        else if (isMine && i === 2) {
+          Alert.alert('Удалить сообщение?', 'Удаление видно у обеих сторон.', [
+            { text: 'Отмена', style: 'cancel' },
+            {
+              text: 'Удалить',
+              style: 'destructive',
+              onPress: async () => {
+                try {
+                  await messagesApi.deleteMessage(m.id);
+                  if (conversationId) loadThread(conversationId);
+                } catch {
+                  // тихо
+                }
+              },
+            },
+          ]);
+        }
+      };
+
+      if (Platform.OS === 'ios') {
+        ActionSheetIOS.showActionSheetWithOptions(
+          { options, cancelButtonIndex: cancel, destructiveButtonIndex: destructive },
+          exec,
+        );
+      } else {
+        const buttons: any[] = [
+          { text: 'Ответить', onPress: () => exec(0) },
+          { text: 'Скопировать', onPress: () => exec(1) },
+        ];
+        if (isMine)
+          buttons.push({ text: 'Удалить', style: 'destructive', onPress: () => exec(2) });
+        buttons.push({ text: 'Отмена', style: 'cancel' });
+        Alert.alert('Действия', undefined, buttons);
+      }
+    },
+    [conversationId, loadThread],
   );
 
   const renderItem: ListRenderItem<FeedItem> = useCallback(
@@ -495,10 +573,11 @@ export default function ConversationScreen() {
           selectionMode={selectionMode}
           onLongPress={() => toggleSelection(m.id)}
           onPress={() => toggleSelection(m.id)}
+          onReplyHint={() => openBubbleMenu(m, item.isMine)}
         />
       );
     },
-    [handleRetry, partnerLastReadAt, selected, selectionMode, toggleSelection]
+    [handleRetry, partnerLastReadAt, selected, selectionMode, toggleSelection, openBubbleMenu]
   );
 
   const headerName = useMemo(() => {
@@ -656,6 +735,25 @@ export default function ConversationScreen() {
           ListEmptyComponent={isLoading ? null : <EmptyState partner={partner} />}
           keyboardShouldPersistTaps="handled"
         />
+
+        {replyTo ? (
+          <View style={styles.replyBar}>
+            <View style={styles.replyLine} />
+            <View style={{ flex: 1, minWidth: 0 }}>
+              <Text style={styles.replyTitle}>
+                {replyTo.sender_id === me?.id
+                  ? 'Ответ себе'
+                  : `Ответ ${partner ? `@${partner.username}` : ''}`}
+              </Text>
+              <Text style={styles.replyBody} numberOfLines={1}>
+                {replyTo.deleted_at ? 'Сообщение удалено' : replyTo.body}
+              </Text>
+            </View>
+            <TouchableOpacity onPress={() => setReplyTo(null)} style={styles.replyClose}>
+              <Icon name="close" size={16} color={Colors.textMuted} />
+            </TouchableOpacity>
+          </View>
+        ) : null}
 
         <View style={[styles.inputBar, { paddingBottom: insets.bottom + 8 }]}>
           <TouchableOpacity
@@ -868,6 +966,48 @@ const styles = StyleSheet.create({
   },
   emptyName: { fontSize: 16, fontWeight: '600', color: Colors.text },
   emptyHint: { fontSize: 13, color: Colors.textMuted },
+
+  /* Reply preview над composer */
+  replyBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: Spacing.md,
+    paddingVertical: 8,
+    borderTopWidth: 1,
+    borderTopColor: Colors.divider,
+    backgroundColor: Colors.background,
+    gap: Spacing.sm,
+  },
+  replyLine: {
+    width: 3,
+    alignSelf: 'stretch',
+    borderRadius: 2,
+    backgroundColor: Colors.royalBlue,
+  },
+  replyTitle: { fontSize: 12, fontWeight: '600', color: Colors.royalBlue },
+  replyBody: { fontSize: 12, color: Colors.textMuted, marginTop: 1 },
+  replyClose: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: Colors.surface,
+  },
+
+  /* Reply preview внутри bubble */
+  bubbleReply: {
+    flexDirection: 'row',
+    alignSelf: 'stretch',
+    marginBottom: 6,
+    paddingLeft: 8,
+    borderLeftWidth: 3,
+  },
+  bubbleReplyMineLine: { borderLeftColor: 'rgba(255,255,255,0.7)' },
+  bubbleReplyOtherLine: { borderLeftColor: Colors.royalBlue },
+  bubbleReplyText: { fontSize: 12, lineHeight: 16 },
+  bubbleReplyTextMine: { color: 'rgba(255,255,255,0.85)' },
+  bubbleReplyTextOther: { color: Colors.textMuted },
 
   /* Composer */
   inputBar: {

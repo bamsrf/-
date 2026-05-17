@@ -34,6 +34,7 @@ from app.schemas.message import (
     MessageRead,
     PresenceResponse,
     ReadMarker,
+    ReplyPreview,
     UnreadCount,
 )
 from app.services.messaging import (
@@ -56,6 +57,31 @@ limiter = Limiter(key_func=get_remote_address)
 
 PAGE_LIMIT_DEFAULT = 50
 PAGE_LIMIT_MAX = 100
+
+
+async def _hydrate_reply_previews(
+    db: AsyncSession, messages: list[Message]
+) -> list[MessageRead]:
+    """Догружает ReplyPreview для сообщений, у которых стоит reply_to_message_id."""
+    reply_ids = {m.reply_to_message_id for m in messages if m.reply_to_message_id}
+    targets: dict = {}
+    if reply_ids:
+        q = await db.execute(select(Message).where(Message.id.in_(reply_ids)))
+        targets = {t.id: t for t in q.scalars().all()}
+
+    result: list[MessageRead] = []
+    for m in messages:
+        mr = MessageRead.model_validate(m)
+        if m.reply_to_message_id and m.reply_to_message_id in targets:
+            t = targets[m.reply_to_message_id]
+            mr.reply_to = ReplyPreview(
+                id=t.id,
+                sender_id=t.sender_id,
+                body=t.body,
+                deleted_at=t.deleted_at,
+            )
+        result.append(mr)
+    return result
 
 
 def _conv_to_read(
@@ -232,7 +258,7 @@ async def get_conversation_detail(
     partner_part = partner_part_q.scalar_one_or_none()
     return ConversationDetail(
         conversation=_conv_to_read(conv, partner, me_part, partner_part, unread, blocked),
-        messages=[MessageRead.model_validate(m) for m in messages],
+        messages=await _hydrate_reply_previews(db, messages),
     )
 
 
@@ -264,7 +290,7 @@ async def list_messages(
     stmt = stmt.order_by(Message.created_at.desc()).limit(limit)
     rows = await db.execute(stmt)
     messages = list(reversed(rows.scalars().all()))
-    return [MessageRead.model_validate(m) for m in messages]
+    return await _hydrate_reply_previews(db, messages)
 
 
 @router.post(
@@ -296,6 +322,7 @@ async def send_message(
         sender_id=current_user.id,
         body=data.body,
         client_nonce=data.client_nonce,
+        reply_to_message_id=data.reply_to_message_id,
     )
 
     # Если у меня тред был в pending (необычно — я инициатор), сбросить на accepted

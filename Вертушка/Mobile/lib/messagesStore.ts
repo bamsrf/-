@@ -31,7 +31,7 @@ interface MessagesState {
   loadConversations: (folder: MessageFolder) => Promise<void>;
   loadThread: (conversationId: string) => Promise<void>;
   loadMore: (conversationId: string) => Promise<void>;
-  send: (conversationId: string, body: string) => Promise<Message | null>;
+  send: (conversationId: string, body: string, replyToMessageId?: string | null) => Promise<Message | null>;
   retrySend: (conversationId: string, localId: string) => Promise<void>;
   markRead: (conversationId: string) => Promise<void>;
   refreshUnread: () => Promise<void>;
@@ -150,7 +150,7 @@ export const useMessagesStore = create<MessagesState>((set, get) => ({
     }
   },
 
-  send: async (conversationId, body) => {
+  send: async (conversationId, body, replyToMessageId) => {
     const text = body.trim();
     if (!text) return null;
     const me = useAuthStore.getState().user;
@@ -158,6 +158,9 @@ export const useMessagesStore = create<MessagesState>((set, get) => ({
 
     const nonce = makeMessageNonce();
     const localId = `local-${nonce}`;
+    const existingReplyTarget = replyToMessageId
+      ? (get().threads[conversationId] ?? []).find((m) => m.id === replyToMessageId)
+      : undefined;
     const optimistic: Message = {
       id: localId,
       conversation_id: conversationId,
@@ -167,6 +170,15 @@ export const useMessagesStore = create<MessagesState>((set, get) => ({
       edited_at: null,
       deleted_at: null,
       client_nonce: nonce,
+      reply_to_message_id: replyToMessageId ?? null,
+      reply_to: existingReplyTarget
+        ? {
+            id: existingReplyTarget.id,
+            sender_id: existingReplyTarget.sender_id,
+            body: existingReplyTarget.body,
+            deleted_at: existingReplyTarget.deleted_at,
+          }
+        : null,
       _local_status: 'sending',
     };
     set((s) => ({
@@ -177,7 +189,12 @@ export const useMessagesStore = create<MessagesState>((set, get) => ({
     }));
 
     try {
-      const saved = await messagesApi.sendMessage(conversationId, text, nonce);
+      const saved = await messagesApi.sendMessage(
+        conversationId,
+        text,
+        nonce,
+        replyToMessageId,
+      );
       set((s) => ({
         threads: {
           ...s.threads,

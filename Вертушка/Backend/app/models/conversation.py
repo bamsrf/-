@@ -156,6 +156,13 @@ class Message(Base):
         String(64), nullable=True, index=True
     )
 
+    # Reply на другое сообщение в том же треде (V2.8)
+    reply_to_message_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("messages.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+
     __table_args__ = (
         Index("ix_messages_conv_created", "conversation_id", "created_at"),
         UniqueConstraint("sender_id", "client_nonce", name="uq_message_idempotency"),

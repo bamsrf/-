@@ -188,15 +188,24 @@ async def post_message(
     sender_id: UUID,
     body: str,
     client_nonce: str | None,
+    reply_to_message_id: UUID | None = None,
 ) -> Message:
     """Сохраняет сообщение и обновляет агрегаты на conversation.
 
     Идемпотентность: если (sender_id, client_nonce) уже существует — возвращаем то же.
+    Если указан reply_to_message_id, проверяем что он принадлежит этому диалогу.
     """
     if client_nonce:
         existing = await find_existing_message_by_nonce(db, sender_id, client_nonce)
         if existing and existing.conversation_id == conversation.id:
             return existing
+
+    # Валидация reply: цель должна быть в этом же диалоге, иначе ignore (None)
+    valid_reply: UUID | None = None
+    if reply_to_message_id is not None:
+        target = await db.get(Message, reply_to_message_id)
+        if target and target.conversation_id == conversation.id:
+            valid_reply = reply_to_message_id
 
     now = datetime.utcnow()
     message = Message(
@@ -205,6 +214,7 @@ async def post_message(
         body=body,
         client_nonce=client_nonce,
         created_at=now,
+        reply_to_message_id=valid_reply,
     )
     db.add(message)
 

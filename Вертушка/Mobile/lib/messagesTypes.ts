@@ -28,6 +28,13 @@ export interface Conversation {
   pinned?: boolean;
 }
 
+export interface ReplyPreview {
+  id: string;
+  sender_id: string;
+  body: string | null;
+  deleted_at: string | null;
+}
+
 export interface Message {
   id: string;
   conversation_id: string;
@@ -37,6 +44,8 @@ export interface Message {
   edited_at: string | null;
   deleted_at: string | null;
   client_nonce: string | null;
+  reply_to_message_id?: string | null;
+  reply_to?: ReplyPreview | null;
   /** Локальный клиентский статус. На сервере не хранится. */
   _local_status?: 'sending' | 'sent' | 'failed';
 }
