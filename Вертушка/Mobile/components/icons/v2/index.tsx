@@ -169,32 +169,33 @@ export const CheckCircleV2: React.FC<V2IconProps> = ({ size = 24, color = '#2A4B
   )}</Canvas>
 );
 
-// 5. x
-export const XV2: React.FC<V2IconProps> = ({ size = 24, color = '#2A4BD7', weight = 'regular', testID }) => (
-  <Canvas size={size} testID={testID}>{(fid) => (
-    <>
-      {!isFill(weight) && (
-        <G filter={`url(#${fid})`} opacity={haloOp(weight)}>
-          <Path d="M56 56L200 200" stroke={color} strokeWidth={48} strokeLinecap="round" />
-          <Path d="M200 56L56 200" stroke={color} strokeWidth={48} strokeLinecap="round" />
-        </G>
-      )}
-      <Path d="M60 60L196 196" stroke={color} strokeWidth={40} strokeLinecap="round" />
-      <Path d="M196 60L60 196" stroke={color} strokeWidth={40} strokeLinecap="round" />
-    </>
-  )}</Canvas>
-);
+// 5. x — Stamper Outline v3: чистый тонкий stroke без halo.
+//    weight='fill' оставляет тот же stroke + слегка толще, для active state.
+export const XV2: React.FC<V2IconProps> = ({ size = 24, color = '#2A4BD7', weight = 'regular', testID }) => {
+  const sw = weight === 'fill' || weight === 'bold' ? 24 : 18;
+  return (
+    <Canvas size={size} testID={testID}>{() => (
+      <>
+        <Path d="M60 60L196 196" stroke={color} strokeWidth={sw} strokeLinecap="round" />
+        <Path d="M196 60L60 196" stroke={color} strokeWidth={sw} strokeLinecap="round" />
+      </>
+    )}</Canvas>
+  );
+};
 
-// 6. x-circle
-export const XCircleV2: React.FC<V2IconProps> = ({ size = 24, color = '#2A4BD7', weight = 'regular', testID }) => (
-  <Canvas size={size} testID={testID}>{(fid) => (
-    <>
-      <Circle cx={128} cy={128} r={104} fill="none" stroke={color} strokeWidth={20} />
-      <Path d="M96 96L160 160" stroke={color} strokeWidth={22} strokeLinecap="round" />
-      <Path d="M160 96L96 160" stroke={color} strokeWidth={22} strokeLinecap="round" />
-    </>
-  )}</Canvas>
-);
+// 6. x-circle — outline-only.
+export const XCircleV2: React.FC<V2IconProps> = ({ size = 24, color = '#2A4BD7', weight = 'regular', testID }) => {
+  const sw = weight === 'fill' ? 18 : 14;
+  return (
+    <Canvas size={size} testID={testID}>{() => (
+      <>
+        <Circle cx={128} cy={128} r={104} fill="none" stroke={color} strokeWidth={sw} />
+        <Path d="M96 96L160 160" stroke={color} strokeWidth={sw + 2} strokeLinecap="round" />
+        <Path d="M160 96L96 160" stroke={color} strokeWidth={sw + 2} strokeLinecap="round" />
+      </>
+    )}</Canvas>
+  );
+};
 
 // 7. pencil
 export const PencilV2: React.FC<V2IconProps> = ({ size = 24, color = '#2A4BD7', weight = 'regular', testID }) => (
@@ -336,15 +337,15 @@ export const CaretLeftV2: React.FC<V2IconProps> = ({ size = 24, color = '#2A4BD7
   )}</Canvas>
 );
 
-// 18. caret-right
-export const CaretRightV2: React.FC<V2IconProps> = ({ size = 24, color = '#2A4BD7', weight = 'regular', testID }) => (
-  <Canvas size={size} testID={testID}>{(fid) => (
-    <>
-      {!isFill(weight) && <Path d="M92 52L180 128L92 204" stroke={color} strokeWidth={44} strokeLinecap="round" strokeLinejoin="round" filter={`url(#${fid})`} opacity={haloOp(weight)} fill="none" />}
-      <Path d="M96 56L176 128L96 200" stroke={color} strokeWidth={36} strokeLinecap="round" strokeLinejoin="round" fill="none" />
-    </>
-  )}</Canvas>
-);
+// 18. caret-right — outline-only.
+export const CaretRightV2: React.FC<V2IconProps> = ({ size = 24, color = '#2A4BD7', weight = 'regular', testID }) => {
+  const sw = weight === 'fill' ? 24 : 18;
+  return (
+    <Canvas size={size} testID={testID}>{() => (
+      <Path d="M96 56L176 128L96 200" stroke={color} strokeWidth={sw} strokeLinecap="round" strokeLinejoin="round" fill="none" />
+    )}</Canvas>
+  );
+};
 
 // caret-up / caret-down — повёрнутые caret-left/right
 export const CaretUpV2: React.FC<V2IconProps> = ({ size = 24, color = '#2A4BD7', weight = 'regular', testID }) => (
@@ -422,28 +423,58 @@ export const WarningCircleV2: React.FC<V2IconProps> = ({ size = 24, color = '#2A
   )}</Canvas>
 );
 
-// 22. bell
-export const BellV2: React.FC<V2IconProps> = ({ size = 24, color = '#2A4BD7', weight = 'regular', testID }) => (
-  <Canvas size={size} testID={testID}>{(fid) => (
-    <>
-      {!isFill(weight) && <Path d="M128 24C84 24 52 60 52 104v72l-20 24h192l-20-24v-72c0-44-32-80-76-80z" fill={color} filter={`url(#${fid})`} opacity={haloOp(weight)} />}
-      <Path d="M128 28C88 28 56 62 56 104v68l-18 22h180l-18-22v-68c0-42-32-76-72-76z" fill={color} />
-      <Rect x={104} y={200} width={48} height={28} rx={14} fill={color} />
-    </>
-  )}</Canvas>
-);
+// 22. bell — Stamper Outline v3: контурный bell без halo, тонкий stroke.
+export const BellV2: React.FC<V2IconProps> = ({ size = 24, color = '#2A4BD7', weight = 'regular', testID }) => {
+  const sw = weight === 'fill' ? 18 : 14;
+  return (
+    <Canvas size={size} testID={testID}>{() => (
+      <>
+        <Path
+          d="M128 28C88 28 56 62 56 104v52c0 18-8 28-20 38h184c-12-10-20-20-20-38v-52c0-42-32-76-72-76z"
+          fill="none"
+          stroke={color}
+          strokeWidth={sw}
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        />
+        <Path
+          d="M108 212c4 10 12 16 20 16s16-6 20-16"
+          fill="none"
+          stroke={color}
+          strokeWidth={sw}
+          strokeLinecap="round"
+        />
+      </>
+    )}</Canvas>
+  );
+};
 
-// 23. bell-slash
-export const BellSlashV2: React.FC<V2IconProps> = ({ size = 24, color = '#2A4BD7', weight = 'regular', testID }) => (
-  <Canvas size={size} testID={testID}>{(fid) => (
-    <>
-      {!isFill(weight) && <Path d="M128 28C88 28 56 62 56 104v68l-18 22h180l-18-22v-68c0-42-32-76-72-76z" fill={color} filter={`url(#${fid})`} opacity={haloOp(weight)} />}
-      <Path d="M128 28C88 28 56 62 56 104v68l-18 22h180l-18-22v-68c0-42-32-76-72-76z" fill={color} />
-      <Rect x={104} y={200} width={48} height={28} rx={14} fill={color} />
-      <Rect x={28} y={20} width={200} height={28} rx={14} fill="#fff" opacity={0.9} transform="rotate(45 128 128)" />
-    </>
-  )}</Canvas>
-);
+// 23. bell-slash — Stamper Outline v3.
+export const BellSlashV2: React.FC<V2IconProps> = ({ size = 24, color = '#2A4BD7', weight = 'regular', testID }) => {
+  const sw = weight === 'fill' ? 18 : 14;
+  return (
+    <Canvas size={size} testID={testID}>{() => (
+      <>
+        <Path
+          d="M128 28C88 28 56 62 56 104v52c0 18-8 28-20 38h184c-12-10-20-20-20-38v-52c0-42-32-76-72-76z"
+          fill="none"
+          stroke={color}
+          strokeWidth={sw}
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        />
+        <Path
+          d="M108 212c4 10 12 16 20 16s16-6 20-16"
+          fill="none"
+          stroke={color}
+          strokeWidth={sw}
+          strokeLinecap="round"
+        />
+        <Path d="M36 36L220 220" stroke={color} strokeWidth={sw} strokeLinecap="round" />
+      </>
+    )}</Canvas>
+  );
+};
 
 // 24. cloud-slash
 export const CloudSlashV2: React.FC<V2IconProps> = ({ size = 24, color = '#2A4BD7', weight = 'regular', testID }) => (
@@ -493,38 +524,24 @@ export const KeyholeV2: React.FC<V2IconProps> = ({ size = 24, color = '#2A4BD7',
   )}</Canvas>
 );
 
-// 28. dots-three
-export const DotsThreeV2: React.FC<V2IconProps> = ({ size = 24, color = '#2A4BD7', weight = 'regular', testID }) => (
-  <Canvas size={size} testID={testID}>{(fid) => (
+// 28. dots-three — Stamper Outline v3: компактные dots без halo.
+export const DotsThreeV2: React.FC<V2IconProps> = ({ size = 24, color = '#2A4BD7', testID }) => (
+  <Canvas size={size} testID={testID}>{() => (
     <>
-      {!isFill(weight) && (
-        <G filter={`url(#${fid})`} opacity={haloOp(weight)}>
-          <Circle cx={56} cy={128} r={28} fill={color} />
-          <Circle cx={128} cy={128} r={28} fill={color} />
-          <Circle cx={200} cy={128} r={28} fill={color} />
-        </G>
-      )}
-      <Circle cx={56} cy={128} r={24} fill={color} />
-      <Circle cx={128} cy={128} r={24} fill={color} />
-      <Circle cx={200} cy={128} r={24} fill={color} />
+      <Circle cx={56} cy={128} r={18} fill={color} />
+      <Circle cx={128} cy={128} r={18} fill={color} />
+      <Circle cx={200} cy={128} r={18} fill={color} />
     </>
   )}</Canvas>
 );
 
-// 29. dots-three-vertical
-export const DotsThreeVerticalV2: React.FC<V2IconProps> = ({ size = 24, color = '#2A4BD7', weight = 'regular', testID }) => (
-  <Canvas size={size} testID={testID}>{(fid) => (
+// 29. dots-three-vertical — Stamper Outline v3.
+export const DotsThreeVerticalV2: React.FC<V2IconProps> = ({ size = 24, color = '#2A4BD7', testID }) => (
+  <Canvas size={size} testID={testID}>{() => (
     <>
-      {!isFill(weight) && (
-        <G filter={`url(#${fid})`} opacity={haloOp(weight)}>
-          <Circle cx={128} cy={56} r={28} fill={color} />
-          <Circle cx={128} cy={128} r={28} fill={color} />
-          <Circle cx={128} cy={200} r={28} fill={color} />
-        </G>
-      )}
-      <Circle cx={128} cy={56} r={24} fill={color} />
-      <Circle cx={128} cy={128} r={24} fill={color} />
-      <Circle cx={128} cy={200} r={24} fill={color} />
+      <Circle cx={128} cy={56} r={18} fill={color} />
+      <Circle cx={128} cy={128} r={18} fill={color} />
+      <Circle cx={128} cy={200} r={18} fill={color} />
     </>
   )}</Canvas>
 );

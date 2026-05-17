@@ -1,27 +1,26 @@
 /**
- * <Icon> — единый wrapper для всех иконок приложения (B2 Iconography).
+ * <Icon> — единый wrapper для всех иконок приложения (Stamper Outline v3).
  *
- * ▶ Принципы (B2):
- *   - Outline default; filled только для active state.
- *   - Размеры через семантические пресеты (xs|sm|md|lg|xl).
- *   - Цвет через семантическую роль (default|brand|accent|state.*|onBrand|disabled),
- *     НЕ через hex. Маппинг роль→hex резолвится из T.palette[*][mode].
- *   - Touch target ≥44pt автоматически (auto-hitSlop).
+ * ▶ Концепция (закреплена, не меняем):
+ *   2 уровня, без серединных вариаций:
+ *     • HERO (3 brand-сущности): heart=fill, disc=duotone, gift=duotone.
+ *     • UI (всё остальное): weight=regular (тонкий outline), БЕЗ halo.
+ *   Active state выражаем сменой цвета (brand/accent), а не утолщением.
+ *   В исключительных случаях (tab bar) можно явно передать weight="fill".
+ *
+ * ▶ Почему так:
+ *   До v3 был внешний halo wrapper (масштабированная копия + iOS shadowBlur)
+ *   и встроенный <FeGaussianBlur> у V2-иконок. Результат — серое пятно
+ *   вокруг каждого креста/плюса/чека, и filled-силуэты везде по дефолту.
+ *   v3 убирает оба halo-слоя и переводит дефолт на `regular`.
  *
  * ▶ ВАЖНО — НЕ ИМПОРТИРУЙ Ionicons или phosphor-react-native НАПРЯМУЮ.
- *   Только через этот компонент. Это инвариант B2 — гарантирует, что
- *   стилистика не «расползётся» обратно в outline+filled mix.
- *   ESLint-rule на эту тему — отдельная задача, пока соблюдается code review-ом.
- *
- * ▶ Имена в registry — kebab-case (как в Ionicons), маппнуты на Phosphor PascalCase
- *   через мигра-таблицу из B2 Iconography (`Polish Vertushka (2).zip` →
- *   `b2-artboard-07-migration.jsx`). Кастомные hero-icons префиксованы `★` и
- *   живут в `components/icons/hero/`.
+ *   Только через этот компонент.
  *
  * Пример:
- *   <Icon name="disc" size="md" color="brand" variant="active" />
- *   <Icon name="gift" size="sm" color="onBrand" />
- *   <Icon name="warning-circle" size="sm" color="error" />
+ *   <Icon name="bell" size="md" color="brand" />          // outline, без halo
+ *   <Icon name="heart" size="md" color="accent" />        // hero filled
+ *   <Icon name="disc" size="lg" color="brand" />          // hero duotone
  */
 
 import React from 'react';
@@ -247,15 +246,10 @@ const REGISTRY = {
   // выражается аурой через RarityAura.tsx, иконных маркеров не нужно.
 } satisfies Record<string, IconComponent>;
 
-// Имена, которые рендерятся V2-компонентами (с встроенным halo через
-// FeGaussianBlur в SVG). Для них не нужен внешний halo wrapper, иначе
-// получим double-glow. Все остальные иконки — Phosphor + внешний halo.
-const V2_NAMES = new Set<string>(['x', 'x-circle', 'dots-three', 'dots-three-vertical']);
-
-// Имена, для которых дефолтный weight = `regular` (outline) вместо `fill`.
-// Используется для иконок, где solid-силуэт смотрится тяжело и теряет
-// семантику: лупа без полого «стекла», scan без inner-square.
-const OUTLINE_NAMES = new Set<string>(['magnifying-glass', 'scan']);
+// HERO set — 3 brand-сущности, для которых дефолт = filled/duotone (узнаваемый
+// силуэт). Всё остальное в registry едет на regular (тонкий outline).
+const HERO_FILL_NAMES = new Set<string>(['heart']);
+const HERO_DUOTONE_NAMES = new Set<string>(['disc', 'gift', 'vinyl-label']);
 
 export type IconName = keyof typeof REGISTRY;
 
@@ -379,26 +373,6 @@ const resolveColor = (color: IconColor | string, mode: 'light' | 'dark'): string
   return swatch[mode];
 };
 
-// Перцептивная светлота: sRGB relative luminance, кат-офф 0.78. Используется
-// для отключения halo на белых/околобелых иконках (см. Icon component).
-const isLightHex = (input: string): boolean => {
-  if (!input || input[0] !== '#') return false;
-  let hex = input.slice(1);
-  if (hex.length === 3) {
-    hex = hex
-      .split('')
-      .map((c) => c + c)
-      .join('');
-  }
-  if (hex.length !== 6) return false;
-  const r = parseInt(hex.slice(0, 2), 16) / 255;
-  const g = parseInt(hex.slice(2, 4), 16) / 255;
-  const b = parseInt(hex.slice(4, 6), 16) / 255;
-  if ([r, g, b].some(Number.isNaN)) return false;
-  const lum = 0.2126 * r + 0.7152 * g + 0.0722 * b;
-  return lum > 0.78;
-};
-
 // ───────────────────────────────────────────────────────────────────────────
 // Component
 // ───────────────────────────────────────────────────────────────────────────
@@ -429,32 +403,19 @@ export const Icon: React.FC<IconProps> = ({
     variant === 'disabled' ? 'disabled' : color;
   const resolvedColor = resolveColor(effectiveColor, mode);
 
-  // Two render paths:
-  //  • V2-иконки (x / x-circle / dots-three / dots-three-vertical) — встроенный
-  //    halo через `<FeGaussianBlur>` внутри SVG; default weight = `regular`,
-  //    `fill` отключает их внутренний halo (active state).
-  //  • Phosphor — нет встроенного halo. Рендерим Phosphor `fill` + наш
-  //    внешний halo wrapper (масштабированная копия + iOS shadow blur).
-  //
-  // Для светлых цветов (white-on-cobalt) halo всегда отключаем — белый
-  // glow на синем фоне = размытое пятно вместо иконки.
-  const isV2 = V2_NAMES.has(resolvedName);
-  const isLightColor = isLightHex(resolvedColor);
-
+  // Weight resolution — единая логика, без V2-исключений:
+  //   1. явный override берём как есть;
+  //   2. hero (heart) → fill;
+  //   3. hero (disc/gift/vinyl-label) → duotone;
+  //   4. всё остальное → regular (тонкий outline).
   let resolvedWeight: IconWeight;
-  if (isV2) {
-    resolvedWeight = isLightColor
-      ? 'fill'
-      : weightOverride ?? (variant === 'disabled' ? 'fill' : 'regular');
+  if (weightOverride) {
+    resolvedWeight = weightOverride;
+  } else if (HERO_FILL_NAMES.has(resolvedName)) {
+    resolvedWeight = 'fill';
+  } else if (HERO_DUOTONE_NAMES.has(resolvedName)) {
+    resolvedWeight = 'duotone';
   } else {
-    resolvedWeight =
-      weightOverride ??
-      (OUTLINE_NAMES.has(resolvedName) ? 'regular' : 'fill');
-  }
-  // OUTLINE_NAMES никогда не заливаем solid `fill` — даже если
-  // вызывающий явно его передал (tab bar в активном состоянии). Лупа и
-  // scan-frame визуально работают как outline-силуэт + halo glow.
-  if (OUTLINE_NAMES.has(resolvedName) && resolvedWeight === 'fill') {
     resolvedWeight = 'regular';
   }
 
@@ -475,16 +436,6 @@ export const Icon: React.FC<IconProps> = ({
     justifyContent: 'center',
   };
 
-  // Внешний halo рендерится только для Phosphor-иконок и только когда:
-  //  - размер ≥ 14pt (мелкие inline-маркеры остаются крепкими)
-  //  - не disabled-variant
-  //  - цвет не светлый (см. выше про white-on-cobalt)
-  const showExternalHalo =
-    !isV2 && resolvedSize >= 14 && variant !== 'disabled' && !isLightColor;
-  const haloScale = 1.16;
-  const haloOpacity = 0.28;
-  const haloSize = Math.round(resolvedSize * haloScale);
-
   return (
     <View
       style={[containerStyle, style]}
@@ -500,21 +451,6 @@ export const Icon: React.FC<IconProps> = ({
       }
       testID={testID}
     >
-      {showExternalHalo ? (
-        <View
-          pointerEvents="none"
-          style={{
-            position: 'absolute',
-            opacity: haloOpacity,
-            shadowColor: resolvedColor,
-            shadowOffset: { width: 0, height: 0 },
-            shadowOpacity: 0.75,
-            shadowRadius: Math.max(5, resolvedSize * 0.32),
-          }}
-        >
-          <Component size={haloSize} color={resolvedColor} weight={resolvedWeight} />
-        </View>
-      ) : null}
       <Component
         size={resolvedSize}
         color={resolvedColor}

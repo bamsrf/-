@@ -105,7 +105,7 @@ export default function NotificationsScreen() {
           <AnimatedGradientText style={styles.headerTitle}>Активность</AnimatedGradientText>
         </View>
         <TouchableOpacity onPress={handleClose} style={styles.closeBtn} hitSlop={12}>
-          <XV2 size={24} color={Colors.text} weight="bold" />
+          <XV2 size={24} color={Colors.text} />
         </TouchableOpacity>
       </View>
 

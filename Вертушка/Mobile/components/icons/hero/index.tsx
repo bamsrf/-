@@ -1,18 +1,12 @@
 /**
- * Hero icons — 8 кастомных имён из B2 (Stamper Hi-Fi).
+ * Hero icons — Stamper Outline v3.
  *
- * РЕАЛИЗАЦИЯ: Phosphor Regular/Duotone/Fill weights через прокси на ближайшую
- * семантически подходящую Phosphor-иконку. Это решение принято после revision-
- * итераций B2 v2: frosted-glass / кастомный SVG-набор не сложился, поэтому
- * остаёмся в Phosphor-системе с `weight='duotone'` как default визуальным
- * языком всего набора (см. `Icon.tsx`).
+ * Концепция: hero — это 3 brand-сущности (heart/disc/gift), у которых дефолт
+ * не regular, а filled/duotone. Это даёт узнаваемый силуэт. Всё остальное
+ * (trophy, scan, vinyl-label) едет на общем правиле = regular outline.
  *
- * Если позже придут финальные кастомные SVG от дизайнера — заменяем содержимое
- * каждой обёртки на свой `<Svg>`, не трогая ни `Icon.tsx` registry, ни этот
- * экспорт. Контракт props (size/color/weight/testID/style) остаётся.
- *
- * Phosphor v3.x: используем `*Icon`-суффиксированные имена (без суффикса —
- * deprecated).
+ * Weight приходит из Icon.tsx (см. HERO_FILL_NAMES / HERO_DUOTONE_NAMES).
+ * Эти обёртки только проксируют его в Phosphor.
  */
 
 import React from 'react';
@@ -26,28 +20,19 @@ import {
 
 type HeroProps = IconProps;
 
-// Пластинка с канавками. На Phosphor — VinylRecord (не Disc — disc это CD).
-// ВАЖНО: фиксированный `weight='duotone'` — пользователь хочет видеть канавки
-// всегда, в любом контексте (и в активном табе, и в карточках). Halo wrapper
-// в Icon.tsx всё равно дополнительно рендерит solid backdrop → glow остаётся.
-export const DiscGrooves: React.FC<HeroProps> = (p) => (
-  <VinylRecordIcon {...p} weight="duotone" />
-);
+// Пластинка с канавками. По умолчанию Icon.tsx передаёт `duotone` (виден
+// рисунок канавок). Tab bar в активном состоянии передаст `fill` явно.
+export const DiscGrooves: React.FC<HeroProps> = (p) => <VinylRecordIcon {...p} />;
 
-// Gift-box. Метафору «винил внутри подарка» сохраняем семантикой `gift`-имени
-// в registry, но визуально — стандартный Phosphor `Gift`.
-// ВАЖНО: НЕ использовать в вишлист-сценариях (см. комментарий в Icon.tsx registry).
+// Gift-box. По умолчанию Icon.tsx передаёт `duotone`.
+// ВАЖНО: НЕ использовать в вишлист-сценариях.
 export const GiftVinyl: React.FC<HeroProps> = (p) => <GiftIcon {...p} />;
 
-// Trophy. Стандартный `Trophy` от Phosphor — без vinyl-наполнения.
+// Trophy. Обычный outline — больше не «толстый кубок».
 export const TrophyDisc: React.FC<HeroProps> = (p) => <TrophyIcon {...p} />;
 
-// Scan-frame.
+// Scan-frame — outline.
 export const ScanTarget: React.FC<HeroProps> = (p) => <ScanIcon {...p} />;
 
-// Центр VinylSpinner — то же что DiscGrooves, отдельный namespace для смысла.
+// Центр VinylSpinner — duotone (как DiscGrooves), смысловой namespace отдельный.
 export const VinylLabel: React.FC<HeroProps> = (p) => <VinylRecordIcon {...p} />;
-
-// Rarity-маркеры (crown / diamond / flame) удалены — пользователь не использует
-// иконные маркеры для рарити. Тиры выражаются исключительно через RarityAura.tsx
-// (свечение вокруг карточки + пульсация).

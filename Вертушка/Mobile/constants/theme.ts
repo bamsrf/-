@@ -167,22 +167,34 @@ export const T = {
     },
   },
 
-  // ── ICON SYSTEM (B2 Iconography) ─────────────────────────────────────
-  // Решение: Phosphor Regular (`phosphor-react-native`) + 8 кастомных hero-icons
-  // в `components/icons/hero/`. НЕ импортируй Ionicons или Phosphor напрямую —
-  // только через `<Icon>` wrapper из `components/ui/Icon.tsx`.
+  // ── ICON SYSTEM — Stamper Outline v3 ────────────────────────────────
+  // Концепция (закреплена, не меняем):
+  //   2 уровня без серединных вариаций.
+  //
+  //   • HERO (3 brand-сущности): узнаваемый силуэт = заливка.
+  //       heart  → fill      (вишлист/лайк, brand symbol)
+  //       disc   → duotone   (пластинка с канавками)
+  //       gift   → duotone   (подарок-коробка)
+  //
+  //   • UI (всё остальное): тонкий outline = regular.
+  //       bell, check, x, plus, trophy, chat-circle, ... — никаких halo,
+  //       никакой заливки. Active state = смена color, не утолщение.
+  //
+  // Halo glow удалён полностью (и внешний wrapper, и встроенный FeGaussianBlur
+  // у V2-иконок). Если нужно подсветить иконку — это делается обёрткой во
+  // вне (View с shadow), а не в Icon-системе.
+  //
+  // НЕ импортируй Ionicons или Phosphor напрямую — только через <Icon>.
   icon: {
     library: 'phosphor-react-native' as const,
     customPath: 'Mobile/components/icons/hero/' as const,
 
-    // Стиль: duotone default (Phosphor two-tone — мягкий характер), fill только
-    // для active state. Решение принято после frosted-glass revision-итераций.
+    // Дефолтная стилистика: тонкий outline + закруглённые концы.
     style: {
-      weight: 'duotone' as const,
+      weight: 'regular' as const,
       strokeWidth: 2,
       linecap: 'round' as const,
       linejoin: 'round' as const,
-      strokeScale: { 16: 1.5, 20: 1.75, 24: 2.0, 32: 2.0, 48: 2.5 },
     },
 
     // 5 размерных пресетов
@@ -205,25 +217,18 @@ export const T = {
       disabled:  'text.disabled'   as const,
     },
 
-    // Filled-исключения. Везде остальное — outline по правилу
-    // «Outline — дефолт. Filled — только активное состояние».
-    filledExceptions: [
-      'check-circle',  // статус «добавлено» в коллекции
-      'x-circle',      // сброс input
-      'heart-active',  // «в вишлисте»
-      'star-active',   // разблокированная ачивка
-    ] as const,
+    // Hero set — единственные имена с дефолт не-regular weight.
+    // Закреплено в Icon.tsx (HERO_FILL_NAMES + HERO_DUOTONE_NAMES).
+    heroFill:    ['heart'] as const,
+    heroDuotone: ['disc', 'gift', 'vinyl-label'] as const,
 
-    // Rarity-маркеры удалены — пользователь не использует иконные маркеры,
-    // тиры выражаются исключительно через RarityAura.tsx (свечение + пульсация).
-
-    // Custom hero set — 5 иконок-обёрток в components/icons/hero/index.tsx.
+    // Custom hero set — иконки-обёртки в components/icons/hero/index.tsx.
     customSet: [
       { name: 'disc-grooves',   sizes: [16, 24, 48], use: 'Tab bar, empty state, onboarding' },
       { name: 'gift-vinyl',     sizes: [20, 24],     use: 'Profile, GiftGivenItem, booked badge. НЕ использовать в вишлист-сценариях.' },
-      { name: 'trophy-disc',    sizes: [20, 32, 48], use: 'Achievements, top collector' },
-      { name: 'scan-target',    sizes: [24, 48],     use: 'Tab bar Сканер' },
-      { name: 'vinyl-label',    sizes: [24, 32],     use: 'Центр VinylSpinner' },
+      { name: 'trophy-disc',    sizes: [20, 32, 48], use: 'Achievements, top collector — outline.' },
+      { name: 'scan-target',    sizes: [24, 48],     use: 'Tab bar Сканер — outline.' },
+      { name: 'vinyl-label',    sizes: [24, 32],     use: 'Центр VinylSpinner — duotone.' },
     ] as const,
   },
 } as const;
