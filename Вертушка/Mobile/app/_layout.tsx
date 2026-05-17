@@ -17,9 +17,11 @@ import {
   Inter_700Bold,
   Inter_800ExtraBold,
 } from '@expo-google-fonts/inter';
-import { AppState, AppStateStatus } from 'react-native';
+import { AppState, AppStateStatus, Platform } from 'react-native';
 import { useAuthStore, useOnboardingStore } from '../lib/store';
 import { useMessagesStore } from '../lib/messagesStore';
+import { useNotificationsStore } from '../lib/notificationsStore';
+import { api } from '../lib/api';
 
 // Sentry загружается только если пакет установлен (не в Expo Go)
 type SentryStub = { init: (c: object) => void; wrap: <T>(c: T) => T };
@@ -92,19 +94,48 @@ function RootLayout() {
   }, []);
 
   useEffect(() => {
-    // Foreground: уведомление пришло пока приложение открыто
+    // Foreground: уведомление пришло пока приложение открыто — рефрешим unread
     notificationListener.current = Notifications.addNotificationReceivedListener(() => {
-      // Обработка выполняется через setNotificationHandler выше
+      useNotificationsStore.getState().fetchUnreadCount();
     });
 
-    // Tap: пользователь нажал на уведомление
+    // Tap: пользователь нажал на push
     responseListener.current = Notifications.addNotificationResponseReceivedListener((response) => {
       const data = response.notification.request.content.data as Record<string, unknown>;
-      if (data?.recordId) {
-        router.push(`/record/${data.recordId}`);
-      } else if (data?.username) {
-        router.push(`/user/${data.username}`);
+      const type = data?.type as string | undefined;
+      const recordId = (data?.record_id || data?.recordId) as string | undefined;
+      const username = data?.username as string | undefined;
+      const entityId = data?.entity_id as string | undefined;
+
+      if (type === 'follow_request') {
+        router.push('/social/follow-requests');
+        return;
       }
+      if (type === 'achievement_unlocked') {
+        router.push('/achievements');
+        return;
+      }
+      if ((type === 'gift_booked' || type === 'gift_confirmed') && entityId) {
+        router.push(`/gift/${entityId}` as any);
+        return;
+      }
+      if ((type === 'wishlist_in_stock' || type === 'wishlist_price_drop') && recordId) {
+        router.push(`/record/${recordId}` as any);
+        return;
+      }
+      if (type === 'new_follower' && username) {
+        router.push(`/user/${username}` as any);
+        return;
+      }
+      if (recordId) {
+        router.push(`/record/${recordId}` as any);
+        return;
+      }
+      if (username) {
+        router.push(`/user/${username}` as any);
+        return;
+      }
+      router.push('/notifications');
     });
 
     return () => {
@@ -112,6 +143,49 @@ function RootLayout() {
       responseListener.current?.remove();
     };
   }, []);
+
+  // Регистрация Expo push-токена + рефреш unread на foreground
+  useEffect(() => {
+    if (!isAuthenticated) return;
+
+    let cancelled = false;
+    (async () => {
+      try {
+        if (Platform.OS !== 'ios' && Platform.OS !== 'android') return;
+        const { status: existing } = await Notifications.getPermissionsAsync();
+        let granted = existing === 'granted';
+        if (!granted) {
+          const { status: req } = await Notifications.requestPermissionsAsync();
+          granted = req === 'granted';
+        }
+        if (!granted || cancelled) return;
+        const projectId =
+          (Constants.expoConfig?.extra?.eas as { projectId?: string } | undefined)?.projectId ||
+          (Constants as unknown as { easConfig?: { projectId?: string } }).easConfig?.projectId;
+        const tokenResp = await Notifications.getExpoPushTokenAsync(
+          projectId ? { projectId } : undefined,
+        );
+        if (tokenResp?.data && !cancelled) {
+          await api.savePushToken(tokenResp.data);
+        }
+      } catch {
+        // push не критичны
+      }
+    })();
+
+    useNotificationsStore.getState().fetchUnreadCount();
+
+    const sub = AppState.addEventListener('change', (state) => {
+      if (state === 'active') {
+        useNotificationsStore.getState().fetchUnreadCount();
+      }
+    });
+
+    return () => {
+      cancelled = true;
+      sub.remove();
+    };
+  }, [isAuthenticated]);
 
   // Фоновый polling unread-счётчика сообщений: при логине, при возврате в foreground,
   // каждые 20с пока приложение открыто. Заменится на WS-события в M2.
@@ -210,6 +284,10 @@ function RootLayout() {
           <Stack.Screen name="messages/index" />
           <Stack.Screen name="messages/[conversationId]" />
           <Stack.Screen name="messages/new" options={{ presentation: 'modal', animation: 'slide_from_bottom' }} />
+          <Stack.Screen
+            name="notifications"
+            options={{ presentation: 'modal', animation: 'slide_from_bottom' }}
+          />
         </Stack>
         <OnboardingOverlay />
         <AchievementUnlockHost />

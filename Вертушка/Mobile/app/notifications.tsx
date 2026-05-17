@@ -195,6 +195,7 @@ export default function NotificationsScreen() {
 
 function routeForPersonal(item: NotificationItemType, router: ReturnType<typeof useRouter>) {
   const data = item.data || {};
+  const recordId = data.record_id as string | undefined;
   switch (item.type) {
     case 'follow_request':
       router.push('/social/follow-requests');
@@ -204,15 +205,18 @@ function routeForPersonal(item: NotificationItemType, router: ReturnType<typeof 
       return;
     case 'gift_booked':
     case 'gift_confirmed':
-      // нет deeplink на gift-booking deta — открываем профиль
-      router.push('/profile');
+      if (item.entity_id) {
+        router.push(`/gift/${item.entity_id}` as any);
+      } else if (recordId) {
+        router.push(`/record/${recordId}` as any);
+      }
       return;
     case 'wishlist_in_stock':
     case 'wishlist_price_drop':
-      if (data.record_id) router.push(`/record/${data.record_id}`);
+      if (recordId) router.push(`/record/${recordId}` as any);
       return;
     case 'achievement_unlocked':
-      router.push('/profile');
+      router.push('/achievements');
       return;
   }
 }
