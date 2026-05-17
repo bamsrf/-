@@ -18,7 +18,8 @@ import {
   Inter_800ExtraBold,
 } from '@expo-google-fonts/inter';
 import { AppState, AppStateStatus } from 'react-native';
-import { useAuthStore, useOnboardingStore, useMessagesStore } from '../lib/store';
+import { useAuthStore, useOnboardingStore } from '../lib/store';
+import { useMessagesStore } from '../lib/messagesStore';
 
 // Sentry загружается только если пакет установлен (не в Expo Go)
 type SentryStub = { init: (c: object) => void; wrap: <T>(c: T) => T };
