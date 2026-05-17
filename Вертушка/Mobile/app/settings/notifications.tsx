@@ -94,6 +94,26 @@ function Group({ title, children }: { title: string; children: React.ReactNode }
 const START_PRESETS = ['20:00', '21:00', '22:00', '23:00', '00:00'];
 const END_PRESETS = ['06:00', '07:00', '08:00', '09:00', '10:00'];
 
+/**
+ * Backend хранит quiet_hours_* в UTC и сравнивает с datetime.utcnow().time().
+ * UI оперирует локальным временем (пользователь не должен про UTC думать).
+ * Конверсия учитывает текущий локальный offset (DST включён в JS Date).
+ */
+function localHHMMToUtc(local: string): string {
+  const [h, m] = local.split(':').map(Number);
+  const d = new Date();
+  d.setHours(h || 0, m || 0, 0, 0);
+  return `${String(d.getUTCHours()).padStart(2, '0')}:${String(d.getUTCMinutes()).padStart(2, '0')}`;
+}
+
+function utcHHMMToLocal(utc: string | null | undefined, fallbackLocal: string): string {
+  if (!utc) return fallbackLocal;
+  const [h, m] = utc.split(':').map(Number);
+  const d = new Date();
+  d.setUTCHours(h || 0, m || 0, 0, 0);
+  return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+}
+
 function pickPreset(
   title: string,
   presets: string[],
@@ -172,13 +192,19 @@ export default function NotificationsScreen() {
   }, [persist]);
 
   const handlePickStart = () =>
-    pickPreset('Начало тихих часов', START_PRESETS, settings?.quiet_hours_start ?? null, (v) =>
-      persist({ quiet_hours_start: v }),
+    pickPreset(
+      'Начало тихих часов',
+      START_PRESETS,
+      utcHHMMToLocal(settings?.quiet_hours_start, '22:00'),
+      (localValue) => persist({ quiet_hours_start: localHHMMToUtc(localValue) }),
     );
 
   const handlePickEnd = () =>
-    pickPreset('Окончание тихих часов', END_PRESETS, settings?.quiet_hours_end ?? null, (v) =>
-      persist({ quiet_hours_end: v }),
+    pickPreset(
+      'Окончание тихих часов',
+      END_PRESETS,
+      utcHHMMToLocal(settings?.quiet_hours_end, '08:00'),
+      (localValue) => persist({ quiet_hours_end: localHHMMToUtc(localValue) }),
     );
 
   const handleRequestPermission = useCallback(async () => {
@@ -327,7 +353,7 @@ export default function NotificationsScreen() {
                 <View style={styles.settingInfo}>
                   <Text style={styles.settingLabel}>Начало</Text>
                 </View>
-                <Text style={styles.timeValue}>{s.quiet_hours_start ?? '22:00'}</Text>
+                <Text style={styles.timeValue}>{utcHHMMToLocal(s.quiet_hours_start, '22:00')}</Text>
               </TouchableOpacity>
               <TouchableOpacity
                 style={styles.settingRow}
@@ -337,7 +363,7 @@ export default function NotificationsScreen() {
                 <View style={styles.settingInfo}>
                   <Text style={styles.settingLabel}>Окончание</Text>
                 </View>
-                <Text style={styles.timeValue}>{s.quiet_hours_end ?? '08:00'}</Text>
+                <Text style={styles.timeValue}>{utcHHMMToLocal(s.quiet_hours_end, '08:00')}</Text>
               </TouchableOpacity>
             </>
           ) : null}
