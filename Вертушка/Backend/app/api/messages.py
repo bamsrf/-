@@ -1,0 +1,323 @@
+"""
+API личных сообщений (DM).
+
+Privacy-модель: любой авторизованный пользователь может написать кому угодно;
+если получатель не подписан на отправителя — тред помечается request_status='pending'
+у получателя и попадёт в папку «Запросы» (UX-разделение появляется на M3).
+"""
+import logging
+from uuid import UUID
+
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
+from slowapi import Limiter
+from slowapi.util import get_remote_address
+from sqlalchemy import select, and_, or_, func
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
+
+from app.database import get_db
+from app.models.conversation import (
+    Conversation,
+    ConversationParticipant,
+    Message,
+)
+from app.models.user import User
+from app.api.auth import get_current_user
+from app.schemas.message import (
+    ConversationCreate,
+    ConversationDetail,
+    ConversationPartner,
+    ConversationRead,
+    MessageCreate,
+    MessageFolder,
+    MessageRead,
+    ReadMarker,
+    UnreadCount,
+)
+from app.services.messaging import (
+    check_can_send,
+    compute_total_unread,
+    count_unread_in_conversation,
+    get_or_create_conversation,
+    is_user_blocked,
+    mark_read as svc_mark_read,
+    partner_id_of,
+    post_message,
+    require_participant,
+)
+
+logger = logging.getLogger(__name__)
+
+router = APIRouter()
+limiter = Limiter(key_func=get_remote_address)
+
+
+PAGE_LIMIT_DEFAULT = 50
+PAGE_LIMIT_MAX = 100
+
+
+def _conv_to_read(
+    conv: Conversation,
+    partner: User,
+    me_part: ConversationParticipant,
+    unread: int,
+    is_blocked: bool,
+) -> ConversationRead:
+    return ConversationRead(
+        id=conv.id,
+        partner=ConversationPartner(
+            id=partner.id,
+            username=partner.username,
+            display_name=partner.display_name,
+            avatar_url=partner.avatar_url,
+        ),
+        last_message_preview=conv.last_message_preview,
+        last_message_at=conv.last_message_at,
+        last_message_sender_id=conv.last_message_sender_id,
+        unread_count=unread,
+        muted=me_part.muted,
+        request_status=me_part.request_status,  # type: ignore[arg-type]
+        is_blocked=is_blocked,
+    )
+
+
+@router.get("/conversations/", response_model=list[ConversationRead])
+async def list_conversations(
+    folder: MessageFolder = Query("primary"),
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Список диалогов пользователя.
+
+    folder=primary — request_status='accepted' и не архивированные
+    folder=requests — request_status='pending' и не архивированные
+    """
+    parts_q = await db.execute(
+        select(ConversationParticipant)
+        .where(
+            ConversationParticipant.user_id == current_user.id,
+            ConversationParticipant.archived_at.is_(None),
+            ConversationParticipant.request_status
+            == ("pending" if folder == "requests" else "accepted"),
+        )
+    )
+    parts = parts_q.scalars().all()
+    if not parts:
+        return []
+
+    conv_ids = [p.conversation_id for p in parts]
+    convs_q = await db.execute(
+        select(Conversation).where(Conversation.id.in_(conv_ids))
+    )
+    convs = {c.id: c for c in convs_q.scalars().all()}
+
+    partner_ids = [partner_id_of(convs[p.conversation_id], current_user.id) for p in parts]
+    partners_q = await db.execute(select(User).where(User.id.in_(partner_ids)))
+    partners = {u.id: u for u in partners_q.scalars().all()}
+
+    items: list[ConversationRead] = []
+    for p in parts:
+        conv = convs.get(p.conversation_id)
+        if not conv:
+            continue
+        partner = partners.get(partner_id_of(conv, current_user.id))
+        if not partner:
+            continue
+        unread = await count_unread_in_conversation(
+            db, conv.id, current_user.id, p.last_read_at
+        )
+        blocked = await is_user_blocked(db, current_user.id, partner.id)
+        items.append(_conv_to_read(conv, partner, p, unread, blocked))
+
+    items.sort(
+        key=lambda r: r.last_message_at or r.partner.username,
+        reverse=True,
+    )
+    return items
+
+
+@router.post("/conversations/", response_model=ConversationRead, status_code=status.HTTP_200_OK)
+async def create_or_get_conversation(
+    data: ConversationCreate,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Получить или создать диалог с пользователем (idempotent на паре)."""
+    recipient, goes_to_requests = await check_can_send(db, current_user, data.recipient_user_id)
+    conv = await get_or_create_conversation(
+        db, current_user.id, recipient.id, goes_to_requests
+    )
+    me_part = await require_participant(db, conv.id, current_user.id)
+    await db.commit()
+    await db.refresh(conv)
+    await db.refresh(me_part)
+
+    unread = await count_unread_in_conversation(
+        db, conv.id, current_user.id, me_part.last_read_at
+    )
+    blocked = await is_user_blocked(db, current_user.id, recipient.id)
+    return _conv_to_read(conv, recipient, me_part, unread, blocked)
+
+
+@router.get("/conversations/{conversation_id}/", response_model=ConversationDetail)
+async def get_conversation_detail(
+    conversation_id: UUID,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Диалог + первая страница сообщений (PAGE_LIMIT_DEFAULT штук, новые в конце)."""
+    me_part = await require_participant(db, conversation_id, current_user.id)
+    conv = await db.get(Conversation, conversation_id)
+    if not conv:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Диалог не найден")
+
+    partner_id = partner_id_of(conv, current_user.id)
+    partner = await db.get(User, partner_id)
+    if not partner:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Собеседник не найден")
+
+    msgs_stmt = (
+        select(Message)
+        .where(
+            Message.conversation_id == conv.id,
+        )
+        .order_by(Message.created_at.desc())
+        .limit(PAGE_LIMIT_DEFAULT)
+    )
+    if me_part.cleared_at is not None:
+        msgs_stmt = msgs_stmt.where(Message.created_at > me_part.cleared_at)
+    msgs_q = await db.execute(msgs_stmt)
+    messages = list(reversed(msgs_q.scalars().all()))
+
+    unread = await count_unread_in_conversation(
+        db, conv.id, current_user.id, me_part.last_read_at
+    )
+    blocked = await is_user_blocked(db, current_user.id, partner.id)
+    return ConversationDetail(
+        conversation=_conv_to_read(conv, partner, me_part, unread, blocked),
+        messages=[MessageRead.model_validate(m) for m in messages],
+    )
+
+
+@router.get(
+    "/conversations/{conversation_id}/messages/",
+    response_model=list[MessageRead],
+)
+async def list_messages(
+    conversation_id: UUID,
+    before: UUID | None = Query(None),
+    limit: int = Query(PAGE_LIMIT_DEFAULT, ge=1, le=PAGE_LIMIT_MAX),
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Пагинация сообщений: страницами по `limit`, до сообщения с id=before."""
+    me_part = await require_participant(db, conversation_id, current_user.id)
+
+    stmt = select(Message).where(Message.conversation_id == conversation_id)
+    if me_part.cleared_at is not None:
+        stmt = stmt.where(Message.created_at > me_part.cleared_at)
+    if before is not None:
+        before_msg = await db.get(Message, before)
+        if not before_msg or before_msg.conversation_id != conversation_id:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND, detail="Опорное сообщение не найдено"
+            )
+        stmt = stmt.where(Message.created_at < before_msg.created_at)
+
+    stmt = stmt.order_by(Message.created_at.desc()).limit(limit)
+    rows = await db.execute(stmt)
+    messages = list(reversed(rows.scalars().all()))
+    return [MessageRead.model_validate(m) for m in messages]
+
+
+@router.post(
+    "/conversations/{conversation_id}/messages/",
+    response_model=MessageRead,
+    status_code=status.HTTP_201_CREATED,
+)
+@limiter.limit("60/minute")
+async def send_message(
+    request: Request,
+    conversation_id: UUID,
+    data: MessageCreate,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Отправить сообщение в существующий диалог."""
+    me_part = await require_participant(db, conversation_id, current_user.id)
+    conv = await db.get(Conversation, conversation_id)
+    if not conv:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Диалог не найден")
+
+    partner_id = partner_id_of(conv, current_user.id)
+    # Проверяем права (блок / приватный профиль) на каждом сообщении — состояние мог измениться
+    await check_can_send(db, current_user, partner_id)
+
+    message = await post_message(
+        db,
+        conversation=conv,
+        sender_id=current_user.id,
+        body=data.body,
+        client_nonce=data.client_nonce,
+    )
+
+    # Если у меня тред был в pending (необычно — я инициатор), сбросить на accepted
+    if me_part.request_status == "pending":
+        me_part.request_status = "accepted"
+
+    await db.commit()
+    await db.refresh(message)
+    return MessageRead.model_validate(message)
+
+
+@router.post(
+    "/conversations/{conversation_id}/read/",
+    status_code=status.HTTP_200_OK,
+)
+async def mark_conversation_read(
+    conversation_id: UUID,
+    data: ReadMarker,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Пометить диалог прочитанным до указанного сообщения включительно."""
+    me_part = await require_participant(db, conversation_id, current_user.id)
+    await svc_mark_read(db, me_part, data.up_to_message_id)
+    await db.commit()
+    return {"status": "ok"}
+
+
+@router.delete(
+    "/messages/{message_id}/",
+    status_code=status.HTTP_200_OK,
+)
+async def delete_message(
+    message_id: UUID,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Удалить своё сообщение «у всех» (tombstone: body=NULL, deleted_at=now)."""
+    from datetime import datetime as _dt
+
+    message = await db.get(Message, message_id)
+    if not message:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Сообщение не найдено")
+    if message.sender_id != current_user.id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN, detail="Нельзя удалить чужое сообщение"
+        )
+
+    message.body = None
+    message.deleted_at = _dt.utcnow()
+    await db.commit()
+    return {"status": "ok"}
+
+
+@router.get("/unread-count/", response_model=UnreadCount)
+async def unread_count(
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Счётчики непрочитанного для бейджа в табе сообщений."""
+    primary, requests_n = await compute_total_unread(db, current_user.id)
+    return UnreadCount(primary=primary, requests=requests_n)
