@@ -25,6 +25,7 @@ from app.models.user import User
 from app.models.user_block import UserBlock
 from app.api.auth import get_current_user
 from app.schemas.message import (
+    AttachedRecord,
     ConversationCreate,
     ConversationDetail,
     ConversationPartner,
@@ -59,15 +60,23 @@ PAGE_LIMIT_DEFAULT = 50
 PAGE_LIMIT_MAX = 100
 
 
-async def _hydrate_reply_previews(
+async def _hydrate_message_previews(
     db: AsyncSession, messages: list[Message]
 ) -> list[MessageRead]:
-    """Догружает ReplyPreview для сообщений, у которых стоит reply_to_message_id."""
+    """Догружает ReplyPreview и AttachedRecord для batch-отдачи."""
+    from app.models.record import Record
+
     reply_ids = {m.reply_to_message_id for m in messages if m.reply_to_message_id}
     targets: dict = {}
     if reply_ids:
         q = await db.execute(select(Message).where(Message.id.in_(reply_ids)))
         targets = {t.id: t for t in q.scalars().all()}
+
+    record_ids = {m.attached_record_id for m in messages if m.attached_record_id}
+    records: dict = {}
+    if record_ids:
+        rq = await db.execute(select(Record).where(Record.id.in_(record_ids)))
+        records = {r.id: r for r in rq.scalars().all()}
 
     result: list[MessageRead] = []
     for m in messages:
@@ -79,6 +88,16 @@ async def _hydrate_reply_previews(
                 sender_id=t.sender_id,
                 body=t.body,
                 deleted_at=t.deleted_at,
+            )
+        if m.attached_record_id and m.attached_record_id in records:
+            r = records[m.attached_record_id]
+            mr.attached_record = AttachedRecord(
+                id=r.id,
+                title=r.title,
+                artist=r.artist,
+                year=r.year,
+                cover_image_url=r.cover_image_url,
+                cover_url=getattr(r, "cover_url", None),
             )
         result.append(mr)
     return result
@@ -258,7 +277,7 @@ async def get_conversation_detail(
     partner_part = partner_part_q.scalar_one_or_none()
     return ConversationDetail(
         conversation=_conv_to_read(conv, partner, me_part, partner_part, unread, blocked),
-        messages=await _hydrate_reply_previews(db, messages),
+        messages=await _hydrate_message_previews(db, messages),
     )
 
 
@@ -290,7 +309,7 @@ async def list_messages(
     stmt = stmt.order_by(Message.created_at.desc()).limit(limit)
     rows = await db.execute(stmt)
     messages = list(reversed(rows.scalars().all()))
-    return await _hydrate_reply_previews(db, messages)
+    return await _hydrate_message_previews(db, messages)
 
 
 @router.post(
@@ -323,6 +342,7 @@ async def send_message(
         body=data.body,
         client_nonce=data.client_nonce,
         reply_to_message_id=data.reply_to_message_id,
+        attached_record_id=data.attached_record_id,
     )
 
     # Если у меня тред был в pending (необычно — я инициатор), сбросить на accepted
@@ -331,7 +351,8 @@ async def send_message(
 
     await db.commit()
     await db.refresh(message)
-    return MessageRead.model_validate(message)
+    hydrated = await _hydrate_message_previews(db, [message])
+    return hydrated[0]
 
 
 @router.post(

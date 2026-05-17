@@ -189,12 +189,9 @@ async def post_message(
     body: str,
     client_nonce: str | None,
     reply_to_message_id: UUID | None = None,
+    attached_record_id: UUID | None = None,
 ) -> Message:
-    """Сохраняет сообщение и обновляет агрегаты на conversation.
-
-    Идемпотентность: если (sender_id, client_nonce) уже существует — возвращаем то же.
-    Если указан reply_to_message_id, проверяем что он принадлежит этому диалогу.
-    """
+    """Сохраняет сообщение и обновляет агрегаты на conversation."""
     if client_nonce:
         existing = await find_existing_message_by_nonce(db, sender_id, client_nonce)
         if existing and existing.conversation_id == conversation.id:
@@ -207,6 +204,14 @@ async def post_message(
         if target and target.conversation_id == conversation.id:
             valid_reply = reply_to_message_id
 
+    # Валидация прикреплённой пластинки — должна существовать
+    valid_record: UUID | None = None
+    if attached_record_id is not None:
+        from app.models.record import Record
+        rec = await db.get(Record, attached_record_id)
+        if rec is not None:
+            valid_record = attached_record_id
+
     now = datetime.utcnow()
     message = Message(
         conversation_id=conversation.id,
@@ -215,11 +220,14 @@ async def post_message(
         client_nonce=client_nonce,
         created_at=now,
         reply_to_message_id=valid_reply,
+        attached_record_id=valid_record,
     )
     db.add(message)
 
     conversation.last_message_at = now
-    conversation.last_message_preview = body[:160]
+    conversation.last_message_preview = (
+        f"📀 {body}" if valid_record else body
+    )[:160]
     conversation.last_message_sender_id = sender_id
     await db.flush()
     return message

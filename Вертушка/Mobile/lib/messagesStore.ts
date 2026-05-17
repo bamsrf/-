@@ -31,7 +31,12 @@ interface MessagesState {
   loadConversations: (folder: MessageFolder) => Promise<void>;
   loadThread: (conversationId: string) => Promise<void>;
   loadMore: (conversationId: string) => Promise<void>;
-  send: (conversationId: string, body: string, replyToMessageId?: string | null) => Promise<Message | null>;
+  send: (
+    conversationId: string,
+    body: string,
+    replyToMessageId?: string | null,
+    attachedRecord?: { id: string; title: string; artist: string; year: number | null; cover_image_url: string | null; cover_url: string | null } | null,
+  ) => Promise<Message | null>;
   retrySend: (conversationId: string, localId: string) => Promise<void>;
   markRead: (conversationId: string) => Promise<void>;
   refreshUnread: () => Promise<void>;
@@ -150,9 +155,9 @@ export const useMessagesStore = create<MessagesState>((set, get) => ({
     }
   },
 
-  send: async (conversationId, body, replyToMessageId) => {
+  send: async (conversationId, body, replyToMessageId, attachedRecord) => {
     const text = body.trim();
-    if (!text) return null;
+    if (!text && !attachedRecord) return null;
     const me = useAuthStore.getState().user;
     if (!me) return null;
 
@@ -179,6 +184,8 @@ export const useMessagesStore = create<MessagesState>((set, get) => ({
             deleted_at: existingReplyTarget.deleted_at,
           }
         : null,
+      attached_record_id: attachedRecord?.id ?? null,
+      attached_record: attachedRecord ?? null,
       _local_status: 'sending',
     };
     set((s) => ({
@@ -194,6 +201,7 @@ export const useMessagesStore = create<MessagesState>((set, get) => ({
         text,
         nonce,
         replyToMessageId,
+        attachedRecord?.id ?? null,
       );
       set((s) => ({
         threads: {

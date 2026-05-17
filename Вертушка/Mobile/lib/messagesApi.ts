@@ -80,6 +80,7 @@ export const messagesApi = {
     body: string,
     clientNonce: string,
     replyToMessageId?: string | null,
+    attachedRecordId?: string | null,
   ): Promise<Message> {
     const r = await getClient().post(
       `/messages/conversations/${conversationId}/messages/`,
@@ -87,6 +88,7 @@ export const messagesApi = {
         body,
         client_nonce: clientNonce,
         reply_to_message_id: replyToMessageId ?? null,
+        attached_record_id: attachedRecordId ?? null,
       },
     );
     return r.data;

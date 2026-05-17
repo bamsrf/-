@@ -35,6 +35,15 @@ export interface ReplyPreview {
   deleted_at: string | null;
 }
 
+export interface AttachedRecord {
+  id: string;
+  title: string;
+  artist: string;
+  year: number | null;
+  cover_image_url: string | null;
+  cover_url: string | null;
+}
+
 export interface Message {
   id: string;
   conversation_id: string;
@@ -46,6 +55,8 @@ export interface Message {
   client_nonce: string | null;
   reply_to_message_id?: string | null;
   reply_to?: ReplyPreview | null;
+  attached_record_id?: string | null;
+  attached_record?: AttachedRecord | null;
   /** Локальный клиентский статус. На сервере не хранится. */
   _local_status?: 'sending' | 'sent' | 'failed';
 }

@@ -38,7 +38,12 @@ import { useAuthStore } from '../../lib/store';
 import { useMessagesStore } from '../../lib/messagesStore';
 import { resolveMediaUrl } from '../../lib/api';
 import { messagesApi } from '../../lib/messagesApi';
-import type { Conversation, Message, PresenceInfo } from '../../lib/messagesTypes';
+import type {
+  AttachedRecord,
+  Conversation,
+  Message,
+  PresenceInfo,
+} from '../../lib/messagesTypes';
 
 const POLL_INTERVAL_MS = 8000;
 const PRESENCE_INTERVAL_MS = 30_000;
@@ -235,6 +240,52 @@ function MessageBubble({
             </Text>
           </View>
         ) : null}
+        {message.attached_record ? (
+          <View
+            style={[
+              styles.bubbleRecord,
+              isMine ? styles.bubbleRecordMine : styles.bubbleRecordOther,
+            ]}
+          >
+            {message.attached_record.cover_image_url ? (
+              <Image
+                source={resolveMediaUrl(message.attached_record.cover_image_url)}
+                style={styles.bubbleRecordCover}
+                cachePolicy="disk"
+              />
+            ) : (
+              <View
+                style={[
+                  styles.bubbleRecordCover,
+                  { alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(0,0,0,0.05)' },
+                ]}
+              >
+                <Icon name="disc" size={18} color={Colors.textMuted} />
+              </View>
+            )}
+            <View style={{ flex: 1, minWidth: 0 }}>
+              <Text
+                style={[
+                  styles.bubbleRecordTitle,
+                  { color: isMine ? '#fff' : Colors.text },
+                ]}
+                numberOfLines={1}
+              >
+                {message.attached_record.title}
+              </Text>
+              <Text
+                style={[
+                  styles.bubbleRecordSub,
+                  { color: isMine ? 'rgba(255,255,255,0.75)' : Colors.textMuted },
+                ]}
+                numberOfLines={1}
+              >
+                {message.attached_record.artist}
+                {message.attached_record.year ? ` · ${message.attached_record.year}` : ''}
+              </Text>
+            </View>
+          </View>
+        ) : null}
         <Text style={[styles.bubbleBody, isMine && styles.bubbleBodyMine]}>
           {message.body}
         </Text>
@@ -308,7 +359,15 @@ function EmptyState({ partner }: { partner: Conversation['partner'] | null }) {
 }
 
 export default function ConversationScreen() {
-  const { conversationId } = useLocalSearchParams<{ conversationId: string }>();
+  const params = useLocalSearchParams<{
+    conversationId: string;
+    attach_record_id?: string;
+    attach_title?: string;
+    attach_artist?: string;
+    attach_year?: string;
+    attach_cover?: string;
+  }>();
+  const { conversationId } = params;
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const me = useAuthStore((s) => s.user);
@@ -345,7 +404,31 @@ export default function ConversationScreen() {
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [presence, setPresence] = useState<PresenceInfo | null>(null);
   const [replyTo, setReplyTo] = useState<Message | null>(null);
+  const [attachedRecord, setAttachedRecord] = useState<AttachedRecord | null>(null);
   const listRef = useRef<FlatList<FeedItem>>(null);
+
+  // Когда возвращаемся со share-record экрана с params — подхватим выбор
+  useEffect(() => {
+    if (params.attach_record_id && params.attach_title && params.attach_artist) {
+      setAttachedRecord({
+        id: params.attach_record_id,
+        title: params.attach_title,
+        artist: params.attach_artist,
+        year: params.attach_year ? Number(params.attach_year) : null,
+        cover_image_url: params.attach_cover || null,
+        cover_url: null,
+      });
+      // очистим query чтобы не повторно срабатывало
+      router.setParams({
+        attach_record_id: '',
+        attach_title: '',
+        attach_artist: '',
+        attach_year: '',
+        attach_cover: '',
+      });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [params.attach_record_id]);
 
   const selectionMode = selected.size > 0;
   const partnerLastReadAt = conversation?.partner_last_read_at
@@ -468,14 +551,17 @@ export default function ConversationScreen() {
   const feed = useMemo(() => buildFeed(messages, me?.id ?? null), [messages, me?.id]);
 
   const handleSend = useCallback(async () => {
-    if (!conversationId || !draft.trim()) return;
-    const text = draft;
+    if (!conversationId) return;
+    const text = draft.trim() || (attachedRecord ? '📀 пластинка' : '');
+    if (!text && !attachedRecord) return;
     const rt = replyTo?.id ?? null;
+    const ar = attachedRecord;
     setDraft('');
     setReplyTo(null);
-    await sendMessage(conversationId, text, rt);
+    setAttachedRecord(null);
+    await sendMessage(conversationId, text, rt, ar);
     setTimeout(() => listRef.current?.scrollToEnd({ animated: true }), 50);
-  }, [conversationId, draft, replyTo, sendMessage]);
+  }, [conversationId, draft, replyTo, attachedRecord, sendMessage]);
 
   const handleRetry = useCallback(
     (msg: Message) => {
@@ -736,6 +822,37 @@ export default function ConversationScreen() {
           keyboardShouldPersistTaps="handled"
         />
 
+        {attachedRecord ? (
+          <View style={styles.attachBar}>
+            {attachedRecord.cover_image_url ? (
+              <Image
+                source={resolveMediaUrl(attachedRecord.cover_image_url)}
+                style={styles.attachCover}
+                cachePolicy="disk"
+              />
+            ) : (
+              <View style={[styles.attachCover, styles.attachCoverPlaceholder]}>
+                <Icon name="disc" size={16} color={Colors.textMuted} />
+              </View>
+            )}
+            <View style={{ flex: 1, minWidth: 0 }}>
+              <Text style={styles.attachTitle} numberOfLines={1}>
+                {attachedRecord.title}
+              </Text>
+              <Text style={styles.attachSub} numberOfLines={1}>
+                {attachedRecord.artist}
+                {attachedRecord.year ? ` · ${attachedRecord.year}` : ''}
+              </Text>
+            </View>
+            <TouchableOpacity
+              onPress={() => setAttachedRecord(null)}
+              style={styles.replyClose}
+            >
+              <Icon name="close" size={16} color={Colors.textMuted} />
+            </TouchableOpacity>
+          </View>
+        ) : null}
+
         {replyTo ? (
           <View style={styles.replyBar}>
             <View style={styles.replyLine} />
@@ -760,7 +877,11 @@ export default function ConversationScreen() {
             style={styles.attachBtn}
             activeOpacity={0.7}
             onPress={() => {
-              /* TODO V2.9: share record from collection/search */
+              if (!conversationId) return;
+              router.push({
+                pathname: '/messages/share-record' as any,
+                params: { conversationId },
+              });
             }}
           >
             <Icon name="disc" size={20} color={Colors.textMuted} />
@@ -966,6 +1087,42 @@ const styles = StyleSheet.create({
   },
   emptyName: { fontSize: 16, fontWeight: '600', color: Colors.text },
   emptyHint: { fontSize: 13, color: Colors.textMuted },
+
+  /* Attach (record) preview над composer */
+  attachBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: Spacing.md,
+    paddingVertical: 8,
+    borderTopWidth: 1,
+    borderTopColor: Colors.divider,
+    backgroundColor: Colors.background,
+    gap: Spacing.sm,
+  },
+  attachCover: {
+    width: 36,
+    height: 36,
+    borderRadius: 6,
+    backgroundColor: Colors.surface,
+  },
+  attachCoverPlaceholder: { alignItems: 'center', justifyContent: 'center' },
+  attachTitle: { fontSize: 13, fontWeight: '600', color: Colors.text },
+  attachSub: { fontSize: 11, color: Colors.textMuted, marginTop: 1 },
+
+  /* Attached-record card внутри bubble */
+  bubbleRecord: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 6,
+    padding: 6,
+    borderRadius: 10,
+  },
+  bubbleRecordMine: { backgroundColor: 'rgba(255,255,255,0.18)' },
+  bubbleRecordOther: { backgroundColor: 'rgba(59,75,245,0.08)' },
+  bubbleRecordCover: { width: 44, height: 44, borderRadius: 4 },
+  bubbleRecordTitle: { fontSize: 13, fontWeight: '600' },
+  bubbleRecordSub: { fontSize: 11, marginTop: 1 },
 
   /* Reply preview над composer */
   replyBar: {

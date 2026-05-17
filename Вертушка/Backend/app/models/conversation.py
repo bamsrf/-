@@ -163,6 +163,13 @@ class Message(Base):
         nullable=True,
     )
 
+    # Прикреплённая пластинка (V2.9). Если задано — bubble рендерится как карточка.
+    attached_record_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("records.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+
     __table_args__ = (
         Index("ix_messages_conv_created", "conversation_id", "created_at"),
         UniqueConstraint("sender_id", "client_nonce", name="uq_message_idempotency"),
