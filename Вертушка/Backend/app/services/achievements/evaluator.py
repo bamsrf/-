@@ -111,6 +111,27 @@ async def _emit_impl(
             },
         )
 
+        try:
+            from app.services.notification_service import create_notification
+            for code in sorted(unlocked_now):
+                await create_notification(
+                    db,
+                    user_id=user_id,
+                    type="achievement_unlocked",
+                    entity_type="achievement",
+                    entity_id=code,
+                    data={"code": code},
+                    push_title="Новая ачивка!",
+                    push_body=f"Ты разблокировал «{code}»",
+                )
+            await db.commit()
+        except Exception:
+            logger.exception("Failed to create achievement_unlocked notification")
+            try:
+                await db.rollback()
+            except Exception:
+                pass
+
     return sorted(unlocked_now)
 
 

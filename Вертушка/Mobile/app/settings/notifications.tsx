@@ -287,6 +287,27 @@ export default function NotificationsScreen() {
             disabled={isSaving}
           />
           <SettingRow
+            label="Запрос на подписку"
+            description="Когда кто-то хочет подписаться на ваш приватный профиль"
+            value={settings?.notify_follow_request ?? true}
+            onToggle={(val) => handleToggle('notify_follow_request', val)}
+            disabled={isSaving}
+          />
+          <SettingRow
+            label="Вишлист — снова в продаже"
+            description="Когда пластинка из вашего вишлиста появляется у магазинов"
+            value={settings?.notify_wishlist_in_stock ?? true}
+            onToggle={(val) => handleToggle('notify_wishlist_in_stock', val)}
+            disabled={isSaving}
+          />
+          <SettingRow
+            label="Новая ачивка"
+            description="Когда вы разблокировали достижение"
+            value={settings?.notify_achievement ?? true}
+            onToggle={(val) => handleToggle('notify_achievement', val)}
+            disabled={isSaving}
+          />
+          <SettingRow
             label="Обновления приложения"
             description="Новые функции и улучшения"
             value={settings?.notify_app_updates ?? true}

@@ -17,7 +17,8 @@ import {
   Inter_700Bold,
   Inter_800ExtraBold,
 } from '@expo-google-fonts/inter';
-import { useAuthStore, useOnboardingStore } from '../lib/store';
+import { AppState, AppStateStatus } from 'react-native';
+import { useAuthStore, useOnboardingStore, useMessagesStore } from '../lib/store';
 
 // Sentry загружается только если пакет установлен (не в Expo Go)
 type SentryStub = { init: (c: object) => void; wrap: <T>(c: T) => T };
@@ -111,6 +112,36 @@ function RootLayout() {
     };
   }, []);
 
+  // Фоновый polling unread-счётчика сообщений: при логине, при возврате в foreground,
+  // каждые 20с пока приложение открыто. Заменится на WS-события в M2.
+  useEffect(() => {
+    if (!isAuthenticated) return;
+
+    const refresh = () => useMessagesStore.getState().refreshUnread();
+    refresh();
+
+    let timer: ReturnType<typeof setInterval> | null = setInterval(refresh, 20_000);
+    let appState: AppStateStatus = AppState.currentState;
+
+    const sub = AppState.addEventListener('change', (next) => {
+      if (appState.match(/inactive|background/) && next === 'active') {
+        refresh();
+        if (!timer) timer = setInterval(refresh, 20_000);
+      } else if (next.match(/inactive|background/)) {
+        if (timer) {
+          clearInterval(timer);
+          timer = null;
+        }
+      }
+      appState = next;
+    });
+
+    return () => {
+      if (timer) clearInterval(timer);
+      sub.remove();
+    };
+  }, [isAuthenticated]);
+
   useEffect(() => {
     if (fontsLoaded && !isLoading && onboardingReady) {
       SplashScreen.hideAsync().catch(() => {});
@@ -175,6 +206,9 @@ function RootLayout() {
           <Stack.Screen name="dev/icons" />
           <Stack.Screen name="achievements" options={{ headerShown: true, title: 'Ачивки' }} />
           <Stack.Screen name="user/[username]/achievements" options={{ headerShown: true, title: 'Ачивки' }} />
+          <Stack.Screen name="messages/index" />
+          <Stack.Screen name="messages/[conversationId]" />
+          <Stack.Screen name="messages/new" options={{ presentation: 'modal', animation: 'slide_from_bottom' }} />
         </Stack>
         <OnboardingOverlay />
         <AchievementUnlockHost />

@@ -25,6 +25,7 @@ import { Icon } from '@/components/ui';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuthStore, useCollectionStore, useOnboardingStore, useFollowStore, useGiftStore } from '../lib/store';
+import { useMessagesStore } from '../lib/messagesStore';
 import { useTourTarget } from '../lib/useTourTarget';
 import { OnboardingOverlay } from '../components/OnboardingOverlay';
 import { CollectionTab, GiftGivenItem } from '../lib/types';
@@ -41,6 +42,22 @@ import { toastConfig } from '../components/CustomToast';
 import { Colors, Typography, Spacing, BorderRadius, Shadows } from '../constants/theme';
 import { AchievementsBlock } from '../components/AchievementsBlock';
 import { ArchetypeChip } from '../components/ArchetypeChip';
+import { ActivityCard } from '../components/notifications/ActivityCard';
+
+function MessagesMenuItem({ onPress }: { onPress: () => void }) {
+  const unread = useMessagesStore((s) => s.unread.primary + s.unread.requests);
+  return (
+    <TouchableOpacity style={styles.settingsItem} onPress={onPress}>
+      <Icon name="chat-circle" size={24} color={Colors.royalBlue} />
+      <Text style={styles.settingsItemText}>Сообщения</Text>
+      {unread > 0 ? (
+        <View style={styles.followReqBadge}>
+          <Text style={styles.followReqBadgeTxt}>{unread > 99 ? '99+' : unread}</Text>
+        </View>
+      ) : null}
+    </TouchableOpacity>
+  );
+}
 
 function FollowRequestsMenuItem({ onPress }: { onPress: () => void }) {
   const [count, setCount] = useState(0);
@@ -377,6 +394,11 @@ export default function ProfileScreen() {
           ))}
         </View>
 
+        {/* Активность: лента «Ты» и «Подписки» */}
+        <View style={styles.activityWrap}>
+          <ActivityCard />
+        </View>
+
         {/* Ссылка на профиль */}
         <View
           ref={shareTarget.ref}
@@ -533,6 +555,8 @@ export default function ProfileScreen() {
             )}
             <Text style={styles.settingsItemText}>Экспорт данных</Text>
           </TouchableOpacity>
+
+          <MessagesMenuItem onPress={() => router.push('/messages' as any)} />
 
           <TouchableOpacity
             style={styles.settingsItem}
@@ -739,6 +763,9 @@ const styles = StyleSheet.create({
     ...Typography.caption,
     color: Colors.textSecondary,
     textAlign: 'center',
+  },
+  activityWrap: {
+    marginBottom: Spacing.md,
   },
   linkCard: {
     backgroundColor: Colors.surface,

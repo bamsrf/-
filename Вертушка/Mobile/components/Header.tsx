@@ -16,6 +16,7 @@ import { useRouter } from 'expo-router';
 import { GradientText } from './GradientText';
 import { Colors, Typography, Spacing } from '../constants/theme';
 import { useAuthStore } from '../lib/store';
+import { useNotificationsStore } from '../lib/notificationsStore';
 import { resolveMediaUrl } from '../lib/api';
 
 interface HeaderProps {
@@ -34,6 +35,7 @@ export function Header({
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const { user } = useAuthStore();
+  const unreadCount = useNotificationsStore((s) => s.unreadCount);
 
   const handleProfilePress = () => {
     router.push('/profile');
@@ -72,6 +74,7 @@ export function Header({
                     <Icon name="disc" size={20} color={Colors.background} />
                   </LinearGradient>
                 )}
+                {unreadCount > 0 ? <View style={styles.unreadDot} /> : null}
               </TouchableOpacity>
             )
           )}
@@ -116,19 +119,32 @@ const styles = StyleSheet.create({
     width: 40,
     height: 40,
     borderRadius: 20,
-    overflow: 'hidden',
     borderWidth: 2,
     borderColor: Colors.lavender,
+    position: 'relative',
+  },
+  unreadDot: {
+    position: 'absolute',
+    top: -2,
+    right: -2,
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    backgroundColor: Colors.error,
+    borderWidth: 2,
+    borderColor: Colors.background,
   },
   avatar: {
     width: '100%',
     height: '100%',
+    borderRadius: 18,
   },
   avatarPlaceholder: {
     width: '100%',
     height: '100%',
     alignItems: 'center',
     justifyContent: 'center',
+    borderRadius: 18,
   },
   backButton: {
     width: 40,

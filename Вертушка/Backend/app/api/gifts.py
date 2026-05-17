@@ -322,6 +322,36 @@ async def book_gift(
                 )
         except Exception:
             pass
+
+        # In-app + push владельцу — анонимно (если не reveal_gifter_to_owner)
+        if owner:
+            try:
+                from app.services.notification_service import create_notification
+                reveal_gifter = item.wishlist.reveal_gifter_to_owner
+                push_body = (
+                    f"{booking.gifter_name} забронировал(а) «{item.record.title}»"
+                    if reveal_gifter
+                    else f"Кто-то забронировал «{item.record.title}» из твоего вишлиста"
+                )
+                await create_notification(
+                    db,
+                    user_id=owner.id,
+                    actor_id=booking.booked_by_user_id if reveal_gifter else None,
+                    type="gift_booked",
+                    entity_type="gift_booking",
+                    entity_id=str(booking.id),
+                    data={
+                        "record_id": str(item.record.id),
+                        "record_title": item.record.title,
+                        "record_artist": item.record.artist,
+                        "anonymous": not reveal_gifter,
+                    },
+                    push_title="Подарок забронирован",
+                    push_body=push_body,
+                )
+                await db.commit()
+            except Exception:
+                logger.exception("Failed to create gift_booked notification")
     
     return GiftBookingResponse(
         id=booking.id,

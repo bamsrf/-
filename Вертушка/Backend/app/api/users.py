@@ -816,6 +816,25 @@ async def follow_user(
             status=FollowRequestStatus.PENDING,
         )
         db.add(request)
+        await db.flush()
+
+        from app.services.notification_service import create_notification
+        actor_name = current_user.display_name or current_user.username
+        await create_notification(
+            db,
+            user_id=user_id,
+            actor_id=current_user.id,
+            type="follow_request",
+            entity_type="follow_request",
+            entity_id=str(request.id),
+            data={
+                "actor_username": current_user.username,
+                "actor_display_name": current_user.display_name,
+            },
+            push_title="Новый запрос на подписку",
+            push_body=f"{actor_name} хочет на тебя подписаться",
+        )
+
         await db.commit()
         await db.refresh(request)
         return FollowActionResponse(
@@ -829,6 +848,25 @@ async def follow_user(
         following_id=user_id,
     )
     db.add(follow)
+    await db.flush()
+
+    from app.services.notification_service import create_notification
+    actor_name = current_user.display_name or current_user.username
+    await create_notification(
+        db,
+        user_id=user_id,
+        actor_id=current_user.id,
+        type="new_follower",
+        entity_type="user",
+        entity_id=str(current_user.id),
+        data={
+            "actor_username": current_user.username,
+            "actor_display_name": current_user.display_name,
+        },
+        push_title="Новый подписчик",
+        push_body=f"{actor_name} подписался(ась) на тебя",
+    )
+
     await db.commit()
 
     # Эмиссия событий ачивок (K-серия)
@@ -1067,6 +1105,26 @@ async def approve_follow_request(
 
     req.status = FollowRequestStatus.APPROVED
     req.resolved_at = datetime.utcnow()
+    await db.flush()
+
+    from app.services.notification_service import create_notification
+    approver_name = current_user.display_name or current_user.username
+    await create_notification(
+        db,
+        user_id=req.requester_id,
+        actor_id=current_user.id,
+        type="new_follower",
+        entity_type="user",
+        entity_id=str(current_user.id),
+        data={
+            "actor_username": current_user.username,
+            "actor_display_name": current_user.display_name,
+            "approved": True,
+        },
+        push_title="Запрос одобрен",
+        push_body=f"{approver_name} принял(а) твою подписку",
+    )
+
     await db.commit()
 
     # Эмиссия событий ачивок (K-серия) — как при обычном follow
