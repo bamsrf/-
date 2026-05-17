@@ -14,6 +14,7 @@ import type {
   ConversationDetail,
   Message,
   MessageFolder,
+  PresenceInfo,
   UnreadCount,
 } from './messagesTypes';
 
@@ -137,6 +138,11 @@ export const messagesApi = {
 
   async togglePin(conversationId: string): Promise<{ pinned: boolean }> {
     const r = await getClient().post(`/messages/conversations/${conversationId}/pin/`);
+    return r.data;
+  },
+
+  async getPresence(userId: string): Promise<PresenceInfo> {
+    const r = await getClient().get(`/messages/presence/${userId}/`);
     return r.data;
   },
 };

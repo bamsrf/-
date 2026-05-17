@@ -32,6 +32,7 @@ from app.schemas.message import (
     MessageCreate,
     MessageFolder,
     MessageRead,
+    PresenceResponse,
     ReadMarker,
     UnreadCount,
 )
@@ -594,3 +595,28 @@ async def list_blocks(
         select(UserBlock.blocked_id).where(UserBlock.blocker_id == current_user.id)
     )
     return list(result.scalars().all())
+
+
+# ==================== Presence ====================
+
+ONLINE_THRESHOLD_SECONDS = 60
+
+
+@router.get("/presence/{user_id}/", response_model=PresenceResponse)
+async def get_presence(
+    user_id: UUID,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Статус пользователя: онлайн (last_seen_at < 60с) и/или последний визит."""
+    from datetime import datetime as _dt, timedelta as _td
+
+    target = await db.get(User, user_id)
+    if not target:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Пользователь не найден")
+
+    last_seen = target.last_seen_at
+    online = bool(
+        last_seen and last_seen >= _dt.utcnow() - _td(seconds=ONLINE_THRESHOLD_SECONDS)
+    )
+    return PresenceResponse(online=online, last_seen_at=last_seen)

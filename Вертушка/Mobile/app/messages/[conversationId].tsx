@@ -37,11 +37,24 @@ import { useAuthStore } from '../../lib/store';
 import { useMessagesStore } from '../../lib/messagesStore';
 import { resolveMediaUrl } from '../../lib/api';
 import { messagesApi } from '../../lib/messagesApi';
-import type { Conversation, Message } from '../../lib/messagesTypes';
+import type { Conversation, Message, PresenceInfo } from '../../lib/messagesTypes';
 
 const POLL_INTERVAL_MS = 8000;
+const PRESENCE_INTERVAL_MS = 30_000;
 const GROUP_GAP_MS = 5 * 60 * 1000; // сообщения подряд того же sender → одна группа
 const EMPTY_MESSAGES: Message[] = [];
+
+function formatLastSeen(iso: string | null): string {
+  if (!iso) return 'был(а) в сети давно';
+  const d = new Date(iso);
+  const now = new Date();
+  const diffMin = Math.floor((now.getTime() - d.getTime()) / 60_000);
+  if (diffMin < 1) return 'был(а) только что';
+  if (diffMin < 60) return `был(а) ${diffMin} мин назад`;
+  const diffH = Math.floor(diffMin / 60);
+  if (diffH < 24) return `был(а) ${diffH} ч назад`;
+  return `был(а) ${d.toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit' })}`;
+}
 
 function formatBubbleTime(iso: string): string {
   const d = new Date(iso);
@@ -305,6 +318,7 @@ export default function ConversationScreen() {
     conversation?.partner ?? null
   );
   const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [presence, setPresence] = useState<PresenceInfo | null>(null);
   const listRef = useRef<FlatList<FeedItem>>(null);
 
   const selectionMode = selected.size > 0;
@@ -404,6 +418,26 @@ export default function ConversationScreen() {
     if (!conversation || conversation.unread_count === 0) return;
     markRead(conversationId);
   }, [conversationId, messages.length, conversation, markRead]);
+
+  // Presence: подгружаем статус собеседника каждые 30с пока экран открыт.
+  useEffect(() => {
+    if (!partner?.id) return undefined;
+    let cancelled = false;
+    const refresh = async () => {
+      try {
+        const p = await messagesApi.getPresence(partner.id);
+        if (!cancelled) setPresence(p);
+      } catch {
+        // тихо
+      }
+    };
+    refresh();
+    const t = setInterval(refresh, PRESENCE_INTERVAL_MS);
+    return () => {
+      cancelled = true;
+      clearInterval(t);
+    };
+  }, [partner?.id]);
 
   const feed = useMemo(() => buildFeed(messages, me?.id ?? null), [messages, me?.id]);
 
@@ -574,9 +608,25 @@ export default function ConversationScreen() {
             ) : (
               <View style={[styles.partnerAvatarWrap, styles.partnerAvatarSkeleton]} />
             )}
-            <Text style={styles.partnerName} numberOfLines={1}>
-              {partner ? headerName : 'Загрузка…'}
-            </Text>
+            <View style={styles.partnerTextWrap}>
+              <Text style={styles.partnerName} numberOfLines={1}>
+                {partner ? headerName : 'Загрузка…'}
+              </Text>
+              {partner && presence ? (
+                <View style={styles.partnerStatusRow}>
+                  {presence.online ? (
+                    <>
+                      <View style={styles.onlineDot} />
+                      <Text style={styles.partnerStatusOnline}>в сети</Text>
+                    </>
+                  ) : (
+                    <Text style={styles.partnerStatus}>
+                      {formatLastSeen(presence.last_seen_at)}
+                    </Text>
+                  )}
+                </View>
+              ) : null}
+            </View>
           </TouchableOpacity>
           <TouchableOpacity
             onPress={handleMenu}
@@ -703,7 +753,17 @@ const styles = StyleSheet.create({
     color: '#fff',
     letterSpacing: 0.3,
   },
-  partnerName: { fontSize: 15, fontWeight: '600', color: Colors.text, flex: 1 },
+  partnerTextWrap: { flex: 1, minWidth: 0 },
+  partnerName: { fontSize: 15, fontWeight: '600', color: Colors.text },
+  partnerStatusRow: { flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: 1 },
+  partnerStatus: { fontSize: 11, color: Colors.textMuted },
+  partnerStatusOnline: { fontSize: 11, color: '#30A46C', fontWeight: '500' },
+  onlineDot: {
+    width: 7,
+    height: 7,
+    borderRadius: 4,
+    backgroundColor: '#30A46C',
+  },
 
   list: { paddingHorizontal: Spacing.md, paddingVertical: Spacing.md },
   listEmpty: { flexGrow: 1, justifyContent: 'center' },

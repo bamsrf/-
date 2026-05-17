@@ -81,3 +81,9 @@ class UnreadCount(BaseModel):
     """Счётчики непрочитанного для бейджа в табе."""
     primary: int
     requests: int
+
+
+class PresenceResponse(BaseModel):
+    """Статус собеседника: онлайн / был N мин назад."""
+    online: bool
+    last_seen_at: datetime | None = None
