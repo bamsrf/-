@@ -590,6 +590,74 @@ export interface NotificationSettings {
   notify_new_follower: boolean;
   notify_gift_booked: boolean;
   notify_app_updates: boolean;
+  notify_follow_request: boolean;
+  notify_wishlist_in_stock: boolean;
+  notify_achievement: boolean;
+}
+
+export type NotificationType =
+  | 'follow_request'
+  | 'new_follower'
+  | 'gift_booked'
+  | 'gift_confirmed'
+  | 'wishlist_in_stock'
+  | 'wishlist_price_drop'
+  | 'achievement_unlocked';
+
+export interface NotificationActor {
+  id: string;
+  username: string;
+  display_name?: string | null;
+  avatar_url?: string | null;
+}
+
+export interface NotificationItem {
+  id: string;
+  type: NotificationType;
+  entity_type?: string | null;
+  entity_id?: string | null;
+  data: Record<string, unknown>;
+  created_at: string;
+  read_at?: string | null;
+  actor?: NotificationActor | null;
+}
+
+export interface NotificationListResponse {
+  items: NotificationItem[];
+  unread_count: number;
+  next_cursor?: string | null;
+}
+
+export interface UnreadCountResponse {
+  unread_count: number;
+}
+
+export type SocialFeedType =
+  | 'collection_add'
+  | 'wishlist_add'
+  | 'gift_completed'
+  | 'friend_achievement'
+  | 'friend_new_following';
+
+export interface SocialFeedRecord {
+  id: string;
+  title: string;
+  artist?: string | null;
+  cover_url?: string | null;
+}
+
+export interface SocialFeedItem {
+  type: SocialFeedType;
+  actor: NotificationActor;
+  created_at: string;
+  record?: SocialFeedRecord | null;
+  target_user?: NotificationActor | null;
+  payload: Record<string, unknown>;
+}
+
+export interface SocialFeedResponse {
+  items: SocialFeedItem[];
+  next_cursor?: string | null;
 }
 
 // ==================== Social ====================

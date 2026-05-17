@@ -38,6 +38,9 @@ import {
   GiftReceivedItem,
   CoverScanResponse,
   NotificationSettings,
+  NotificationListResponse,
+  UnreadCountResponse,
+  SocialFeedResponse,
   SuggestResponse,
   AppleSignInRequest,
   GoogleSignInRequest,
@@ -381,6 +384,42 @@ class ApiClient {
 
   async updateNotificationSettings(data: Partial<NotificationSettings>): Promise<NotificationSettings> {
     const response = await this.client.put<NotificationSettings>('/users/me/notification-settings', data);
+    return response.data;
+  }
+
+  // ==================== Notifications feed (Ты/Подписки) ====================
+
+  async getPersonalNotifications(
+    cursor?: string | null,
+    limit = 20,
+  ): Promise<NotificationListResponse> {
+    const params: Record<string, string | number> = { limit };
+    if (cursor) params.cursor = cursor;
+    const response = await this.client.get<NotificationListResponse>('/notifications/', { params });
+    return response.data;
+  }
+
+  async getUnreadNotificationsCount(): Promise<number> {
+    const response = await this.client.get<UnreadCountResponse>('/notifications/unread-count');
+    return response.data.unread_count;
+  }
+
+  async markNotificationRead(id: string): Promise<number> {
+    const response = await this.client.post<{ unread_count: number }>(`/notifications/${id}/read`);
+    return response.data.unread_count;
+  }
+
+  async markAllNotificationsRead(): Promise<void> {
+    await this.client.post('/notifications/read-all');
+  }
+
+  async getSocialFeed(
+    cursor?: string | null,
+    limit = 20,
+  ): Promise<SocialFeedResponse> {
+    const params: Record<string, string | number> = { limit };
+    if (cursor) params.cursor = cursor;
+    const response = await this.client.get<SocialFeedResponse>('/notifications/social', { params });
     return response.data;
   }
 
