@@ -26,6 +26,7 @@ from app.services.cache import (
     TTL_MASTER_INFO,
 )
 from app.services.search_cache_db import get_from_search_cache, save_to_search_cache
+from app.services.artist_name import clean_artist_name
 from app.schemas.record import (
     RecordSearchResult,
     RecordSearchResponse,
@@ -1155,43 +1156,53 @@ class DiscogsService:
     # ------------------------------------------------------------------
 
     async def _get_master_info(self, master_id: str) -> dict:
-        """Получение обложки и типа релиза из master endpoint.
-        Тип определяется по количеству треков в треклисте:
-        1-3 → single, 4-6 → ep, 7+ → album.
-        Таймаут 10с чтобы не блокировать весь список.
+        """Обложка (`images[0].uri`, полноразмер) и тип релиза по track count
+        для `/masters/{id}`. Используется как fallback на странице артиста,
+        когда мастер не нашёлся в Search API.
+
+        Без `asyncio.wait_for`: rate limiter уже даёт свой timeout (ENRICHMENT
+        priority, 120с в очереди). Обёртка в 10с заставляла последние ~40 из
+        100 запросов проваливаться по тайм-ауту ещё до HTTP и возвращать
+        cover=None без кэширования → следующий заход падал в тот же цикл.
+
+        Положительный результат кэшируется на TTL_MASTER_INFO (7 дней);
+        отрицательный — на 1 час, чтобы не дёргать упавший мастер постоянно.
         """
         cached = await cache.get("master_info", master_id)
         if cached is not None:
             return cached
 
         try:
-            data = await asyncio.wait_for(
-                self._get(f"{self.BASE_URL}/masters/{master_id}", priority=Priority.ENRICHMENT),
-                timeout=10.0,
+            data = await self._get(
+                f"{self.BASE_URL}/masters/{master_id}",
+                priority=Priority.ENRICHMENT,
             )
-            cover = None
-            images = data.get("images", [])
-            if images:
-                cover = images[0].get("uri")
-
-            tracklist = data.get("tracklist", [])
-            track_count = sum(
-                1 for t in tracklist if t.get("type_", "track") == "track"
-            )
-
-            if track_count <= 3:
-                release_type = "single"
-            elif track_count <= 6:
-                release_type = "ep"
-            else:
-                release_type = "album"
-
-            result = {"cover": cover, "release_type": release_type}
-            await cache.set("master_info", master_id, result, TTL_MASTER_INFO)
-            return result
         except Exception:
             logger.exception("Failed to get master info for %s", master_id)
-            return {"cover": None, "release_type": None}
+            neg = {"cover": None, "release_type": None}
+            await cache.set("master_info", master_id, neg, 3600)
+            return neg
+
+        cover = None
+        images = data.get("images", [])
+        if images:
+            cover = images[0].get("uri")
+
+        tracklist = data.get("tracklist", [])
+        track_count = sum(
+            1 for t in tracklist if t.get("type_", "track") == "track"
+        )
+
+        if track_count <= 3:
+            release_type = "single"
+        elif track_count <= 6:
+            release_type = "ep"
+        else:
+            release_type = "album"
+
+        result = {"cover": cover, "release_type": release_type}
+        await cache.set("master_info", master_id, result, TTL_MASTER_INFO)
+        return result
 
     async def _get_artist_thumb(self, artist_id: str) -> str | None:
         """Получение миниатюры артиста по ID. Кэшируется в Redis на 30 дней.
@@ -1242,26 +1253,30 @@ class DiscogsService:
         per_page: int = 100,
         load_all: bool = False,
     ) -> MasterSearchResponse:
-        """Master releases артиста из /artists/{id}/releases.
+        """Master releases артиста по `docs/plans/PRINCIPLES.md`.
 
-        Источник — Discogs `/artists/{id}/releases` напрямую: эндпоинт по
-        конструкции возвращает релизы именно этого artist_id, поэтому
-        однофамильцы (`Mac Miller (2)`, `Jimmy Justice` и т.д.) исключены
-        без дополнительного фильтра.
+        Список — канонический из `/artists/{id}/releases` (фильтр
+        `type=master AND role=Main`: своя дискография, без appearances и
+        featuring). Гарантирует точный artist_id без шума однофамильцев.
 
-        Из ответа берутся записи `type == "master"`, дедуп по id. Порядок
-        фиксируется `sort=year&sort_order=desc` для стабильной пагинации
-        (Mobile досортирует клиентски). Обложки восстанавливаются из
-        `thumb` через `_thumb_to_cover()` — как в `get_artist_releases`.
+        Обложки — гибрид по принципам:
+        1. Один batch-вызов Search API (`/database/search?type=master&artist={name}`)
+           с exact-матчингом по master_id. Закрывает большинство популярных мастеров
+           одним вызовом (~1с) вместо N вызовов `/masters/{id}`.
+        2. Для непокрытых мастеров — параллельный fallback на `_get_master_info`
+           (`/masters/{id}`, `images[0].uri`, полноразмер). Первый визит на нового
+           артиста медленнее, дальше кэш TTL_MASTER_INFO (7 дней) делает мгновенно.
+        3. `thumb` из `/artists/{id}/releases` как fallback **не используется** —
+           150px пиксельно. Лучше `cover_image_url=None`, чем плохая обложка.
 
         Кэшируется в Redis на TTL_ARTIST_MASTERS.
         """
-        ck = f"{artist_id}:v6:p{page}:pp{per_page}"
+        ck = f"{artist_id}:v7:p{page}:pp{per_page}"
         cached = await cache.get("artist_masters", ck)
         if cached is not None:
             return MasterSearchResponse(**cached)
 
-        # Имя артиста — нужно для поля `artist` в MasterSearchResult.
+        # Имя артиста — для поля `artist` в результатах и параметра Search API.
         artist_name = ""
         artist_data = await cache.get("artist", artist_id)
         if artist_data:
@@ -1276,6 +1291,7 @@ class DiscogsService:
         if not artist_name:
             return MasterSearchResponse(results=[], total=0, page=page, per_page=per_page)
 
+        # 1) Канонический список master_id по этому artist_id.
         data = await self._get(
             f"{self.BASE_URL}/artists/{artist_id}/releases",
             params={
@@ -1287,18 +1303,84 @@ class DiscogsService:
             priority=Priority.SEARCH,
         )
 
-        all_results: list[MasterSearchResult] = []
+        masters: list[dict] = []
         seen_ids: set[str] = set()
-
         for item in data.get("releases", []):
             if item.get("type") != "master":
+                continue
+            if item.get("role") != "Main":
                 continue
             item_id = str(item.get("id", ""))
             if not item_id or item_id in seen_ids:
                 continue
             seen_ids.add(item_id)
+            masters.append(item)
 
-            thumb = item.get("thumb")
+        # 2) Обложки batch через Search API; exact match по master_id.
+        search_by_id: dict[str, dict] = {}
+        if masters:
+            clean_name = clean_artist_name(artist_name)
+            try:
+                search_data = await self._get(
+                    f"{self.BASE_URL}/database/search",
+                    params={
+                        "type": "master",
+                        "artist": clean_name,
+                        "page": page,
+                        "per_page": 100,
+                    },
+                    priority=Priority.SEARCH,
+                )
+                for s in search_data.get("results", []):
+                    sid = str(s.get("id", ""))
+                    if sid:
+                        search_by_id[sid] = s
+            except Exception:
+                logger.exception("Search API for artist masters covers failed: %s", artist_id)
+
+        # 3) Параллельный fallback /masters/{id} для тех, кого Search не покрыл.
+        missing_ids = [str(m["id"]) for m in masters if str(m["id"]) not in search_by_id]
+        info_by_id: dict[str, dict] = {}
+        if missing_ids:
+            results = await asyncio.gather(
+                *[self._get_master_info(mid) for mid in missing_ids],
+                return_exceptions=True,
+            )
+            for mid, res in zip(missing_ids, results):
+                if isinstance(res, dict):
+                    info_by_id[mid] = res
+
+        # 4) Сборка результатов: cover приоритет Search → master_info → None.
+        all_results: list[MasterSearchResult] = []
+        for item in masters:
+            item_id = str(item["id"])
+            s = search_by_id.get(item_id)
+            info = info_by_id.get(item_id)
+
+            cover_image_url: str | None = None
+            thumb_image_url: str | None = None
+            release_type: str | None = None
+
+            if s:
+                cover = s.get("cover_image")
+                # cover_image от Search API — стабильный i.discogs.com URL (~500px).
+                # Подписанные api-img.discogs.com URL отбрасываем — они истекают.
+                if cover and "api-img.discogs.com" not in cover:
+                    cover_image_url = cover
+                thumb_image_url = s.get("thumb")
+                formats = s.get("format", [])
+                format_str = ", ".join(formats) if formats else None
+                release_type = self._guess_release_type(format_str)
+
+            if cover_image_url is None and info is not None:
+                cover_image_url = info.get("cover")
+                if release_type is None:
+                    release_type = info.get("release_type")
+
+            # Тип релиза fallback: строка format из /artists/{id}/releases.
+            if release_type is None:
+                release_type = self._guess_release_type(item.get("format"))
+
             try:
                 year = int(item["year"]) if item.get("year") else None
             except (ValueError, TypeError):
@@ -1310,9 +1392,9 @@ class DiscogsService:
                 artist=artist_name,
                 year=year,
                 main_release_id=item_id,
-                cover_image_url=self._thumb_to_cover(thumb),
-                thumb_image_url=thumb,
-                release_type=self._guess_release_type(item.get("format")),
+                cover_image_url=cover_image_url,
+                thumb_image_url=thumb_image_url,
+                release_type=release_type,
             ))
 
         pagination = data.get("pagination", {})
@@ -1321,10 +1403,8 @@ class DiscogsService:
         has_more = page < total_pages
         next_cursor = page + 1 if has_more else None
 
-        # «Пустой артист» — только когда у artist_id вообще нет релизов
-        # в Discogs. Так алиасы без дискографии продолжат отфильтровываться
-        # в search_artists, но артисты с только не-master релизами не
-        # пометятся ошибочно.
+        # «Пустой артист» — только когда у artist_id вообще нет релизов.
+        # Сохраняет фильтрацию пустых алиасов в search_artists.
         if page == 1 and pagination.get("items", 0) == 0:
             await cache.set("artist_empty", artist_id, True, 7 * 86400)
 
