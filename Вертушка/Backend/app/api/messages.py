@@ -81,6 +81,7 @@ def _conv_to_read(
         request_status=me_part.request_status,  # type: ignore[arg-type]
         is_blocked=is_blocked,
         partner_last_read_at=partner_part.last_read_at if partner_part else None,
+        pinned=me_part.pinned_at is not None,
     )
 
 
@@ -143,10 +144,17 @@ async def list_conversations(
             _conv_to_read(conv, partner, p, partner_parts_by_conv.get(conv.id), unread, blocked)
         )
 
-    items.sort(
-        key=lambda r: r.last_message_at or r.partner.username,
-        reverse=True,
-    )
+    # Сначала закреплённые (Telegram-style), внутри секции — по last_message_at desc
+    from datetime import datetime as _dt
+    fallback = _dt.min
+
+    def sort_key(r: ConversationRead) -> tuple:
+        return (
+            0 if r.pinned else 1,
+            -(r.last_message_at.timestamp() if r.last_message_at else fallback.timestamp()),
+        )
+
+    items.sort(key=sort_key)
     return items
 
 
@@ -447,6 +455,48 @@ async def archive_conversation(
     me_part.archived_at = _dt.utcnow()
     await db.commit()
     return {"status": "ok"}
+
+
+# Лимит закреплённых диалогов на пользователя (Telegram: 5)
+PINNED_LIMIT = 5
+
+
+@router.post(
+    "/conversations/{conversation_id}/pin/",
+    status_code=status.HTTP_200_OK,
+)
+async def toggle_pin(
+    conversation_id: UUID,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Закрепить или открепить диалог. Лимит 5 закреплённых на пользователя."""
+    from datetime import datetime as _dt
+
+    me_part = await require_participant(db, conversation_id, current_user.id)
+
+    if me_part.pinned_at is None:
+        # пытаемся закрепить — проверяем лимит
+        count_q = await db.execute(
+            select(func.count(ConversationParticipant.id)).where(
+                ConversationParticipant.user_id == current_user.id,
+                ConversationParticipant.pinned_at.is_not(None),
+            )
+        )
+        count = int(count_q.scalar() or 0)
+        if count >= PINNED_LIMIT:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Можно закрепить максимум {PINNED_LIMIT} диалогов",
+            )
+        me_part.pinned_at = _dt.utcnow()
+        pinned = True
+    else:
+        me_part.pinned_at = None
+        pinned = False
+
+    await db.commit()
+    return {"status": "ok", "pinned": pinned}
 
 
 # ==================== Блокировки ====================

@@ -42,6 +42,7 @@ interface MessagesState {
   archive: (conversationId: string) => Promise<void>;
   clearHistory: (conversationId: string) => Promise<void>;
   blockUser: (userId: string, conversationId?: string) => Promise<void>;
+  togglePin: (conversationId: string) => Promise<void>;
   reset: () => void;
 }
 
@@ -393,6 +394,22 @@ export const useMessagesStore = create<MessagesState>((set, get) => ({
     } catch (e: any) {
       toast.error('Не удалось заблокировать', String(e?.response?.data?.detail || 'Попробуйте позже'));
       throw e;
+    }
+  },
+
+  togglePin: async (conversationId) => {
+    try {
+      const { pinned } = await messagesApi.togglePin(conversationId);
+      set((s) => ({
+        conversationsPrimary: s.conversationsPrimary.map((c) =>
+          c.id === conversationId ? { ...c, pinned } : c
+        ),
+      }));
+    } catch (e: any) {
+      toast.error(
+        'Не удалось закрепить',
+        String(e?.response?.data?.detail || 'Попробуйте позже'),
+      );
     }
   },
 

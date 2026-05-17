@@ -108,6 +108,7 @@ class ConversationParticipant(Base):
     )
     archived_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     cleared_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    pinned_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
     # 'accepted' | 'pending'  — для UX «Запросы»: pending уйдёт в отдельную папку (M3)
     request_status: Mapped[str] = mapped_column(

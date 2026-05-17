@@ -134,4 +134,9 @@ export const messagesApi = {
     const r = await getClient().get('/messages/blocks/');
     return r.data;
   },
+
+  async togglePin(conversationId: string): Promise<{ pinned: boolean }> {
+    const r = await getClient().post(`/messages/conversations/${conversationId}/pin/`);
+    return r.data;
+  },
 };

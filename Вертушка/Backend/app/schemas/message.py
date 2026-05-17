@@ -51,6 +51,8 @@ class ConversationRead(BaseModel):
     is_blocked: bool = False
     # last_read_at собеседника — для отрисовки read-receipt ✓✓ на своих сообщениях
     partner_last_read_at: datetime | None = None
+    # Закреплено пользователем (Telegram-style pinned chat)
+    pinned: bool = False
 
 
 class ConversationDetail(BaseModel):

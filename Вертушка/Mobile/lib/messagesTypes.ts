@@ -24,6 +24,8 @@ export interface Conversation {
   is_blocked: boolean;
   /** ISO datetime — last_read_at собеседника, для отрисовки ✓✓ на своих сообщениях. */
   partner_last_read_at?: string | null;
+  /** Закреплено пользователем (Telegram-style). */
+  pinned?: boolean;
 }
 
 export interface Message {

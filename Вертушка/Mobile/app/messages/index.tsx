@@ -9,7 +9,7 @@
  * М3-эндпоинты accept/reject/block ещё не реализованы — в режиме «Запросы» открытие
  * треда тапом работает; кнопки accept/reject подключим в V2.4.
  */
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   View,
   Text,
@@ -20,6 +20,7 @@ import {
 } from 'react-native';
 import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
+import { Swipeable } from 'react-native-gesture-handler';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Icon, SegmentedControl } from '@/components/ui';
@@ -95,20 +96,72 @@ function ConversationRow({
   onPress,
   onAccept,
   onReject,
+  onTogglePin,
+  onToggleMute,
+  onArchive,
 }: {
   item: Conversation;
   isMine: boolean;
   onPress: () => void;
   onAccept?: () => void;
   onReject?: () => void;
+  onTogglePin?: () => void;
+  onToggleMute?: () => void;
+  onArchive?: () => void;
 }) {
   const previewPrefix = isMine ? 'Вы: ' : '';
   const preview = item.last_message_preview ?? 'Нет сообщений';
   const unread = item.unread_count;
   const isRequest = item.request_status === 'pending';
+  const swipeRef = useRef<Swipeable>(null);
 
-  return (
-    <TouchableOpacity activeOpacity={0.7} style={styles.row} onPress={onPress}>
+  const renderRightActions = () => (
+    <View style={styles.swipeActions}>
+      {!isRequest && onTogglePin ? (
+        <TouchableOpacity
+          style={[styles.swipeBtn, styles.swipeBtnPin]}
+          onPress={() => {
+            swipeRef.current?.close();
+            onTogglePin();
+          }}
+        >
+          <Icon name="star" size={18} color="#fff" />
+          <Text style={styles.swipeBtnTxt}>{item.pinned ? 'Открепить' : 'Закрепить'}</Text>
+        </TouchableOpacity>
+      ) : null}
+      {!isRequest && onToggleMute ? (
+        <TouchableOpacity
+          style={[styles.swipeBtn, styles.swipeBtnMute]}
+          onPress={() => {
+            swipeRef.current?.close();
+            onToggleMute();
+          }}
+        >
+          <Icon
+            name={item.muted ? 'bell' : 'bell-slash'}
+            size={18}
+            color="#fff"
+          />
+          <Text style={styles.swipeBtnTxt}>{item.muted ? 'Звук' : 'Mute'}</Text>
+        </TouchableOpacity>
+      ) : null}
+      {onArchive ? (
+        <TouchableOpacity
+          style={[styles.swipeBtn, styles.swipeBtnArchive]}
+          onPress={() => {
+            swipeRef.current?.close();
+            onArchive();
+          }}
+        >
+          <Icon name="trash" size={18} color="#fff" />
+          <Text style={styles.swipeBtnTxt}>Удалить</Text>
+        </TouchableOpacity>
+      ) : null}
+    </View>
+  );
+
+  const content = (
+    <TouchableOpacity activeOpacity={0.7} style={[styles.row, item.pinned && styles.rowPinned]} onPress={onPress}>
       <Avatar url={item.partner.avatar_url} username={item.partner.username} size={52} />
       <View style={styles.rowMain}>
         <View style={styles.rowTop}>
@@ -160,8 +213,26 @@ function ConversationRow({
             </TouchableOpacity>
           </View>
         ) : null}
+        {item.pinned ? (
+          <View style={styles.pinnedBadge}>
+            <Icon name="star" size={10} color={Colors.royalBlue} />
+          </View>
+        ) : null}
       </View>
     </TouchableOpacity>
+  );
+
+  if (isRequest) return content;
+
+  return (
+    <Swipeable
+      ref={swipeRef}
+      renderRightActions={renderRightActions}
+      friction={2}
+      rightThreshold={40}
+    >
+      {content}
+    </Swipeable>
   );
 }
 
@@ -215,6 +286,9 @@ export default function MessagesInboxScreen() {
   const refreshUnread = useMessagesStore((s) => s.refreshUnread);
   const acceptRequest = useMessagesStore((s) => s.acceptRequest);
   const rejectRequest = useMessagesStore((s) => s.rejectRequest);
+  const togglePin = useMessagesStore((s) => s.togglePin);
+  const toggleMute = useMessagesStore((s) => s.toggleMute);
+  const archive = useMessagesStore((s) => s.archive);
 
   const [folder, setFolder] = useState<Folder>('primary');
 
@@ -264,9 +338,16 @@ export default function MessagesInboxScreen() {
               }
             : undefined
         }
+        onTogglePin={
+          item.request_status === 'accepted' ? () => togglePin(item.id) : undefined
+        }
+        onToggleMute={
+          item.request_status === 'accepted' ? () => toggleMute(item.id) : undefined
+        }
+        onArchive={() => archive(item.id).catch(() => {})}
       />
     ),
-    [me, router, acceptRequest, rejectRequest]
+    [me, router, acceptRequest, rejectRequest, togglePin, toggleMute, archive]
   );
 
   const renderEmpty = () => {
@@ -386,13 +467,46 @@ const styles = StyleSheet.create({
   requestsHintTitle: { fontSize: 13, fontWeight: '600', color: Colors.text },
   requestsHintSub: { fontSize: 12, color: Colors.textMuted, marginTop: 1 },
 
-  listContent: { paddingHorizontal: Spacing.md, paddingBottom: 160 },
+  listContent: { paddingBottom: 160 },
 
   row: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: Spacing.md,
     paddingVertical: 10,
+    paddingHorizontal: Spacing.md,
+    backgroundColor: Colors.background,
+  },
+  rowPinned: {
+    backgroundColor: 'rgba(154,168,255,0.06)',
+  },
+
+  /* Swipe actions */
+  swipeActions: {
+    flexDirection: 'row',
+    alignItems: 'stretch',
+  },
+  swipeBtn: {
+    width: 78,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 4,
+  },
+  swipeBtnPin: { backgroundColor: '#FBBF24' },
+  swipeBtnMute: { backgroundColor: '#94A3B8' },
+  swipeBtnArchive: { backgroundColor: '#E5484D' },
+  swipeBtnTxt: { color: '#fff', fontSize: 11, fontWeight: '600' },
+
+  pinnedBadge: {
+    position: 'absolute',
+    top: 4,
+    right: 4,
+    width: 18,
+    height: 18,
+    borderRadius: 9,
+    backgroundColor: 'rgba(59,75,245,0.12)',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   avatarInitials: {
     color: '#fff',
