@@ -566,18 +566,9 @@ export default function UserProfileScreen() {
 
   const activeFormatLabel = FORMAT_OPTIONS.find((o) => o.id === formatFilter)?.label || 'Все форматы';
 
-  if (isLoading) {
-    return (
-      <View style={[styles.container, styles.center, { paddingTop: insets.top }]}>
-        <ActivityIndicator size="large" color={PP.cobalt} />
-      </View>
-    );
-  }
-
-  if (!pubProfile) return null;
-
-  const initials = pubProfile.username.slice(0, 2).toLowerCase();
-
+  // ВАЖНО: все хуки (useCallback/useMemo/etc.) объявляются ДО любых early-return,
+  // иначе React падает с "Rendered more hooks than during the previous render"
+  // когда профиль грузится (первый рендер — без хуков ниже, второй — с ними).
   const isWishlistTab = activeTab === 'wishlist';
 
   const handleCardPress = useCallback(
@@ -594,6 +585,18 @@ export default function UserProfileScreen() {
     },
     [isWishlistTab, wishlistItems, isOwn, tryOpenBooking, router],
   );
+
+  if (isLoading) {
+    return (
+      <View style={[styles.container, styles.center, { paddingTop: insets.top }]}>
+        <ActivityIndicator size="large" color={PP.cobalt} />
+      </View>
+    );
+  }
+
+  if (!pubProfile) return null;
+
+  const initials = pubProfile.username.slice(0, 2).toLowerCase();
 
   const renderListOrEmpty = () => {
     if (gridData.length === 0) {
