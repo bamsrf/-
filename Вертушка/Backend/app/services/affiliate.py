@@ -11,14 +11,39 @@ Affiliate-overlay для ссылок в магазины.
    — стабильный идентификатор клика, который мы сохранили в `offer_clicks.id`.
    В отчётах партнёрской сети мы потом найдём конверсии по нашему subid.
 
-Store.affiliate_program — JSONB вида:
+Store.affiliate_program — JSONB. Поддерживается ДВА основных сценария
+(см. docs/plans/SHOPS_PARSING.md §13 — гибрид direct + CPA):
+
+A) CPA-сеть (Admitad / EPN / CityAds / Yandex.Market) — для маркетплейсов:
     {
-        "type": "admitad" | "epn" | "cityads" | "yandex_market" | "direct",
+        "type": "admitad",
         "deeplink_template": "https://ad.admitad.com/g/{adcode}/?ulp={url}&subid={subid}",
         "params": {"adcode": "abc123"},
         "commission_pct": 5.0,
         "cookie_window_days": 30
     }
+    → wrap_url оборачивает в Admitad-deeplink с subid=click_id
+
+B) Direct-партнёрка (личная договорённость с владельцем магазина,
+   основной сценарий для нишевых винил-магазинов в РФ):
+    {
+        "type": "direct",
+        "deeplink_template": null,
+        "params": {},
+        "commission_pct": 5.0,
+        "promo_code": "VERTUSHKA10",
+        "contact": "owner@plastinka.com",
+        "negotiated_at": "2026-06-15",
+        "payout_method": "bank_transfer",
+        "notes": "5% от чистого заказа, выплата 1-го числа месяца"
+    }
+    → wrap_url отдаёт исходный URL только с UTM-метками. Магазин читает
+      UTM в Google Analytics, раз в месяц считает заказы с нашими UTM,
+      выплачивает comission_pct. Промокод опц. — даёт юзеру скидку и
+      работает как ещё один трекинг-канал.
+
+Если affiliate_program не задан (NULL) — wrap_url добавляет только UTM
+(=аналогично direct), без обязательств по выплатам.
 
 Все плейсхолдеры в `deeplink_template`:
     {url}     — уже UTM-обогащённый URL магазина, urlencoded
