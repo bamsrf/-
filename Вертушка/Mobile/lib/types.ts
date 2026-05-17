@@ -607,10 +607,15 @@ export interface GiftReceivedItem {
 export interface NotificationSettings {
   notify_new_follower: boolean;
   notify_gift_booked: boolean;
+  notify_gift_confirmed: boolean;
   notify_app_updates: boolean;
   notify_follow_request: boolean;
   notify_wishlist_in_stock: boolean;
   notify_achievement: boolean;
+  notify_milestone: boolean;
+  quiet_hours_enabled: boolean;
+  quiet_hours_start: string | null;  // "HH:MM"
+  quiet_hours_end: string | null;    // "HH:MM"
 }
 
 export type NotificationType =
@@ -620,7 +625,8 @@ export type NotificationType =
   | 'gift_confirmed'
   | 'wishlist_in_stock'
   | 'wishlist_price_drop'
-  | 'achievement_unlocked';
+  | 'achievement_unlocked'
+  | 'milestone_unlocked';
 
 export interface NotificationActor {
   id: string;

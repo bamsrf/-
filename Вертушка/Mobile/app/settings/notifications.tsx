@@ -1,5 +1,5 @@
 /**
- * Настройки уведомлений
+ * Настройки уведомлений — группы по доменам + Quiet Hours (Не беспокоить).
  */
 import { useEffect, useState, useCallback, useRef } from 'react';
 import {
@@ -8,11 +8,13 @@ import {
   StyleSheet,
   ScrollView,
   TouchableOpacity,
-  Alert,
   ActivityIndicator,
   Animated,
   Pressable,
   Linking,
+  Platform,
+  ActionSheetIOS,
+  Alert,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Icon } from '@/components/ui';
@@ -35,45 +37,16 @@ function VinylToggle({ value, onValueChange, disabled }: {
   disabled?: boolean;
 }) {
   const anim = useRef(new Animated.Value(value ? 1 : 0)).current;
-
   useEffect(() => {
-    Animated.spring(anim, {
-      toValue: value ? 1 : 0,
-      useNativeDriver: true,
-      friction: 7,
-      tension: 40,
-    }).start();
+    Animated.spring(anim, { toValue: value ? 1 : 0, useNativeDriver: true, friction: 7, tension: 40 }).start();
   }, [value]);
-
-  const translateX = anim.interpolate({
-    inputRange: [0, 1],
-    outputRange: [0, SLIDE_DISTANCE],
-  });
-
-  const spin = anim.interpolate({
-    inputRange: [0, 1],
-    outputRange: ['0deg', '360deg'],
-  });
-
-  const trackBg = anim.interpolate({
-    inputRange: [0, 1],
-    outputRange: [Colors.border, Colors.royalBlue],
-  });
-
+  const translateX = anim.interpolate({ inputRange: [0, 1], outputRange: [0, SLIDE_DISTANCE] });
+  const spin = anim.interpolate({ inputRange: [0, 1], outputRange: ['0deg', '360deg'] });
+  const trackBg = anim.interpolate({ inputRange: [0, 1], outputRange: [Colors.border, Colors.royalBlue] });
   return (
-    <Pressable
-      onPress={() => !disabled && onValueChange(!value)}
-      hitSlop={8}
-    >
-      <Animated.View style={[
-        vinylStyles.track,
-        { backgroundColor: trackBg },
-        disabled && { opacity: 0.5 },
-      ]}>
-        <Animated.View style={[
-          vinylStyles.vinyl,
-          { transform: [{ translateX }, { rotate: spin }] },
-        ]}>
+    <Pressable onPress={() => !disabled && onValueChange(!value)} hitSlop={8}>
+      <Animated.View style={[vinylStyles.track, { backgroundColor: trackBg }, disabled && { opacity: 0.5 }]}>
+        <Animated.View style={[vinylStyles.vinyl, { transform: [{ translateX }, { rotate: spin }] }]}>
           <View style={vinylStyles.groove1} />
           <View style={vinylStyles.groove2} />
           <View style={vinylStyles.label} />
@@ -84,43 +57,11 @@ function VinylToggle({ value, onValueChange, disabled }: {
 }
 
 const vinylStyles = StyleSheet.create({
-  track: {
-    width: TRACK_W,
-    height: TRACK_H,
-    borderRadius: TRACK_H / 2,
-    paddingHorizontal: TRACK_PAD,
-    justifyContent: 'center',
-  },
-  vinyl: {
-    width: VINYL_SIZE,
-    height: VINYL_SIZE,
-    borderRadius: VINYL_SIZE / 2,
-    backgroundColor: '#1A1A1A',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  groove1: {
-    position: 'absolute',
-    width: VINYL_SIZE - 4,
-    height: VINYL_SIZE - 4,
-    borderRadius: (VINYL_SIZE - 4) / 2,
-    borderWidth: 0.5,
-    borderColor: 'rgba(255,255,255,0.15)',
-  },
-  groove2: {
-    position: 'absolute',
-    width: VINYL_SIZE - 10,
-    height: VINYL_SIZE - 10,
-    borderRadius: (VINYL_SIZE - 10) / 2,
-    borderWidth: 0.5,
-    borderColor: 'rgba(255,255,255,0.12)',
-  },
-  label: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-    backgroundColor: Colors.royalBlue,
-  },
+  track: { width: TRACK_W, height: TRACK_H, borderRadius: TRACK_H / 2, paddingHorizontal: TRACK_PAD, justifyContent: 'center' },
+  vinyl: { width: VINYL_SIZE, height: VINYL_SIZE, borderRadius: VINYL_SIZE / 2, backgroundColor: '#1A1A1A', alignItems: 'center', justifyContent: 'center' },
+  groove1: { position: 'absolute', width: VINYL_SIZE - 4, height: VINYL_SIZE - 4, borderRadius: (VINYL_SIZE - 4) / 2, borderWidth: 0.5, borderColor: 'rgba(255,255,255,0.15)' },
+  groove2: { position: 'absolute', width: VINYL_SIZE - 10, height: VINYL_SIZE - 10, borderRadius: (VINYL_SIZE - 10) / 2, borderWidth: 0.5, borderColor: 'rgba(255,255,255,0.12)' },
+  label: { width: 8, height: 8, borderRadius: 4, backgroundColor: Colors.royalBlue },
 });
 
 function SettingRow({ label, description, value, onToggle, disabled }: {
@@ -134,15 +75,55 @@ function SettingRow({ label, description, value, onToggle, disabled }: {
     <View style={styles.settingRow}>
       <View style={styles.settingInfo}>
         <Text style={styles.settingLabel}>{label}</Text>
-        {description && <Text style={styles.settingDescription}>{description}</Text>}
+        {description ? <Text style={styles.settingDescription}>{description}</Text> : null}
       </View>
-      <VinylToggle
-        value={value}
-        onValueChange={onToggle}
-        disabled={disabled}
-      />
+      <VinylToggle value={value} onValueChange={onToggle} disabled={disabled} />
     </View>
   );
+}
+
+function Group({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <>
+      <Text style={styles.groupTitle}>{title}</Text>
+      <View style={styles.group}>{children}</View>
+    </>
+  );
+}
+
+const START_PRESETS = ['20:00', '21:00', '22:00', '23:00', '00:00'];
+const END_PRESETS = ['06:00', '07:00', '08:00', '09:00', '10:00'];
+
+function pickPreset(
+  title: string,
+  presets: string[],
+  current: string | null,
+  onPick: (value: string) => void,
+) {
+  if (Platform.OS === 'ios') {
+    ActionSheetIOS.showActionSheetWithOptions(
+      {
+        title,
+        options: [...presets, 'Отмена'],
+        cancelButtonIndex: presets.length,
+      },
+      (idx) => {
+        if (idx >= 0 && idx < presets.length) onPick(presets[idx]);
+      },
+    );
+  } else {
+    Alert.alert(
+      title,
+      undefined,
+      [
+        ...presets.map((p) => ({
+          text: p === current ? `✓ ${p}` : p,
+          onPress: () => onPick(p),
+        })),
+        { text: 'Отмена', style: 'cancel' as const },
+      ],
+    );
+  }
 }
 
 export default function NotificationsScreen() {
@@ -154,41 +135,51 @@ export default function NotificationsScreen() {
   const [osPermission, setOsPermission] = useState<boolean | null>(null);
 
   useEffect(() => {
-    loadData();
+    (async () => {
+      try {
+        const [s, p] = await Promise.all([
+          api.getNotificationSettings(),
+          Notifications.getPermissionsAsync(),
+        ]);
+        setSettings(s);
+        setOsPermission(p.status === 'granted');
+      } catch {
+        toast.error('Не удалось загрузить настройки');
+      } finally {
+        setIsLoading(false);
+      }
+    })();
   }, []);
 
-  const loadData = async () => {
-    try {
-      const [notifSettings, permStatus] = await Promise.all([
-        api.getNotificationSettings(),
-        Notifications.getPermissionsAsync(),
-      ]);
-      setSettings(notifSettings);
-      setOsPermission(permStatus.status === 'granted');
-    } catch {
-      toast.error('Не удалось загрузить настройки');
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  const handleToggle = useCallback(async (key: keyof NotificationSettings, value: boolean) => {
+  const persist = useCallback(async (patch: Partial<NotificationSettings>) => {
     if (!settings) return;
-
-    const prev = { ...settings };
-    setSettings({ ...settings, [key]: value });
+    const prev = settings;
+    setSettings({ ...settings, ...patch } as NotificationSettings);
     setIsSaving(true);
-
     try {
-      const updated = await api.updateNotificationSettings({ [key]: value });
+      const updated = await api.updateNotificationSettings(patch);
       setSettings(updated);
     } catch {
       setSettings(prev);
-      toast.error('Не удалось сохранить настройку');
+      toast.error('Не удалось сохранить');
     } finally {
       setIsSaving(false);
     }
   }, [settings]);
+
+  const handleToggle = useCallback((key: keyof NotificationSettings, value: boolean) => {
+    persist({ [key]: value } as Partial<NotificationSettings>);
+  }, [persist]);
+
+  const handlePickStart = () =>
+    pickPreset('Начало тихих часов', START_PRESETS, settings?.quiet_hours_start ?? null, (v) =>
+      persist({ quiet_hours_start: v }),
+    );
+
+  const handlePickEnd = () =>
+    pickPreset('Окончание тихих часов', END_PRESETS, settings?.quiet_hours_end ?? null, (v) =>
+      persist({ quiet_hours_end: v }),
+    );
 
   const handleRequestPermission = useCallback(async () => {
     const { status } = await Notifications.requestPermissionsAsync();
@@ -197,9 +188,7 @@ export default function NotificationsScreen() {
       try {
         const tokenData = await Notifications.getExpoPushTokenAsync();
         await api.savePushToken(tokenData.data);
-      } catch {
-        // Token save failed silently
-      }
+      } catch {/* silently */}
     } else {
       setOsPermission(false);
     }
@@ -213,9 +202,10 @@ export default function NotificationsScreen() {
     );
   }
 
+  const s = settings!;
+
   return (
     <View style={[styles.container, { paddingTop: insets.top }]}>
-      {/* Header */}
       <View style={styles.header}>
         <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
           <Icon name="arrow-back" size={24} color={Colors.royalBlue} />
@@ -224,41 +214,30 @@ export default function NotificationsScreen() {
         <View style={styles.placeholder} />
       </View>
 
-      <ScrollView
-        contentContainerStyle={styles.content}
-        showsVerticalScrollIndicator={false}
-      >
-        {/* OS permission banner */}
-        {osPermission === false && (
+      <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+        {osPermission === false ? (
           <View style={styles.permissionBanner}>
             <View style={styles.permissionIconContainer}>
               <Icon name="notifications-off-outline" size={24} color={Colors.warning} />
             </View>
             <View style={styles.permissionTextContainer}>
               <Text style={styles.permissionTitle}>Уведомления отключены</Text>
-              <Text style={styles.permissionSubtitle}>
-                Разрешите уведомления в настройках устройства
-              </Text>
+              <Text style={styles.permissionSubtitle}>Разрешите в настройках устройства</Text>
             </View>
-            <TouchableOpacity
-              style={styles.permissionButton}
-              onPress={() => Linking.openSettings()}
-            >
+            <TouchableOpacity style={styles.permissionButton} onPress={() => Linking.openSettings()}>
               <Text style={styles.permissionButtonText}>Открыть</Text>
             </TouchableOpacity>
           </View>
-        )}
+        ) : null}
 
-        {osPermission === null && (
+        {osPermission === null ? (
           <View style={styles.permissionBanner}>
             <View style={styles.permissionIconContainer}>
               <Icon name="notifications-outline" size={24} color={Colors.royalBlue} />
             </View>
             <View style={styles.permissionTextContainer}>
               <Text style={styles.permissionTitle}>Разрешите уведомления</Text>
-              <Text style={styles.permissionSubtitle}>
-                Будьте в курсе новых подписчиков и подарков
-              </Text>
+              <Text style={styles.permissionSubtitle}>Будете в курсе новых подписчиков и подарков</Text>
             </View>
             <TouchableOpacity
               style={[styles.permissionButton, { backgroundColor: Colors.royalBlue }]}
@@ -267,54 +246,112 @@ export default function NotificationsScreen() {
               <Text style={[styles.permissionButtonText, { color: Colors.background }]}>Разрешить</Text>
             </TouchableOpacity>
           </View>
-        )}
+        ) : null}
 
-        {/* Toggles */}
-        <Text style={styles.sectionTitle}>Типы уведомлений</Text>
-        <View style={styles.section}>
+        <Group title="Социальные">
           <SettingRow
             label="Новый подписчик"
             description="Когда кто-то подписывается на вас"
-            value={settings?.notify_new_follower ?? true}
-            onToggle={(val) => handleToggle('notify_new_follower', val)}
-            disabled={isSaving}
-          />
-          <SettingRow
-            label="Подарок забронирован"
-            description="Когда кто-то бронирует пластинку из вашего вишлиста"
-            value={settings?.notify_gift_booked ?? true}
-            onToggle={(val) => handleToggle('notify_gift_booked', val)}
+            value={s.notify_new_follower}
+            onToggle={(v) => handleToggle('notify_new_follower', v)}
             disabled={isSaving}
           />
           <SettingRow
             label="Запрос на подписку"
             description="Когда кто-то хочет подписаться на ваш приватный профиль"
-            value={settings?.notify_follow_request ?? true}
-            onToggle={(val) => handleToggle('notify_follow_request', val)}
+            value={s.notify_follow_request}
+            onToggle={(v) => handleToggle('notify_follow_request', v)}
+            disabled={isSaving}
+          />
+        </Group>
+
+        <Group title="Подарки">
+          <SettingRow
+            label="Подарок забронирован"
+            description="Когда кто-то бронирует пластинку из вашего вишлиста"
+            value={s.notify_gift_booked}
+            onToggle={(v) => handleToggle('notify_gift_booked', v)}
             disabled={isSaving}
           />
           <SettingRow
-            label="Вишлист — снова в продаже"
-            description="Когда пластинка из вашего вишлиста появляется у магазинов"
-            value={settings?.notify_wishlist_in_stock ?? true}
-            onToggle={(val) => handleToggle('notify_wishlist_in_stock', val)}
+            label="Подарок получен"
+            description="Когда владелец подтверждает получение"
+            value={s.notify_gift_confirmed}
+            onToggle={(v) => handleToggle('notify_gift_confirmed', v)}
             disabled={isSaving}
           />
+        </Group>
+
+        <Group title="Вишлист">
+          <SettingRow
+            label="Снова в продаже"
+            description="Когда пластинка из вашего вишлиста появляется у магазинов"
+            value={s.notify_wishlist_in_stock}
+            onToggle={(v) => handleToggle('notify_wishlist_in_stock', v)}
+            disabled={isSaving}
+          />
+        </Group>
+
+        <Group title="Достижения">
           <SettingRow
             label="Новая ачивка"
             description="Когда вы разблокировали достижение"
-            value={settings?.notify_achievement ?? true}
-            onToggle={(val) => handleToggle('notify_achievement', val)}
+            value={s.notify_achievement}
+            onToggle={(v) => handleToggle('notify_achievement', v)}
             disabled={isSaving}
           />
           <SettingRow
-            label="Обновления приложения"
-            description="Новые функции и улучшения"
-            value={settings?.notify_app_updates ?? true}
-            onToggle={(val) => handleToggle('notify_app_updates', val)}
+            label="Вехи"
+            description="100 пластинок, годовщины и другие милстоуны"
+            value={s.notify_milestone}
+            onToggle={(v) => handleToggle('notify_milestone', v)}
             disabled={isSaving}
           />
-        </View>
+        </Group>
+
+        <Group title="Не беспокоить">
+          <SettingRow
+            label="Тихий режим"
+            description="В заданные часы push не приходит, но появляется в ленте"
+            value={s.quiet_hours_enabled}
+            onToggle={(v) => handleToggle('quiet_hours_enabled', v)}
+            disabled={isSaving}
+          />
+          {s.quiet_hours_enabled ? (
+            <>
+              <TouchableOpacity
+                style={styles.settingRow}
+                onPress={handlePickStart}
+                disabled={isSaving}
+              >
+                <View style={styles.settingInfo}>
+                  <Text style={styles.settingLabel}>Начало</Text>
+                </View>
+                <Text style={styles.timeValue}>{s.quiet_hours_start ?? '22:00'}</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.settingRow}
+                onPress={handlePickEnd}
+                disabled={isSaving}
+              >
+                <View style={styles.settingInfo}>
+                  <Text style={styles.settingLabel}>Окончание</Text>
+                </View>
+                <Text style={styles.timeValue}>{s.quiet_hours_end ?? '08:00'}</Text>
+              </TouchableOpacity>
+            </>
+          ) : null}
+        </Group>
+
+        <Group title="Системное">
+          <SettingRow
+            label="Обновления приложения"
+            description="Новые функции и улучшения"
+            value={s.notify_app_updates}
+            onToggle={(v) => handleToggle('notify_app_updates', v)}
+            disabled={isSaving}
+          />
+        </Group>
 
         <View style={{ height: insets.bottom + Spacing.xl }} />
       </ScrollView>
@@ -323,14 +360,8 @@ export default function NotificationsScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: Colors.background,
-  },
-  center: {
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
+  container: { flex: 1, backgroundColor: Colors.background },
+  center: { alignItems: 'center', justifyContent: 'center' },
   header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -339,36 +370,23 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: Colors.divider,
   },
-  headerTitle: {
-    ...Typography.h4,
-    color: Colors.royalBlue,
-  },
-  backButton: {
-    width: 36,
-    height: 36,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  placeholder: {
-    width: 36,
-    height: 36,
-  },
-  content: {
-    padding: Spacing.lg,
-  },
-  sectionTitle: {
-    ...Typography.h4,
-    color: Colors.royalBlue,
+  headerTitle: { ...Typography.h4, color: Colors.royalBlue },
+  backButton: { width: 36, height: 36, alignItems: 'center', justifyContent: 'center' },
+  placeholder: { width: 36, height: 36 },
+  content: { padding: Spacing.lg },
+  groupTitle: {
+    ...Typography.overline,
+    color: Colors.textMuted,
+    marginTop: Spacing.lg,
     marginBottom: Spacing.sm,
-    marginTop: Spacing.md,
+    paddingHorizontal: Spacing.xs,
   },
-  section: {
+  group: {
     backgroundColor: Colors.background,
     borderRadius: BorderRadius.lg,
     borderWidth: 1,
     borderColor: Colors.border,
     overflow: 'hidden',
-    marginBottom: Spacing.md,
   },
   settingRow: {
     flexDirection: 'row',
@@ -379,19 +397,10 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: Colors.divider,
   },
-  settingInfo: {
-    flex: 1,
-    marginRight: Spacing.md,
-  },
-  settingLabel: {
-    ...Typography.body,
-    color: Colors.text,
-  },
-  settingDescription: {
-    ...Typography.caption,
-    color: Colors.textSecondary,
-    marginTop: 2,
-  },
+  settingInfo: { flex: 1, marginRight: Spacing.md },
+  settingLabel: { ...Typography.body, color: Colors.text },
+  settingDescription: { ...Typography.caption, color: Colors.textSecondary, marginTop: 2 },
+  timeValue: { ...Typography.bodyBold, color: Colors.royalBlue },
   permissionBanner: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -409,27 +418,14 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  permissionTextContainer: {
-    flex: 1,
-  },
-  permissionTitle: {
-    ...Typography.bodyBold,
-    color: Colors.text,
-    fontSize: 14,
-  },
-  permissionSubtitle: {
-    ...Typography.caption,
-    color: Colors.textSecondary,
-    marginTop: 1,
-  },
+  permissionTextContainer: { flex: 1 },
+  permissionTitle: { ...Typography.bodyBold, color: Colors.text, fontSize: 14 },
+  permissionSubtitle: { ...Typography.caption, color: Colors.textSecondary, marginTop: 1 },
   permissionButton: {
     paddingVertical: Spacing.sm,
     paddingHorizontal: Spacing.md,
     borderRadius: BorderRadius.md,
     backgroundColor: Colors.warning,
   },
-  permissionButtonText: {
-    ...Typography.buttonSmall,
-    color: Colors.background,
-  },
+  permissionButtonText: { ...Typography.buttonSmall, color: Colors.background },
 });

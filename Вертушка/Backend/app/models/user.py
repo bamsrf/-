@@ -2,8 +2,8 @@
 Модель пользователя
 """
 import uuid
-from datetime import datetime
-from sqlalchemy import String, DateTime, Boolean, Text, Integer
+from datetime import datetime, time
+from sqlalchemy import String, DateTime, Boolean, Text, Integer, Time
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.dialects.postgresql import UUID
 
@@ -140,6 +140,35 @@ class User(Base):
         default=True,
         nullable=False,
         server_default="true"
+    )
+    notify_gift_confirmed: Mapped[bool] = mapped_column(
+        Boolean,
+        default=True,
+        nullable=False,
+        server_default="true"
+    )
+    notify_milestone: Mapped[bool] = mapped_column(
+        Boolean,
+        default=True,
+        nullable=False,
+        server_default="true"
+    )
+
+    # Quiet hours / Do Not Disturb
+    quiet_hours_enabled: Mapped[bool] = mapped_column(
+        Boolean,
+        default=False,
+        nullable=False,
+        server_default="false"
+    )
+    # Хранится в UTC (Time без таймзоны); фронт показывает в локальном времени.
+    quiet_hours_start: Mapped["time | None"] = mapped_column(  # type: ignore[name-defined]
+        Time,
+        nullable=True
+    )
+    quiet_hours_end: Mapped["time | None"] = mapped_column(  # type: ignore[name-defined]
+        Time,
+        nullable=True
     )
 
     # Soft delete

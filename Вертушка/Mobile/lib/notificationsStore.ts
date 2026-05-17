@@ -10,6 +10,8 @@ import type { NotificationItem, SocialFeedItem } from './types';
 
 interface NotificationsState {
   unreadCount: number;
+  /** Сколько новых уведомлений пришло в push'е пока экран открыт — для «Показать N новых» pill. */
+  pendingNew: number;
 
   // Personal tab
   personalItems: NotificationItem[];
@@ -32,11 +34,16 @@ interface NotificationsState {
   loadMoreSocial: () => Promise<void>;
   markRead: (id: string) => Promise<void>;
   markAllRead: () => Promise<void>;
+  mutatePersonal: (id: string, patch: Partial<NotificationItem>) => void;
+  removePersonal: (id: string) => Promise<void>;
+  bumpPending: () => void;
+  clearPending: () => void;
   reset: () => void;
 }
 
 export const useNotificationsStore = create<NotificationsState>((set, get) => ({
   unreadCount: 0,
+  pendingNew: 0,
   personalItems: [],
   personalNextCursor: null,
   personalLoading: false,
@@ -170,9 +177,41 @@ export const useNotificationsStore = create<NotificationsState>((set, get) => ({
     }
   },
 
+  mutatePersonal(id, patch) {
+    set((prev) => ({
+      personalItems: prev.personalItems.map((it) => (it.id === id ? { ...it, ...patch } : it)),
+    }));
+  },
+
+  async removePersonal(id) {
+    const prev = get();
+    const target = prev.personalItems.find((it) => it.id === id);
+    if (!target) return;
+    // Оптимистично убираем из ленты
+    set((s) => ({
+      personalItems: s.personalItems.filter((it) => it.id !== id),
+      unreadCount: target.read_at ? s.unreadCount : Math.max(0, s.unreadCount - 1),
+    }));
+    try {
+      await api.deleteNotification(id);
+    } catch {
+      // revert при ошибке
+      set({ personalItems: prev.personalItems, unreadCount: prev.unreadCount });
+    }
+  },
+
+  bumpPending() {
+    set((s) => ({ pendingNew: s.pendingNew + 1 }));
+  },
+
+  clearPending() {
+    set({ pendingNew: 0 });
+  },
+
   reset() {
     set({
       unreadCount: 0,
+      pendingNew: 0,
       personalItems: [],
       personalNextCursor: null,
       personalLoading: false,

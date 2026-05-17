@@ -35,18 +35,23 @@ import { Colors } from '../constants/theme';
 import { OfflineBanner } from '../components/OfflineBanner';
 import { OnboardingOverlay } from '../components/OnboardingOverlay';
 import { AchievementUnlockHost } from '../components/AchievementUnlockOverlay';
+import { InAppNotificationToastHost, inAppToast } from '../components/notifications/InAppNotificationToast';
 import Toast from 'react-native-toast-message';
 import { toastConfig } from '../components/CustomToast';
 import { initAmplitude } from '../lib/analytics';
 
 Notifications.setNotificationHandler({
-  handleNotification: async () => ({
-    shouldShowAlert: true,
-    shouldPlaySound: true,
-    shouldSetBadge: false,
-    shouldShowBanner: true,
-    shouldShowList: true,
-  }),
+  handleNotification: async () => {
+    // В foreground мы показываем свой in-app toast и подавляем OS-баннер
+    const inForeground = AppState.currentState === 'active';
+    return {
+      shouldShowAlert: !inForeground,
+      shouldPlaySound: !inForeground,
+      shouldSetBadge: false,
+      shouldShowBanner: !inForeground,
+      shouldShowList: true,
+    };
+  },
 });
 
 const sentryDsn = Constants.expoConfig?.extra?.sentryDsn as string | undefined;
@@ -95,8 +100,19 @@ function RootLayout() {
 
   useEffect(() => {
     // Foreground: уведомление пришло пока приложение открыто — рефрешим unread
-    notificationListener.current = Notifications.addNotificationReceivedListener(() => {
+    // и показываем in-app toast (OS-баннер подавлен через handleNotification).
+    notificationListener.current = Notifications.addNotificationReceivedListener((event) => {
       useNotificationsStore.getState().fetchUnreadCount();
+      useNotificationsStore.getState().bumpPending();
+      if (AppState.currentState === 'active') {
+        const content = event.request.content;
+        inAppToast.show({
+          id: event.request.identifier,
+          title: content.title || 'Уведомление',
+          body: content.body || '',
+          data: (content.data || {}) as Record<string, unknown>,
+        });
+      }
     });
 
     // Tap: пользователь нажал на push
@@ -291,6 +307,7 @@ function RootLayout() {
         </Stack>
         <OnboardingOverlay />
         <AchievementUnlockHost />
+        <InAppNotificationToastHost />
         <Toast config={toastConfig} topOffset={56} bottomOffset={100} />
       </SafeAreaProvider>
     </GestureHandlerRootView>

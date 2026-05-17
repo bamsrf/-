@@ -414,6 +414,10 @@ class ApiClient {
     await this.client.post('/notifications/read-all');
   }
 
+  async deleteNotification(id: string): Promise<void> {
+    await this.client.delete(`/notifications/${id}`);
+  }
+
   async getSocialFeed(
     cursor?: string | null,
     limit = 20,

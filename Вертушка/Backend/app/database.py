@@ -61,6 +61,11 @@ async def init_db():
             "ALTER TABLE users ADD COLUMN IF NOT EXISTS notify_follow_request BOOLEAN NOT NULL DEFAULT TRUE",
             "ALTER TABLE users ADD COLUMN IF NOT EXISTS notify_wishlist_in_stock BOOLEAN NOT NULL DEFAULT TRUE",
             "ALTER TABLE users ADD COLUMN IF NOT EXISTS notify_achievement BOOLEAN NOT NULL DEFAULT TRUE",
+            "ALTER TABLE users ADD COLUMN IF NOT EXISTS notify_gift_confirmed BOOLEAN NOT NULL DEFAULT TRUE",
+            "ALTER TABLE users ADD COLUMN IF NOT EXISTS notify_milestone BOOLEAN NOT NULL DEFAULT TRUE",
+            "ALTER TABLE users ADD COLUMN IF NOT EXISTS quiet_hours_enabled BOOLEAN NOT NULL DEFAULT FALSE",
+            "ALTER TABLE users ADD COLUMN IF NOT EXISTS quiet_hours_start TIME",
+            "ALTER TABLE users ADD COLUMN IF NOT EXISTS quiet_hours_end TIME",
         ]
         for sql in migrations:
             await conn.execute(text(sql))

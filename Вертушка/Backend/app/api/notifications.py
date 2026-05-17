@@ -150,6 +150,25 @@ async def mark_read(
     return MarkReadResponse(unread_count=int(cnt or 0))
 
 
+@router.delete("/{notification_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_notification(
+    notification_id: UUID,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Удалить одно уведомление."""
+    n = await db.scalar(
+        select(Notification).where(
+            Notification.id == notification_id,
+            Notification.user_id == current_user.id,
+        )
+    )
+    if not n:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Notification not found")
+    await db.delete(n)
+    await db.commit()
+
+
 @router.get("/social", response_model=SocialFeedResponse)
 async def social_feed(
     cursor: str | None = Query(None, description="ISO timestamp последнего полученного item"),

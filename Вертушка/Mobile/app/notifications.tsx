@@ -1,19 +1,25 @@
 /**
- * Экран «Активность» — личные уведомления + лента подписок.
+ * Экран «Уведомления» — личные уведомления + лента подписок.
+ *
+ * Лента сгруппирована по дате (Сегодня/Вчера/На этой неделе/Ранее) через SectionList.
  */
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   View,
   Text,
   StyleSheet,
-  FlatList,
+  SectionList,
   RefreshControl,
   TouchableOpacity,
   ActivityIndicator,
+  ActionSheetIOS,
+  Alert,
+  Platform,
 } from 'react-native';
+import * as Haptics from 'expo-haptics';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
-import { Colors, Spacing, Typography, BorderRadius } from '@/constants/theme';
+import { Colors, Spacing, Typography } from '@/constants/theme';
 import { AnimatedGradientText } from '@/components/AnimatedGradientText';
 import { SegmentedControl } from '@/components/ui';
 import { XV2 } from '@/components/icons/v2';
@@ -21,9 +27,23 @@ import { NotificationItem } from '@/components/notifications/NotificationItem';
 import { SocialFeedRow } from '@/components/notifications/SocialFeedRow';
 import { NotificationsEmpty } from '@/components/notifications/NotificationsEmpty';
 import { useNotificationsStore } from '@/lib/notificationsStore';
+import { groupByDateBucket } from '@/lib/notificationsGrouping';
+import { api } from '@/lib/api';
+import { toast } from '@/lib/toast';
 import type { NotificationItem as NotificationItemType, SocialFeedItem } from '@/lib/types';
 
 type Tab = 'personal' | 'social';
+
+const MUTE_KEY_BY_TYPE: Record<string, string> = {
+  follow_request: 'notify_follow_request',
+  new_follower: 'notify_new_follower',
+  gift_booked: 'notify_gift_booked',
+  gift_confirmed: 'notify_gift_booked',
+  wishlist_in_stock: 'notify_wishlist_in_stock',
+  wishlist_price_drop: 'notify_wishlist_in_stock',
+  achievement_unlocked: 'notify_achievement',
+  milestone_unlocked: 'notify_achievement',
+};
 
 export default function NotificationsScreen() {
   const router = useRouter();
@@ -46,7 +66,14 @@ export default function NotificationsScreen() {
     loadMoreSocial,
     markRead,
     markAllRead,
+    mutatePersonal,
+    removePersonal,
+    pendingNew,
+    clearPending,
+    fetchUnreadCount,
   } = useNotificationsStore();
+  const sectionListRef = useRef<SectionList<NotificationItemType> | null>(null);
+  const socialSectionListRef = useRef<SectionList<SocialFeedItem> | null>(null);
 
   useEffect(() => {
     loadPersonal();
@@ -58,10 +85,39 @@ export default function NotificationsScreen() {
     }
   }, [tab, socialItems.length, loadSocial]);
 
+  // Пока экран открыт — каждые 30с подтягиваем unread, чтобы pendingNew рос
+  // даже если push не пришёл (например, события без push-уведомления).
+  useEffect(() => {
+    const interval = setInterval(() => {
+      fetchUnreadCount();
+    }, 30_000);
+    return () => clearInterval(interval);
+  }, [fetchUnreadCount]);
+
+  const handleShowNew = useCallback(async () => {
+    clearPending();
+    if (tab === 'personal') {
+      await loadPersonal({ refresh: true });
+      sectionListRef.current?.scrollToLocation({
+        sectionIndex: 0,
+        itemIndex: 0,
+        animated: true,
+      });
+    } else {
+      await loadSocial({ refresh: true });
+      socialSectionListRef.current?.scrollToLocation({
+        sectionIndex: 0,
+        itemIndex: 0,
+        animated: true,
+      });
+    }
+  }, [clearPending, tab, loadPersonal, loadSocial]);
+
   const handleClose = useCallback(() => router.back(), [router]);
 
   const handlePersonalPress = useCallback(
     async (item: NotificationItemType) => {
+      Haptics.selectionAsync().catch(() => {});
       if (!item.read_at) {
         await markRead(item.id);
       }
@@ -72,9 +128,91 @@ export default function NotificationsScreen() {
 
   const handleSocialPress = useCallback(
     (item: SocialFeedItem) => {
+      Haptics.selectionAsync().catch(() => {});
       routeForSocial(item, router);
     },
     [router],
+  );
+
+  const handleAcceptFollow = useCallback(
+    async (item: NotificationItemType) => {
+      if (!item.entity_id) return;
+      try {
+        await api.approveFollowRequest(item.entity_id);
+        mutatePersonal(item.id, {
+          type: 'new_follower',
+          data: { ...(item.data || {}), approved: true },
+          read_at: new Date().toISOString(),
+        });
+      } catch {
+        toast.error('Не удалось принять заявку');
+      }
+    },
+    [mutatePersonal],
+  );
+
+  const handleRejectFollow = useCallback(
+    async (item: NotificationItemType) => {
+      if (!item.entity_id) return;
+      try {
+        await api.rejectFollowRequest(item.entity_id);
+        await removePersonal(item.id);
+      } catch {
+        toast.error('Не удалось отклонить заявку');
+      }
+    },
+    [removePersonal],
+  );
+
+  const muteType = useCallback(async (type: string) => {
+    const settingKey = MUTE_KEY_BY_TYPE[type];
+    if (!settingKey) return;
+    try {
+      await api.updateNotificationSettings({ [settingKey]: false } as Record<string, boolean>);
+      toast.info('Отключено', 'Этот тип уведомлений больше не будет приходить');
+    } catch {
+      toast.error('Не удалось обновить настройки');
+    }
+  }, []);
+
+  const handleLongPress = useCallback(
+    (item: NotificationItemType) => {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
+      const unread = !item.read_at;
+      const muteOption = MUTE_KEY_BY_TYPE[item.type] ? 'Отключить тип уведомлений' : null;
+      const actions: { label: string; destructive?: boolean; run: () => void }[] = [];
+      if (unread) {
+        actions.push({ label: 'Отметить прочитанным', run: () => markRead(item.id) });
+      }
+      actions.push({ label: 'Удалить', destructive: true, run: () => removePersonal(item.id) });
+      if (muteOption) {
+        actions.push({ label: muteOption, run: () => muteType(item.type) });
+      }
+      actions.push({ label: 'Отмена', run: () => {} });
+
+      if (Platform.OS === 'ios') {
+        const labels = actions.map((a) => a.label);
+        ActionSheetIOS.showActionSheetWithOptions(
+          {
+            options: labels,
+            cancelButtonIndex: labels.length - 1,
+            destructiveButtonIndex: actions.findIndex((a) => a.destructive),
+          },
+          (idx) => actions[idx]?.run(),
+        );
+      } else {
+        Alert.alert(
+          'Уведомление',
+          undefined,
+          actions.map((a) => ({
+            text: a.label,
+            style: a.destructive ? 'destructive' : a.label === 'Отмена' ? 'cancel' : 'default',
+            onPress: a.run,
+          })),
+        );
+      }
+    },
+    [markRead, removePersonal, muteType],
   );
 
   const handleRefresh = useCallback(() => {
@@ -87,22 +225,43 @@ export default function NotificationsScreen() {
     else if (tab === 'social' && socialNextCursor) loadMoreSocial();
   }, [tab, personalNextCursor, socialNextCursor, loadMorePersonal, loadMoreSocial]);
 
+  const personalSections = useMemo(() => groupByDateBucket(personalItems), [personalItems]);
+  const socialSections = useMemo(() => groupByDateBucket(socialItems), [socialItems]);
+
   const renderPersonal = ({ item }: { item: NotificationItemType }) => (
-    <NotificationItem item={item} onPress={handlePersonalPress} />
+    <NotificationItem
+      item={item}
+      onPress={handlePersonalPress}
+      onAcceptFollow={handleAcceptFollow}
+      onRejectFollow={handleRejectFollow}
+      onMarkRead={(it) => markRead(it.id)}
+      onDelete={(it) => removePersonal(it.id)}
+      onLongPress={handleLongPress}
+    />
   );
   const renderSocial = ({ item }: { item: SocialFeedItem }) => (
     <SocialFeedRow item={item} onPress={handleSocialPress} />
+  );
+
+  const renderSectionHeader = ({ section }: { section: any }) => (
+    <View style={styles.sectionHeader}>
+      <Text style={styles.sectionHeaderText}>{section.title ?? ''}</Text>
+    </View>
   );
 
   const showFooter =
     (tab === 'personal' && personalLoading && personalItems.length > 0) ||
     (tab === 'social' && socialLoading && socialItems.length > 0);
 
+  const handleFindUsers = useCallback(() => {
+    router.push('/(tabs)/search');
+  }, [router]);
+
   return (
     <View style={[styles.container, { paddingTop: insets.top }]}>
       <View style={styles.header}>
         <View style={styles.headerTitleWrap}>
-          <AnimatedGradientText style={styles.headerTitle}>Активность</AnimatedGradientText>
+          <AnimatedGradientText style={styles.headerTitle}>Уведомления</AnimatedGradientText>
         </View>
         <TouchableOpacity onPress={handleClose} style={styles.closeBtn} hitSlop={12}>
           <XV2 size={24} color={Colors.text} />
@@ -126,13 +285,24 @@ export default function NotificationsScreen() {
         </TouchableOpacity>
       ) : null}
 
+      {pendingNew > 0 ? (
+        <TouchableOpacity onPress={handleShowNew} style={styles.pill} activeOpacity={0.85}>
+          <Text style={styles.pillText}>
+            Показать {pendingNew} {pluralizeNew(pendingNew)}
+          </Text>
+        </TouchableOpacity>
+      ) : null}
+
       {tab === 'personal' ? (
-        <FlatList
-          data={personalItems}
+        <SectionList
+          ref={sectionListRef}
+          sections={personalSections}
           keyExtractor={(item) => item.id}
           renderItem={renderPersonal}
+          renderSectionHeader={renderSectionHeader}
+          stickySectionHeadersEnabled={false}
           contentContainerStyle={
-            personalItems.length === 0 ? styles.emptyContainer : styles.listContainer
+            personalSections.length === 0 ? styles.emptyContainer : styles.listContainer
           }
           refreshControl={
             <RefreshControl
@@ -147,7 +317,9 @@ export default function NotificationsScreen() {
             !personalLoading ? (
               <NotificationsEmpty
                 title="Пока тихо"
-                subtitle="Здесь появятся новые подписчики, бронирования подарков, ачивки и алерты вишлиста."
+                subtitle="Подпишись на коллекционеров — будешь видеть новые подписки, бронирования подарков, ачивки и алерты вишлиста."
+                ctaLabel="Найти коллекционеров"
+                onCtaPress={handleFindUsers}
               />
             ) : (
               <View style={styles.spinner}><ActivityIndicator color={Colors.royalBlue} /></View>
@@ -158,12 +330,15 @@ export default function NotificationsScreen() {
           }
         />
       ) : (
-        <FlatList
-          data={socialItems}
+        <SectionList
+          ref={socialSectionListRef}
+          sections={socialSections}
           keyExtractor={(item, idx) => `${item.type}-${item.actor.id}-${item.created_at}-${idx}`}
           renderItem={renderSocial}
+          renderSectionHeader={renderSectionHeader}
+          stickySectionHeadersEnabled={false}
           contentContainerStyle={
-            socialItems.length === 0 ? styles.emptyContainer : styles.listContainer
+            socialSections.length === 0 ? styles.emptyContainer : styles.listContainer
           }
           refreshControl={
             <RefreshControl
@@ -179,6 +354,8 @@ export default function NotificationsScreen() {
               <NotificationsEmpty
                 title="Лента пуста"
                 subtitle="Подпишись на других коллекционеров, чтобы видеть их новые пластинки, подарки и ачивки."
+                ctaLabel="Найти коллекционеров"
+                onCtaPress={handleFindUsers}
               />
             ) : (
               <View style={styles.spinner}><ActivityIndicator color={Colors.royalBlue} /></View>
@@ -191,6 +368,15 @@ export default function NotificationsScreen() {
       )}
     </View>
   );
+}
+
+function pluralizeNew(n: number): string {
+  const mod10 = n % 10;
+  const mod100 = n % 100;
+  if (mod100 >= 11 && mod100 <= 14) return 'новых';
+  if (mod10 === 1) return 'новое';
+  if (mod10 >= 2 && mod10 <= 4) return 'новых';
+  return 'новых';
 }
 
 function routeForPersonal(item: NotificationItemType, router: ReturnType<typeof useRouter>) {
@@ -216,6 +402,7 @@ function routeForPersonal(item: NotificationItemType, router: ReturnType<typeof 
       if (recordId) router.push(`/record/${recordId}` as any);
       return;
     case 'achievement_unlocked':
+    case 'milestone_unlocked':
       router.push('/achievements');
       return;
   }
@@ -277,6 +464,29 @@ const styles = StyleSheet.create({
     ...Typography.bodySmall,
     color: Colors.royalBlue,
     fontFamily: 'Inter_600SemiBold',
+  },
+  pill: {
+    marginHorizontal: Spacing.md,
+    marginBottom: Spacing.sm,
+    paddingVertical: 8,
+    paddingHorizontal: Spacing.md,
+    borderRadius: 999,
+    backgroundColor: Colors.royalBlue,
+    alignSelf: 'center',
+  },
+  pillText: {
+    ...Typography.buttonSmall,
+    color: Colors.background,
+  },
+  sectionHeader: {
+    paddingHorizontal: Spacing.md,
+    paddingTop: Spacing.md,
+    paddingBottom: Spacing.xs,
+    backgroundColor: Colors.background,
+  },
+  sectionHeaderText: {
+    ...Typography.overline,
+    color: Colors.textMuted,
   },
   listContainer: {
     paddingBottom: Spacing.xxl,

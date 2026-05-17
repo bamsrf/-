@@ -214,6 +214,55 @@ async def get_social_feed(
             }))
 
     items.sort(key=lambda x: x[0], reverse=True)
-    sliced = items[:limit]
+    aggregated = _aggregate_similar(items)
+    sliced = aggregated[:limit]
     next_cursor = sliced[-1][0].isoformat() if len(sliced) == limit else None
     return [it[1] for it in sliced], next_cursor
+
+
+# Какие типы можно схлопывать в «X добавил N пластинок» / «X получил N ачивок» и т.д.
+AGGREGATABLE_TYPES = {"collection_add", "wishlist_add", "friend_achievement"}
+AGGREGATE_THRESHOLD = 3  # ≥3 однотипных события одного юзера за день → группируем
+
+
+def _aggregate_similar(
+    items: list[tuple[datetime, dict[str, Any]]],
+) -> list[tuple[datetime, dict[str, Any]]]:
+    """Схлопывает ≥3 однотипных события одного юзера за один день в один aggregated item."""
+    groups: dict[tuple[str, str, str], list[tuple[datetime, dict[str, Any]]]] = {}
+    standalone: list[tuple[datetime, dict[str, Any]]] = []
+
+    for ts, item in items:
+        t = item["type"]
+        if t not in AGGREGATABLE_TYPES:
+            standalone.append((ts, item))
+            continue
+        actor_id = item["actor"]["id"]
+        day_key = ts.date().isoformat()
+        groups.setdefault((t, actor_id, day_key), []).append((ts, item))
+
+    result: list[tuple[datetime, dict[str, Any]]] = list(standalone)
+    for key, members in groups.items():
+        if len(members) < AGGREGATE_THRESHOLD:
+            result.extend(members)
+            continue
+        # Самый свежий — задаёт ts; собираем первые 3 обложки.
+        members.sort(key=lambda m: m[0], reverse=True)
+        latest_ts, latest_item = members[0]
+        records_preview = [m[1]["record"] for m in members[:3] if m[1].get("record")]
+        aggregated_item = {
+            "type": latest_item["type"],
+            "actor": latest_item["actor"],
+            "created_at": latest_ts.isoformat(),
+            "record": records_preview[0] if records_preview else None,
+            "target_user": None,
+            "payload": {
+                "aggregated": True,
+                "count": len(members),
+                "records": records_preview,
+            },
+        }
+        result.append((latest_ts, aggregated_item))
+
+    result.sort(key=lambda x: x[0], reverse=True)
+    return result

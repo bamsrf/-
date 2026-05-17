@@ -344,6 +344,7 @@ async def book_gift(
                         "record_id": str(item.record.id),
                         "record_title": item.record.title,
                         "record_artist": item.record.artist,
+                        "cover_url": item.record.cover_image_url,
                         "anonymous": not reveal_gifter,
                     },
                     push_title="Подарок забронирован",
@@ -681,11 +682,39 @@ async def complete_booking(
 
     from app.services.gifts import complete_gift_booking, send_pending_gift_email
 
+    record = booking.wishlist_item.record if booking.wishlist_item else None
+    gifter_user_id = booking.booked_by_user_id
+
     collection_item = await complete_gift_booking(
         booking=booking,
         owner=current_user,
         db=db,
     )
+
+    # In-app + push дарителю (если это зарегистрированный пользователь)
+    if gifter_user_id is not None and record is not None:
+        try:
+            from app.services.notification_service import create_notification
+            owner_name = current_user.display_name or current_user.username
+            await create_notification(
+                db,
+                user_id=gifter_user_id,
+                actor_id=current_user.id,
+                type="gift_confirmed",
+                entity_type="gift_booking",
+                entity_id=str(booking.id),
+                data={
+                    "record_id": str(record.id),
+                    "record_title": record.title,
+                    "record_artist": record.artist,
+                    "cover_url": record.cover_image_url,
+                },
+                push_title="Подарок получен 🎁",
+                push_body=f"{owner_name} получил(а) твой подарок «{record.title}»",
+            )
+        except Exception:
+            logger.exception("Failed to create gift_confirmed notification")
+
     await db.commit()
     await send_pending_gift_email(collection_item)
 

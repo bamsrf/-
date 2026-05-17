@@ -434,19 +434,43 @@ async def update_push_token(
     return {"status": "ok"}
 
 
+def _serialize_settings(user: User) -> NotificationSettingsResponse:
+    return NotificationSettingsResponse(
+        notify_new_follower=user.notify_new_follower,
+        notify_gift_booked=user.notify_gift_booked,
+        notify_gift_confirmed=user.notify_gift_confirmed,
+        notify_app_updates=user.notify_app_updates,
+        notify_follow_request=user.notify_follow_request,
+        notify_wishlist_in_stock=user.notify_wishlist_in_stock,
+        notify_achievement=user.notify_achievement,
+        notify_milestone=user.notify_milestone,
+        quiet_hours_enabled=user.quiet_hours_enabled,
+        quiet_hours_start=user.quiet_hours_start.strftime("%H:%M") if user.quiet_hours_start else None,
+        quiet_hours_end=user.quiet_hours_end.strftime("%H:%M") if user.quiet_hours_end else None,
+    )
+
+
+def _parse_hhmm(value: str) -> "time":  # type: ignore[name-defined]
+    from datetime import time as _time
+    parts = value.split(":")
+    if len(parts) != 2:
+        raise HTTPException(status_code=400, detail="Bad time format, expected HH:MM")
+    try:
+        h = int(parts[0])
+        m = int(parts[1])
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Bad time format, expected HH:MM")
+    if not (0 <= h < 24 and 0 <= m < 60):
+        raise HTTPException(status_code=400, detail="Bad time range")
+    return _time(hour=h, minute=m)
+
+
 @router.get("/me/notification-settings", response_model=NotificationSettingsResponse)
 async def get_notification_settings(
     current_user: User = Depends(get_current_user),
 ):
     """Текущие настройки уведомлений"""
-    return NotificationSettingsResponse(
-        notify_new_follower=current_user.notify_new_follower,
-        notify_gift_booked=current_user.notify_gift_booked,
-        notify_app_updates=current_user.notify_app_updates,
-        notify_follow_request=current_user.notify_follow_request,
-        notify_wishlist_in_stock=current_user.notify_wishlist_in_stock,
-        notify_achievement=current_user.notify_achievement,
-    )
+    return _serialize_settings(current_user)
 
 
 @router.put("/me/notification-settings", response_model=NotificationSettingsResponse)
@@ -460,6 +484,8 @@ async def update_notification_settings(
         current_user.notify_new_follower = data.notify_new_follower
     if data.notify_gift_booked is not None:
         current_user.notify_gift_booked = data.notify_gift_booked
+    if data.notify_gift_confirmed is not None:
+        current_user.notify_gift_confirmed = data.notify_gift_confirmed
     if data.notify_app_updates is not None:
         current_user.notify_app_updates = data.notify_app_updates
     if data.notify_follow_request is not None:
@@ -468,18 +494,20 @@ async def update_notification_settings(
         current_user.notify_wishlist_in_stock = data.notify_wishlist_in_stock
     if data.notify_achievement is not None:
         current_user.notify_achievement = data.notify_achievement
+    if data.notify_milestone is not None:
+        current_user.notify_milestone = data.notify_milestone
+
+    if data.quiet_hours_enabled is not None:
+        current_user.quiet_hours_enabled = data.quiet_hours_enabled
+    if data.quiet_hours_start is not None:
+        current_user.quiet_hours_start = _parse_hhmm(data.quiet_hours_start)
+    if data.quiet_hours_end is not None:
+        current_user.quiet_hours_end = _parse_hhmm(data.quiet_hours_end)
 
     await db.commit()
     await db.refresh(current_user)
 
-    return NotificationSettingsResponse(
-        notify_new_follower=current_user.notify_new_follower,
-        notify_gift_booked=current_user.notify_gift_booked,
-        notify_app_updates=current_user.notify_app_updates,
-        notify_follow_request=current_user.notify_follow_request,
-        notify_wishlist_in_stock=current_user.notify_wishlist_in_stock,
-        notify_achievement=current_user.notify_achievement,
-    )
+    return _serialize_settings(current_user)
 
 
 @router.post("/me/avatar", response_model=UserResponse)

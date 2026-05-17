@@ -394,7 +394,7 @@ export default function ProfileScreen() {
           ))}
         </View>
 
-        {/* Активность: лента «Ты» и «Подписки» */}
+        {/* Уведомления: лента «Ты» и «Подписки» */}
         <View style={styles.activityWrap}>
           <ActivityCard />
         </View>

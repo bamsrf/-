@@ -39,7 +39,7 @@ export const ActivityCard: React.FC = () => {
       <View style={styles.header}>
         <View style={styles.titleRow}>
           <BellV2 size={18} color={Colors.royalBlue} weight="regular" />
-          <Text style={styles.title}>Активность</Text>
+          <Text style={styles.title}>Уведомления</Text>
           {unreadCount > 0 ? (
             <View style={styles.badge}>
               <Text style={styles.badgeText}>{unreadCount > 99 ? '99+' : unreadCount}</Text>

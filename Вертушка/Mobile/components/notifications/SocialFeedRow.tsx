@@ -1,14 +1,17 @@
 /**
  * Карточка события в социальной ленте «Подписки».
+ *
+ * Поддерживает агрегированные события (payload.aggregated=true) — показывает
+ * текст «alex добавил 10 пластинок» + carousel из 3 первых обложек.
  */
 import React, { useMemo } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet, ScrollView } from 'react-native';
 import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Colors, Spacing, BorderRadius, Typography } from '@/constants/theme';
 import { Icon } from '@/components/ui';
 import { resolveMediaUrl, getCoverUrl } from '@/lib/api';
-import type { SocialFeedItem } from '@/lib/types';
+import type { SocialFeedItem, SocialFeedRecord } from '@/lib/types';
 
 interface Props {
   item: SocialFeedItem;
@@ -23,8 +26,43 @@ function formatRelative(iso: string): string {
   return `${Math.floor(diffSec / 86400)} д`;
 }
 
+function pluralRecords(n: number): string {
+  const mod10 = n % 10;
+  const mod100 = n % 100;
+  if (mod100 >= 11 && mod100 <= 14) return 'пластинок';
+  if (mod10 === 1) return 'пластинку';
+  if (mod10 >= 2 && mod10 <= 4) return 'пластинки';
+  return 'пластинок';
+}
+
+function pluralAchievements(n: number): string {
+  const mod10 = n % 10;
+  const mod100 = n % 100;
+  if (mod100 >= 11 && mod100 <= 14) return 'ачивок';
+  if (mod10 === 1) return 'ачивку';
+  if (mod10 >= 2 && mod10 <= 4) return 'ачивки';
+  return 'ачивок';
+}
+
 function buildText(item: SocialFeedItem): string {
   const actor = item.actor.display_name || item.actor.username;
+  const payload = item.payload as Record<string, unknown>;
+  const aggregated = payload?.aggregated === true;
+  const count = (payload?.count as number) ?? 1;
+
+  if (aggregated) {
+    switch (item.type) {
+      case 'collection_add':
+        return `${actor} добавил(а) ${count} ${pluralRecords(count)} в коллекцию`;
+      case 'wishlist_add':
+        return `${actor} добавил(а) ${count} ${pluralRecords(count)} в вишлист`;
+      case 'friend_achievement':
+        return `${actor} получил(а) ${count} ${pluralAchievements(count)}`;
+      default:
+        break;
+    }
+  }
+
   const recTitle = item.record?.title ?? '';
   switch (item.type) {
     case 'collection_add':
@@ -46,39 +84,68 @@ function buildText(item: SocialFeedItem): string {
   }
 }
 
+function recordCover(r: SocialFeedRecord | null | undefined): string | undefined {
+  if (!r) return undefined;
+  return getCoverUrl({ cover_url: r.cover_url ?? undefined });
+}
+
 export const SocialFeedRow: React.FC<Props> = ({ item, onPress }) => {
   const text = useMemo(() => buildText(item), [item]);
   const avatarUrl = item.actor.avatar_url ? resolveMediaUrl(item.actor.avatar_url) : undefined;
-  const coverUrl = getCoverUrl(
-    item.record
-      ? {
-          cover_url: item.record.cover_url ?? undefined,
-        }
-      : undefined,
-  );
+  const payload = item.payload as Record<string, unknown>;
+  const aggregated = payload?.aggregated === true;
+  const aggRecords = (payload?.records as SocialFeedRecord[] | undefined) || [];
+  const count = (payload?.count as number) ?? 1;
+  const singleCover = recordCover(item.record);
 
   return (
     <TouchableOpacity activeOpacity={0.7} style={styles.row} onPress={() => onPress(item)}>
-      <View style={styles.avatarWrap}>
-        {avatarUrl ? (
-          <Image source={avatarUrl} style={styles.avatar} cachePolicy="disk" />
-        ) : (
-          <LinearGradient
-            colors={[Colors.royalBlue, Colors.periwinkle]}
-            style={styles.avatar}
-          >
-            <Icon name="person" size={18} color={Colors.background} />
-          </LinearGradient>
-        )}
+      <View style={styles.topRow}>
+        <View style={styles.avatarWrap}>
+          {avatarUrl ? (
+            <Image source={avatarUrl} style={styles.avatar} cachePolicy="disk" />
+          ) : (
+            <LinearGradient colors={[Colors.royalBlue, Colors.periwinkle]} style={styles.avatar}>
+              <Icon name="person" size={18} color={Colors.background} />
+            </LinearGradient>
+          )}
+        </View>
+
+        <View style={styles.body}>
+          <Text style={styles.text} numberOfLines={2}>{text}</Text>
+          <Text style={styles.time}>{formatRelative(item.created_at)}</Text>
+        </View>
+
+        {!aggregated && singleCover ? (
+          <Image source={singleCover} style={styles.singleCover} cachePolicy="disk" />
+        ) : null}
       </View>
 
-      <View style={styles.body}>
-        <Text style={styles.text} numberOfLines={2}>{text}</Text>
-        <Text style={styles.time}>{formatRelative(item.created_at)}</Text>
-      </View>
-
-      {coverUrl ? (
-        <Image source={coverUrl} style={styles.cover} cachePolicy="disk" />
+      {aggregated && aggRecords.length > 0 ? (
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          style={styles.coverStrip}
+          contentContainerStyle={styles.coverStripInner}
+        >
+          {aggRecords.slice(0, 3).map((r, idx) => {
+            const cu = recordCover(r);
+            return cu ? (
+              <Image
+                key={r.id ?? idx}
+                source={cu}
+                style={styles.smallCover}
+                cachePolicy="disk"
+                contentFit="cover"
+              />
+            ) : null;
+          })}
+          {count > 3 ? (
+            <View style={styles.more}>
+              <Text style={styles.moreText}>+{count - 3}</Text>
+            </View>
+          ) : null}
+        </ScrollView>
       ) : null}
     </TouchableOpacity>
   );
@@ -86,10 +153,12 @@ export const SocialFeedRow: React.FC<Props> = ({ item, onPress }) => {
 
 const styles = StyleSheet.create({
   row: {
-    flexDirection: 'row',
-    alignItems: 'center',
     paddingVertical: Spacing.sm + 2,
     paddingHorizontal: Spacing.md,
+  },
+  topRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
     gap: Spacing.sm,
   },
   avatarWrap: {
@@ -115,10 +184,34 @@ const styles = StyleSheet.create({
     ...Typography.caption,
     color: Colors.textMuted,
   },
-  cover: {
+  singleCover: {
     width: 44,
     height: 44,
     borderRadius: BorderRadius.sm,
+  },
+  coverStrip: {
+    marginTop: Spacing.sm,
+    marginLeft: 40 + Spacing.sm,
+  },
+  coverStripInner: {
+    gap: Spacing.xs + 2,
+  },
+  smallCover: {
+    width: 56,
+    height: 56,
+    borderRadius: BorderRadius.sm,
+  },
+  more: {
+    width: 56,
+    height: 56,
+    borderRadius: BorderRadius.sm,
+    backgroundColor: Colors.surface,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  moreText: {
+    ...Typography.bodyBold,
+    color: Colors.textSecondary,
   },
 });
 
