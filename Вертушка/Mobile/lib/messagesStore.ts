@@ -10,6 +10,7 @@
  */
 import { create } from 'zustand';
 import { messagesApi } from './messagesApi';
+import { messagesSocket } from './messagesWs';
 import { useAuthStore } from './store';
 import { toast } from './toast';
 import type {
@@ -449,3 +450,95 @@ export const useMessagesStore = create<MessagesState>((set, get) => ({
       isLoadingThread: {},
     }),
 }));
+
+
+// =========================================================================
+// WebSocket realtime integration
+// =========================================================================
+
+let _wsSubscribed = false;
+
+/** Подключить WS и подписать стор на server-events. Идемпотентно. */
+export function initMessagesRealtime(): void {
+  if (_wsSubscribed) return;
+  _wsSubscribed = true;
+
+  messagesSocket.subscribe((e) => {
+    if (e.type === 'message.new') {
+      const me = useAuthStore.getState().user;
+      useMessagesStore.setState((s) => {
+        const existing = s.threads[e.conversation_id] ?? [];
+        // дедупликация по client_nonce (наш optimistic) или по id
+        const idx = existing.findIndex(
+          (m) =>
+            (e.message.client_nonce &&
+              m.client_nonce === e.message.client_nonce) ||
+            m.id === e.message.id,
+        );
+        let nextThread = existing;
+        if (idx >= 0) {
+          nextThread = existing.map((m, i) =>
+            i === idx ? { ...e.message, _local_status: 'sent' as const } : m,
+          );
+        } else {
+          nextThread = [...existing, e.message];
+        }
+
+        // Обновляем превью в списке диалогов
+        const updateList = (list: typeof s.conversationsPrimary) =>
+          list.map((c) =>
+            c.id === e.conversation_id
+              ? {
+                  ...c,
+                  last_message_preview: e.message.body
+                    ? e.message.body.slice(0, 160)
+                    : c.last_message_preview,
+                  last_message_at: e.message.created_at,
+                  last_message_sender_id: e.message.sender_id,
+                  unread_count:
+                    me && e.message.sender_id !== me.id
+                      ? (c.unread_count ?? 0) + 1
+                      : c.unread_count,
+                }
+              : c,
+          );
+
+        return {
+          threads: { ...s.threads, [e.conversation_id]: nextThread },
+          conversationsPrimary: updateList(s.conversationsPrimary),
+          conversationsRequests: updateList(s.conversationsRequests),
+        };
+      });
+      useMessagesStore.getState().refreshUnread();
+    } else if (e.type === 'message.read') {
+      useMessagesStore.setState((s) => ({
+        conversationsPrimary: s.conversationsPrimary.map((c) =>
+          c.id === e.conversation_id
+            ? { ...c, partner_last_read_at: e.last_read_at }
+            : c,
+        ),
+      }));
+    } else if (e.type === 'message.deleted') {
+      useMessagesStore.setState((s) => ({
+        threads: {
+          ...s.threads,
+          [e.conversation_id]: (s.threads[e.conversation_id] ?? []).map((m) =>
+            m.id === e.message_id
+              ? { ...m, body: null, deleted_at: new Date().toISOString() }
+              : m,
+          ),
+        },
+      }));
+    }
+    // 'typing' обрабатывается в экране треда через отдельный subscribe
+  });
+
+  messagesSocket.connect();
+}
+
+/** Отключить WS и сбросить флаг — при logout. */
+export function teardownMessagesRealtime(): void {
+  if (!_wsSubscribed) return;
+  _wsSubscribed = false;
+  messagesSocket.disconnect();
+}

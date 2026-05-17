@@ -38,6 +38,7 @@ import { useAuthStore } from '../../lib/store';
 import { useMessagesStore } from '../../lib/messagesStore';
 import { resolveMediaUrl } from '../../lib/api';
 import { messagesApi } from '../../lib/messagesApi';
+import { messagesSocket } from '../../lib/messagesWs';
 import type {
   AttachedRecord,
   Conversation,
@@ -405,6 +406,9 @@ export default function ConversationScreen() {
   const [presence, setPresence] = useState<PresenceInfo | null>(null);
   const [replyTo, setReplyTo] = useState<Message | null>(null);
   const [attachedRecord, setAttachedRecord] = useState<AttachedRecord | null>(null);
+  const [partnerTyping, setPartnerTyping] = useState(false);
+  const typingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const lastTypingSentRef = useRef<number>(0);
   const listRef = useRef<FlatList<FeedItem>>(null);
 
   // Когда возвращаемся со share-record экрана с params — подхватим выбор
@@ -527,6 +531,37 @@ export default function ConversationScreen() {
     if (!conversation || conversation.unread_count === 0) return;
     markRead(conversationId);
   }, [conversationId, messages.length, conversation, markRead]);
+
+  // Подписка на WS-typing для этого треда
+  useEffect(() => {
+    if (!conversationId) return undefined;
+    const unsub = messagesSocket.subscribe((e) => {
+      if (e.type !== 'typing') return;
+      if (e.conversation_id !== conversationId) return;
+      if (me && e.user_id === me.id) return;
+      setPartnerTyping(true);
+      if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
+      typingTimeoutRef.current = setTimeout(() => setPartnerTyping(false), 3000);
+    });
+    return () => {
+      unsub();
+      if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
+    };
+  }, [conversationId, me]);
+
+  const handleTextChange = useCallback(
+    (t: string) => {
+      setDraft(t);
+      if (!conversationId) return;
+      const now = Date.now();
+      // Дросселим typing до 1 раза в 1.5 секунды
+      if (now - lastTypingSentRef.current > 1500) {
+        lastTypingSentRef.current = now;
+        messagesSocket.sendTyping(conversationId);
+      }
+    },
+    [conversationId],
+  );
 
   // Presence: подгружаем статус собеседника каждые 30с пока экран открыт.
   useEffect(() => {
@@ -777,16 +812,18 @@ export default function ConversationScreen() {
               <Text style={styles.partnerName} numberOfLines={1}>
                 {partner ? headerName : 'Загрузка…'}
               </Text>
-              {partner && presence ? (
+              {partner && (presence || partnerTyping) ? (
                 <View style={styles.partnerStatusRow}>
-                  {presence.online ? (
+                  {partnerTyping ? (
+                    <Text style={styles.partnerStatusOnline}>печатает…</Text>
+                  ) : presence?.online ? (
                     <>
                       <View style={styles.onlineDot} />
                       <Text style={styles.partnerStatusOnline}>в сети</Text>
                     </>
                   ) : (
                     <Text style={styles.partnerStatus}>
-                      {formatLastSeen(presence.last_seen_at)}
+                      {formatLastSeen(presence?.last_seen_at ?? null)}
                     </Text>
                   )}
                 </View>
@@ -891,7 +928,7 @@ export default function ConversationScreen() {
             placeholder="Сообщение"
             placeholderTextColor={Colors.textMuted}
             value={draft}
-            onChangeText={setDraft}
+            onChangeText={handleTextChange}
             multiline
             maxLength={4000}
           />

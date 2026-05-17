@@ -19,7 +19,11 @@ import {
 } from '@expo-google-fonts/inter';
 import { AppState, AppStateStatus, Platform } from 'react-native';
 import { useAuthStore, useOnboardingStore } from '../lib/store';
-import { useMessagesStore } from '../lib/messagesStore';
+import {
+  useMessagesStore,
+  initMessagesRealtime,
+  teardownMessagesRealtime,
+} from '../lib/messagesStore';
 import { useNotificationsStore } from '../lib/notificationsStore';
 import { api } from '../lib/api';
 
@@ -203,21 +207,26 @@ function RootLayout() {
     };
   }, [isAuthenticated]);
 
-  // Фоновый polling unread-счётчика сообщений: при логине, при возврате в foreground,
-  // каждые 20с пока приложение открыто. Заменится на WS-события в M2.
+  // Realtime + fallback polling unread-счётчика.
+  // WS приоритетен; polling работает как safety-net (раз в 60с) если соединение
+  // отвалилось — на WS-событиях счётчик обновляется в реальном времени.
   useEffect(() => {
-    if (!isAuthenticated) return;
+    if (!isAuthenticated) {
+      teardownMessagesRealtime();
+      return;
+    }
 
+    initMessagesRealtime();
     const refresh = () => useMessagesStore.getState().refreshUnread();
     refresh();
 
-    let timer: ReturnType<typeof setInterval> | null = setInterval(refresh, 20_000);
+    let timer: ReturnType<typeof setInterval> | null = setInterval(refresh, 60_000);
     let appState: AppStateStatus = AppState.currentState;
 
     const sub = AppState.addEventListener('change', (next) => {
       if (appState.match(/inactive|background/) && next === 'active') {
         refresh();
-        if (!timer) timer = setInterval(refresh, 20_000);
+        if (!timer) timer = setInterval(refresh, 60_000);
       } else if (next.match(/inactive|background/)) {
         if (timer) {
           clearInterval(timer);

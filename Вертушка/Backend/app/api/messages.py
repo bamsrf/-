@@ -8,7 +8,16 @@ Privacy-модель: любой авторизованный пользоват
 import logging
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
+from fastapi import (
+    APIRouter,
+    Depends,
+    HTTPException,
+    Query,
+    Request,
+    WebSocket,
+    WebSocketDisconnect,
+    status,
+)
 from slowapi import Limiter
 from slowapi.util import get_remote_address
 from sqlalchemy import select, and_, or_, func
@@ -49,6 +58,9 @@ from app.services.messaging import (
     post_message,
     require_participant,
 )
+from app.services import messages_ws_hub
+from app.config import get_settings
+from app.utils.security import verify_token_type
 
 logger = logging.getLogger(__name__)
 
@@ -352,6 +364,14 @@ async def send_message(
     await db.commit()
     await db.refresh(message)
     hydrated = await _hydrate_message_previews(db, [message])
+    payload = hydrated[0].model_dump(mode="json")
+
+    # WS-эхо обоим участникам (один из которых может быть текущим — отправитель)
+    partner_id_str = str(partner_id)
+    event = {"type": "message.new", "conversation_id": str(conv.id), "message": payload}
+    await messages_ws_hub.push_event(current_user.id, event)
+    await messages_ws_hub.push_event(partner_id, event)
+
     return hydrated[0]
 
 
@@ -369,6 +389,21 @@ async def mark_conversation_read(
     me_part = await require_participant(db, conversation_id, current_user.id)
     await svc_mark_read(db, me_part, data.up_to_message_id)
     await db.commit()
+
+    # Уведомляем собеседника об обновлении read receipts
+    conv = await db.get(Conversation, conversation_id)
+    if conv:
+        partner_id = partner_id_of(conv, current_user.id)
+        await messages_ws_hub.push_event(
+            partner_id,
+            {
+                "type": "message.read",
+                "conversation_id": str(conversation_id),
+                "reader_id": str(current_user.id),
+                "up_to_message_id": str(data.up_to_message_id),
+                "last_read_at": me_part.last_read_at.isoformat() if me_part.last_read_at else None,
+            },
+        )
     return {"status": "ok"}
 
 
@@ -394,7 +429,19 @@ async def delete_message(
 
     message.body = None
     message.deleted_at = _dt.utcnow()
+    conv_id = message.conversation_id
     await db.commit()
+
+    conv = await db.get(Conversation, conv_id)
+    if conv:
+        partner_id = partner_id_of(conv, current_user.id)
+        event = {
+            "type": "message.deleted",
+            "conversation_id": str(conv_id),
+            "message_id": str(message_id),
+        }
+        await messages_ws_hub.push_event(current_user.id, event)
+        await messages_ws_hub.push_event(partner_id, event)
     return {"status": "ok"}
 
 
@@ -648,6 +695,56 @@ async def list_blocks(
 # ==================== Presence ====================
 
 ONLINE_THRESHOLD_SECONDS = 60
+
+
+# ==================== WebSocket realtime ====================
+
+
+@router.websocket("/ws")
+async def messages_ws(websocket: WebSocket, token: str = Query(...)):
+    """Realtime канал. Авторизация по JWT в query-параметре (RN-клиенты не
+    могут передавать заголовки в WS-handshake удобно).
+
+    Серверные события: message.new / message.read / message.deleted.
+    Клиентские команды: {"type": "typing", "conversation_id": ...}
+    """
+    payload = verify_token_type(token, "access")
+    if not payload:
+        await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
+        return
+
+    user_id = payload["sub"]
+    await websocket.accept()
+    await messages_ws_hub.register(user_id, websocket)
+    try:
+        while True:
+            data = await websocket.receive_json()
+            t = data.get("type")
+            if t == "typing":
+                conv_id = data.get("conversation_id")
+                if not conv_id:
+                    continue
+                # Ретранслируем собеседнику (вычислим его id через БД)
+                from app.database import async_session_maker
+                from uuid import UUID as _UUID
+                async with async_session_maker() as db:
+                    conv = await db.get(Conversation, _UUID(conv_id))
+                    if not conv:
+                        continue
+                    partner_id = partner_id_of(conv, _UUID(user_id))
+                    await messages_ws_hub.push_event(
+                        partner_id,
+                        {
+                            "type": "typing",
+                            "conversation_id": conv_id,
+                            "user_id": user_id,
+                        },
+                    )
+            # ignore unknown types
+    except WebSocketDisconnect:
+        pass
+    finally:
+        await messages_ws_hub.unregister(user_id, websocket)
 
 
 @router.get("/presence/{user_id}/", response_model=PresenceResponse)
