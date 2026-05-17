@@ -267,9 +267,14 @@ async def _try_discogs_fetch(
 async def match_unmatched_batch(batch_size: int = 200) -> dict[str, int]:
     """Найти `batch_size` unmatched листингов и попытаться сматчить.
 
-    Возвращает счётчики: matched/unmatched/errors.
+    Возвращает счётчики: matched/unmatched/errors + диагностика по сигналам
+    (какие из источников ID у листингов вообще есть).
     """
     counters = {"processed": 0, "matched": 0, "unmatched": 0, "errors": 0}
+    # Диагностика: сколько unmatched листингов вообще имеют сигналы для матчинга.
+    # Без неё непонятно, парсер ли не вытаскивает barcode/discogs_url, или
+    # matcher не находит. Лог помогает увидеть это сразу в выводе батча.
+    signals = {"with_discogs_url": 0, "with_barcode": 0, "with_catalog": 0, "no_ids": 0}
     async with async_session_maker() as db:
         res = await db.execute(
             select(StoreListing)
@@ -282,6 +287,19 @@ async def match_unmatched_batch(batch_size: int = 200) -> dict[str, int]:
 
         for listing in listings:
             counters["processed"] += 1
+            raw = listing.raw_payload or {}
+            has_url = bool(raw.get("discogs_release_url"))
+            has_bc = bool(raw.get("barcode"))
+            has_cat = bool(raw.get("catalog_number"))
+            if has_url:
+                signals["with_discogs_url"] += 1
+            if has_bc:
+                signals["with_barcode"] += 1
+            if has_cat:
+                signals["with_catalog"] += 1
+            if not (has_url or has_bc or has_cat):
+                signals["no_ids"] += 1
+
             # SAVEPOINT — если match_listing уронит транзакцию, откатываем
             # только этот savepoint, остальные листинги продолжаем матчить.
             sp = await db.begin_nested()
@@ -303,5 +321,5 @@ async def match_unmatched_batch(batch_size: int = 200) -> dict[str, int]:
             counters["matched"] = 0
             logger.exception("commit failed in match_unmatched_batch")
 
-    logger.info("match batch: %s", counters)
+    logger.info("match batch: %s | signals: %s", counters, signals)
     return counters

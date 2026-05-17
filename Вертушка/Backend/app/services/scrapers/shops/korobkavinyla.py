@@ -72,9 +72,14 @@ class KorobkaVinylaParser(BaseStoreParser):
         artist, album = _split_artist_album(title)
 
         # SKU из microdata = часто EAN-13. Класть в barcode если 8-14 цифр, иначе catalog.
+        # Fallback: URL Tilda имеет формат /tproduct/{rootpartid}-{EAN}-{slug} —
+        # если product.sku и meta itemprop="sku" пусты, EAN скорее всего там.
+        # Это критично для match_listing: без barcode он не идёт в on-demand
+        # Discogs fetch, и листинг остаётся unmatched.
         sku_raw = (
             (product.get("sku") if product else None)
             or _itemprop(soup, "sku")
+            or _extract_barcode_from_url(url)
         )
         barcode = normalize_barcode(sku_raw)
         catalog_number = None if barcode else normalize_catalog(sku_raw)
@@ -170,3 +175,14 @@ def _extract_uid_from_url(url: str) -> str:
     if m:
         return m.group(2)
     return url.rstrip("/").rsplit("/", 1)[-1]
+
+
+def _extract_barcode_from_url(url: str) -> str | None:
+    """
+    Fallback для barcode когда microdata пустая.
+    Tilda URL формата /tproduct/{rootpartid}-{barcode}-{slug} — второе число
+    часто EAN-12/13. Возвращаем только если длина 8-14 (фильтр через
+    normalize_barcode выше).
+    """
+    m = re.search(r"/tproduct/\d+-(\d{8,14})-", url)
+    return m.group(1) if m else None
