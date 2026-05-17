@@ -4,7 +4,7 @@
 from app.models.user import User
 from app.models.record import Record
 from app.models.collection import Collection, CollectionItem
-from app.models.wishlist import Wishlist, WishlistItem
+from app.models.wishlist import Wishlist, WishlistItem, WishlistFolder
 from app.models.gift_booking import GiftBooking
 from app.models.follow import Follow
 from app.models.follow_request import FollowRequest, FollowRequestStatus
@@ -28,6 +28,7 @@ __all__ = [
     "CollectionItem",
     "Wishlist",
     "WishlistItem",
+    "WishlistFolder",
     "GiftBooking",
     "Follow",
     "FollowRequest",

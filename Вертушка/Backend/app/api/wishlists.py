@@ -12,7 +12,7 @@ from sqlalchemy.orm import selectinload
 from app.database import get_db
 from app.models.user import User
 from app.models.record import Record
-from app.models.wishlist import Wishlist, WishlistItem
+from app.models.wishlist import Wishlist, WishlistItem, WishlistFolder, wishlist_folder_items
 from app.models.gift_booking import GiftBooking, GiftStatus
 from app.api.auth import get_current_user, get_current_user_optional
 from app.services.cover_storage import ensure_cover_cached
@@ -25,6 +25,11 @@ from app.schemas.wishlist import (
     WishlistPublicItemResponse,
     GiftBookingInfo,
     MoveToCollectionRequest,
+    WishlistFolderCreate,
+    WishlistFolderUpdate,
+    WishlistFolderResponse,
+    WishlistFolderWithItems,
+    WishlistFolderItemsAdd,
 )
 from app.schemas.record import RecordBrief
 from app.schemas.collection import CollectionItemResponse
@@ -656,3 +661,305 @@ async def move_to_collection(
         record=record
     )
 
+
+# ==================== Wishlist Folders ====================
+
+
+async def _get_or_create_wishlist(db: AsyncSession, user: User) -> Wishlist:
+    """Получает (или создаёт) вишлист текущего юзера. Без коммита."""
+    result = await db.execute(
+        select(Wishlist).where(Wishlist.user_id == user.id)
+    )
+    wishlist = result.scalar_one_or_none()
+    if not wishlist:
+        wishlist = Wishlist(user_id=user.id)
+        db.add(wishlist)
+        await db.flush()
+    return wishlist
+
+
+def _folder_to_response(folder: WishlistFolder, items_count: int) -> WishlistFolderResponse:
+    return WishlistFolderResponse(
+        id=folder.id,
+        wishlist_id=folder.wishlist_id,
+        name=folder.name,
+        sort_order=folder.sort_order,
+        items_count=items_count,
+        created_at=folder.created_at,
+        updated_at=folder.updated_at,
+    )
+
+
+def _wishlist_item_to_response(item: WishlistItem) -> WishlistItemResponse:
+    return WishlistItemResponse(
+        id=item.id,
+        wishlist_id=item.wishlist_id,
+        record_id=item.record_id,
+        priority=item.priority,
+        notes=item.notes,
+        is_purchased=item.is_purchased,
+        added_at=item.added_at,
+        purchased_at=item.purchased_at,
+        record=item.record,
+        is_booked=item.gift_booking is not None,
+        gift_booking=GiftBookingInfo(
+            id=item.gift_booking.id,
+            gifter_name=item.gift_booking.gifter_name,
+            status=item.gift_booking.status,
+            booked_at=item.gift_booking.booked_at,
+        ) if item.gift_booking else None,
+    )
+
+
+@router.get("/folders", response_model=list[WishlistFolderResponse])
+async def list_wishlist_folders(
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Список папок текущего юзера с подсчётом items_count."""
+    wishlist = await _get_or_create_wishlist(db, current_user)
+    await db.commit()  # на случай свежесозданного вишлиста
+
+    folders_q = await db.execute(
+        select(
+            WishlistFolder,
+            func.count(wishlist_folder_items.c.wishlist_item_id),
+        )
+        .outerjoin(
+            wishlist_folder_items,
+            wishlist_folder_items.c.wishlist_folder_id == WishlistFolder.id,
+        )
+        .where(WishlistFolder.wishlist_id == wishlist.id)
+        .group_by(WishlistFolder.id)
+        .order_by(WishlistFolder.sort_order, WishlistFolder.created_at)
+    )
+
+    return [
+        _folder_to_response(folder, count)
+        for folder, count in folders_q.all()
+    ]
+
+
+@router.post(
+    "/folders",
+    response_model=WishlistFolderResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+async def create_wishlist_folder(
+    data: WishlistFolderCreate,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Создать новую папку. sort_order = max+1."""
+    wishlist = await _get_or_create_wishlist(db, current_user)
+
+    max_sort_q = await db.execute(
+        select(func.coalesce(func.max(WishlistFolder.sort_order), -1))
+        .where(WishlistFolder.wishlist_id == wishlist.id)
+    )
+    next_sort = max_sort_q.scalar_one() + 1
+
+    folder = WishlistFolder(
+        wishlist_id=wishlist.id,
+        name=data.name,
+        sort_order=next_sort,
+    )
+    db.add(folder)
+    await db.commit()
+    await db.refresh(folder)
+
+    return _folder_to_response(folder, 0)
+
+
+@router.get("/folders/{folder_id}", response_model=WishlistFolderWithItems)
+async def get_wishlist_folder(
+    folder_id: UUID,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Папка с её содержимым (с record + gift_booking)."""
+    wishlist = await _get_or_create_wishlist(db, current_user)
+
+    result = await db.execute(
+        select(WishlistFolder)
+        .where(
+            WishlistFolder.id == folder_id,
+            WishlistFolder.wishlist_id == wishlist.id,
+        )
+        .options(
+            selectinload(WishlistFolder.items).selectinload(WishlistItem.record),
+            selectinload(WishlistFolder.items).selectinload(WishlistItem.gift_booking),
+        )
+    )
+    folder = result.scalar_one_or_none()
+    if not folder:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Папка не найдена",
+        )
+
+    items = [_wishlist_item_to_response(item) for item in folder.items]
+
+    return WishlistFolderWithItems(
+        id=folder.id,
+        wishlist_id=folder.wishlist_id,
+        name=folder.name,
+        sort_order=folder.sort_order,
+        items_count=len(items),
+        created_at=folder.created_at,
+        updated_at=folder.updated_at,
+        items=items,
+    )
+
+
+@router.put("/folders/{folder_id}", response_model=WishlistFolderResponse)
+async def update_wishlist_folder(
+    folder_id: UUID,
+    data: WishlistFolderUpdate,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Переименование папки."""
+    wishlist = await _get_or_create_wishlist(db, current_user)
+
+    result = await db.execute(
+        select(WishlistFolder).where(
+            WishlistFolder.id == folder_id,
+            WishlistFolder.wishlist_id == wishlist.id,
+        )
+    )
+    folder = result.scalar_one_or_none()
+    if not folder:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Папка не найдена",
+        )
+
+    if data.name is not None:
+        folder.name = data.name
+
+    await db.commit()
+    await db.refresh(folder)
+
+    count_q = await db.execute(
+        select(func.count(wishlist_folder_items.c.wishlist_item_id))
+        .where(wishlist_folder_items.c.wishlist_folder_id == folder.id)
+    )
+    return _folder_to_response(folder, count_q.scalar_one())
+
+
+@router.delete("/folders/{folder_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_wishlist_folder(
+    folder_id: UUID,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Удалить папку. WishlistItem остаются в вишлисте — FK CASCADE снимает только теги."""
+    wishlist = await _get_or_create_wishlist(db, current_user)
+
+    result = await db.execute(
+        select(WishlistFolder).where(
+            WishlistFolder.id == folder_id,
+            WishlistFolder.wishlist_id == wishlist.id,
+        )
+    )
+    folder = result.scalar_one_or_none()
+    if not folder:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Папка не найдена",
+        )
+
+    await db.delete(folder)
+    await db.commit()
+
+
+@router.post(
+    "/folders/{folder_id}/items",
+    response_model=WishlistFolderResponse,
+)
+async def add_items_to_wishlist_folder(
+    folder_id: UUID,
+    data: WishlistFolderItemsAdd,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Идемпотентное добавление item(s) в папку.
+    Фильтруем только items текущего вишлиста; дубликаты M2M пропускаем.
+    """
+    wishlist = await _get_or_create_wishlist(db, current_user)
+
+    folder_q = await db.execute(
+        select(WishlistFolder)
+        .where(
+            WishlistFolder.id == folder_id,
+            WishlistFolder.wishlist_id == wishlist.id,
+        )
+        .options(selectinload(WishlistFolder.items))
+    )
+    folder = folder_q.scalar_one_or_none()
+    if not folder:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Папка не найдена",
+        )
+
+    valid_items_q = await db.execute(
+        select(WishlistItem).where(
+            WishlistItem.id.in_(data.wishlist_item_ids),
+            WishlistItem.wishlist_id == wishlist.id,
+        )
+    )
+    valid_items = valid_items_q.scalars().all()
+
+    existing_ids = {item.id for item in folder.items}
+    for item in valid_items:
+        if item.id not in existing_ids:
+            folder.items.append(item)
+
+    await db.commit()
+    await db.refresh(folder)
+
+    count_q = await db.execute(
+        select(func.count(wishlist_folder_items.c.wishlist_item_id))
+        .where(wishlist_folder_items.c.wishlist_folder_id == folder.id)
+    )
+    return _folder_to_response(folder, count_q.scalar_one())
+
+
+@router.delete(
+    "/folders/{folder_id}/items/{wishlist_item_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+)
+async def remove_item_from_wishlist_folder(
+    folder_id: UUID,
+    wishlist_item_id: UUID,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Снять тег: убрать item из папки. Сам WishlistItem не трогаем."""
+    wishlist = await _get_or_create_wishlist(db, current_user)
+
+    folder_q = await db.execute(
+        select(WishlistFolder)
+        .where(
+            WishlistFolder.id == folder_id,
+            WishlistFolder.wishlist_id == wishlist.id,
+        )
+        .options(selectinload(WishlistFolder.items))
+    )
+    folder = folder_q.scalar_one_or_none()
+    if not folder:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Папка не найдена",
+        )
+
+    item_in_folder = next(
+        (i for i in folder.items if i.id == wishlist_item_id),
+        None,
+    )
+    if item_in_folder is not None:
+        folder.items.remove(item_in_folder)
+        await db.commit()

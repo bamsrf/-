@@ -16,6 +16,7 @@ import { GradientText } from '../../components/GradientText';
 import { RecordGrid } from '../../components/RecordGrid';
 import { ZoomableRecordGrid } from '../../components/ZoomableRecordGrid';
 import { FolderPickerModal } from '../../components/FolderPickerModal';
+import { WishlistFolderPickerModal } from '../../components/WishlistFolderPickerModal';
 import { SegmentedControl } from '../../components/ui';
 import { useCollectionStore, useAuthStore } from '../../lib/store';
 import { useTourTarget } from '../../lib/useTourTarget';
@@ -85,6 +86,7 @@ export default function CollectionScreen() {
   const sortMenuOpen = useRef(false);
 
   const [showFolderPicker, setShowFolderPicker] = useState(false);
+  const [showWishlistFolderPicker, setShowWishlistFolderPicker] = useState(false);
   const { user } = useAuthStore();
 
   const handleProfilePress = () => {
@@ -98,17 +100,21 @@ export default function CollectionScreen() {
     isLoadingMore,
     wishlistItems,
     folders,
+    wishlistFolders,
     isLoading,
     setActiveTab,
     fetchCollections,
     fetchCollectionItems,
     loadMoreCollectionItems,
     fetchWishlistItems,
+    fetchWishlistFolders,
     removeFromCollection,
     removeFromWishlist,
     moveToCollection,
     createFolder,
     addItemsToFolder,
+    createWishlistFolder,
+    addItemsToWishlistFolder,
   } = useCollectionStore();
 
   // Загрузка данных при монтировании
@@ -116,6 +122,7 @@ export default function CollectionScreen() {
     fetchCollections().then(() => {
       fetchCollectionItems();
       fetchWishlistItems();
+      fetchWishlistFolders();
     });
   }, []);
 
@@ -459,6 +466,42 @@ export default function CollectionScreen() {
     );
   };
 
+  const handleCreateWishlistFolder = () => {
+    Alert.prompt(
+      'Новая папка',
+      'Введите название папки',
+      async (name) => {
+        if (!name?.trim()) return;
+        try {
+          await createWishlistFolder(name.trim());
+        } catch {
+          toast.error('Не удалось создать папку');
+        }
+      },
+      'plain-text',
+    );
+  };
+
+  const handleAddToWishlistFolder = async (folderId: string) => {
+    try {
+      const wishlistItemIds = wishlistItems
+        .filter(item => selectedItems.has(item.id))
+        .map(item => item.id);
+
+      if (wishlistItemIds.length === 0) {
+        setShowWishlistFolderPicker(false);
+        return;
+      }
+
+      await addItemsToWishlistFolder(folderId, wishlistItemIds);
+      setShowWishlistFolderPicker(false);
+      setSelectedItems(new Set());
+      setIsSelectionMode(false);
+    } catch {
+      toast.error('Не удалось добавить в папку');
+    }
+  };
+
   const handleBulkMoveToCollection = async () => {
     if (selectedItems.size === 0 || activeTab !== 'wishlist') return;
 
@@ -572,6 +615,40 @@ export default function CollectionScreen() {
         {activeTab === 'collection' && folders.length === 0 && (
           <View ref={foldersTarget.ref} onLayout={foldersTarget.onLayout} collapsable={false}>
             <TouchableOpacity style={styles.createFirstFolder} onPress={handleCreateFolder}>
+              <Icon name="folder-outline" size={20} color={Colors.textMuted} />
+              <Text style={styles.createFirstFolderText}>Создать папку</Text>
+            </TouchableOpacity>
+          </View>
+        )}
+
+        {activeTab === 'wishlist' && wishlistFolders.length > 0 && (
+          <View style={styles.foldersSection}>
+            <Text style={styles.foldersSectionTitle}>Папки</Text>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.foldersScroll}>
+              <TouchableOpacity style={styles.newFolderCard} onPress={handleCreateWishlistFolder}>
+                <View style={styles.newFolderIcon}>
+                  <Icon name="add" size={32} color={Colors.textMuted} />
+                </View>
+                <Text style={styles.newFolderText}>Новая</Text>
+              </TouchableOpacity>
+              {wishlistFolders.map(folder => (
+                <TouchableOpacity
+                  key={folder.id}
+                  style={styles.folderCard}
+                  onPress={() => router.push(`/wishlist-folder/${folder.id}` as any)}
+                >
+                  <Image source={folderPlaceholder} style={styles.folderImage} />
+                  <Text style={styles.folderName} numberOfLines={1}>{folder.name}</Text>
+                  <Text style={styles.folderCount}>{folder.items_count} пл.</Text>
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+          </View>
+        )}
+
+        {activeTab === 'wishlist' && wishlistFolders.length === 0 && (
+          <View>
+            <TouchableOpacity style={styles.createFirstFolder} onPress={handleCreateWishlistFolder}>
               <Icon name="folder-outline" size={20} color={Colors.textMuted} />
               <Text style={styles.createFirstFolderText}>Создать папку</Text>
             </TouchableOpacity>
@@ -861,6 +938,28 @@ export default function CollectionScreen() {
             </TouchableOpacity>
           )}
 
+          {activeTab === 'wishlist' && (
+            <TouchableOpacity
+              style={styles.footerButton}
+              onPress={() => setShowWishlistFolderPicker(true)}
+              disabled={selectedItems.size === 0}
+            >
+              <Icon
+                name="folder-outline"
+                size={24}
+                color={selectedItems.size > 0 ? Colors.royalBlue : Colors.textMuted}
+              />
+              <Text
+                style={[
+                  styles.footerButtonText,
+                  selectedItems.size === 0 && styles.footerButtonTextDisabled,
+                ]}
+              >
+                В папку {selectedItems.size > 0 && `(${selectedItems.size})`}
+              </Text>
+            </TouchableOpacity>
+          )}
+
           {activeTab === 'collection' && (
             <TouchableOpacity
               style={styles.footerButton}
@@ -912,6 +1011,15 @@ export default function CollectionScreen() {
         selectedRecordIds={collectionItems
           .filter(item => selectedItems.has(item.id))
           .map(item => item.record_id)}
+      />
+
+      <WishlistFolderPickerModal
+        visible={showWishlistFolderPicker}
+        onClose={() => setShowWishlistFolderPicker(false)}
+        onSelectFolder={handleAddToWishlistFolder}
+        selectedWishlistItemIds={wishlistItems
+          .filter(item => selectedItems.has(item.id))
+          .map(item => item.id)}
       />
     </View>
   );

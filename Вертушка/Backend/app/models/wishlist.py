@@ -4,11 +4,31 @@
 import uuid
 import secrets
 from datetime import datetime
-from sqlalchemy import String, DateTime, ForeignKey, Text, Integer, Boolean
+from sqlalchemy import String, DateTime, ForeignKey, Text, Integer, Boolean, Table, Column
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.dialects.postgresql import UUID
 
 from app.database import Base
+
+
+# Ассоциативная таблица: пластинки в вишлисте ↔ папки (M2M, тегирование)
+wishlist_folder_items = Table(
+    "wishlist_folder_items",
+    Base.metadata,
+    Column(
+        "wishlist_folder_id",
+        UUID(as_uuid=True),
+        ForeignKey("wishlist_folders.id", ondelete="CASCADE"),
+        primary_key=True,
+    ),
+    Column(
+        "wishlist_item_id",
+        UUID(as_uuid=True),
+        ForeignKey("wishlist_items.id", ondelete="CASCADE"),
+        primary_key=True,
+    ),
+    Column("added_at", DateTime, default=datetime.utcnow, nullable=False),
+)
 
 
 def generate_share_token() -> str:
@@ -91,7 +111,13 @@ class Wishlist(Base):
         cascade="all, delete-orphan",
         order_by="WishlistItem.priority.desc(), WishlistItem.added_at.desc()"
     )
-    
+    folders = relationship(
+        "WishlistFolder",
+        back_populates="wishlist",
+        cascade="all, delete-orphan",
+        order_by="WishlistFolder.sort_order, WishlistFolder.created_at",
+    )
+
     def regenerate_share_token(self) -> str:
         """Перегенерация токена публичной ссылки"""
         self.share_token = generate_share_token()
@@ -166,7 +192,59 @@ class WishlistItem(Base):
         uselist=False,
         cascade="all, delete-orphan"
     )
-    
+    folders = relationship(
+        "WishlistFolder",
+        secondary=wishlist_folder_items,
+        back_populates="items",
+    )
+
     def __repr__(self) -> str:
         return f"<WishlistItem {self.id}>"
+
+
+class WishlistFolder(Base):
+    """Папка-тег в вишлисте (M2M c WishlistItem)"""
+
+    __tablename__ = "wishlist_folders"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        primary_key=True,
+        default=uuid.uuid4,
+    )
+    wishlist_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("wishlists.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    name: Mapped[str] = mapped_column(String(100), nullable=False)
+    sort_order: Mapped[int] = mapped_column(
+        Integer,
+        default=0,
+        nullable=False,
+        server_default="0",
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime,
+        default=datetime.utcnow,
+        nullable=False,
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime,
+        default=datetime.utcnow,
+        onupdate=datetime.utcnow,
+        nullable=False,
+    )
+
+    wishlist = relationship("Wishlist", back_populates="folders")
+    items = relationship(
+        "WishlistItem",
+        secondary=wishlist_folder_items,
+        back_populates="folders",
+        order_by="WishlistItem.priority.desc(), WishlistItem.added_at.desc()",
+    )
+
+    def __repr__(self) -> str:
+        return f"<WishlistFolder {self.name}>"
 

@@ -17,6 +17,7 @@ import {
   CollectionStats,
   Wishlist,
   WishlistItem,
+  WishlistFolder,
   SearchFilters,
   MasterSearchResponse,
   MasterRelease,
@@ -658,6 +659,44 @@ class ApiClient {
     return response.data;
   }
 
+  // ==================== Wishlist Folders ====================
+
+  async getWishlistFolders(): Promise<WishlistFolder[]> {
+    const response = await this.client.get<WishlistFolder[]>('/wishlists/folders');
+    return response.data;
+  }
+
+  async createWishlistFolder(name: string): Promise<WishlistFolder> {
+    const response = await this.client.post<WishlistFolder>('/wishlists/folders', { name });
+    return response.data;
+  }
+
+  async getWishlistFolder(id: string): Promise<WishlistFolder> {
+    const response = await this.client.get<WishlistFolder>(`/wishlists/folders/${id}`);
+    return response.data;
+  }
+
+  async renameWishlistFolder(id: string, name: string): Promise<WishlistFolder> {
+    const response = await this.client.put<WishlistFolder>(`/wishlists/folders/${id}`, { name });
+    return response.data;
+  }
+
+  async deleteWishlistFolder(id: string): Promise<void> {
+    await this.client.delete(`/wishlists/folders/${id}`);
+  }
+
+  async addItemsToWishlistFolder(folderId: string, wishlistItemIds: string[]): Promise<WishlistFolder> {
+    const response = await this.client.post<WishlistFolder>(
+      `/wishlists/folders/${folderId}/items`,
+      { wishlist_item_ids: wishlistItemIds }
+    );
+    return response.data;
+  }
+
+  async removeItemFromWishlistFolder(folderId: string, wishlistItemId: string): Promise<void> {
+    await this.client.delete(`/wishlists/folders/${folderId}/items/${wishlistItemId}`);
+  }
+
   // ==================== Public Profile ====================
 
   async getProfileSettings(): Promise<ProfileShareSettings> {
@@ -911,6 +950,7 @@ class ApiClient {
     }
     throw new Error('Base64 encoder not available');
   }
+
 }
 
 export const api = new ApiClient();

@@ -314,6 +314,17 @@ export interface WishlistItem {
   added_at: string;
 }
 
+export interface WishlistFolder {
+  id: string;
+  wishlist_id: string;
+  name: string;
+  sort_order: number;
+  items_count: number;
+  items?: WishlistItem[];
+  created_at: string;
+  updated_at: string;
+}
+
 // ==================== API Response ====================
 
 export interface ApiError {

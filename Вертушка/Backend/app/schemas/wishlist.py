@@ -153,3 +153,39 @@ class MoveToCollectionRequest(BaseModel):
     """Схема для переноса из вишлиста в коллекцию"""
     collection_id: UUID
 
+
+# ==================== Wishlist Folders ====================
+
+
+class WishlistFolderCreate(BaseModel):
+    """Создание папки в вишлисте"""
+    name: str = Field(..., min_length=1, max_length=100)
+
+
+class WishlistFolderUpdate(BaseModel):
+    """Обновление папки в вишлисте"""
+    name: str | None = Field(None, min_length=1, max_length=100)
+
+
+class WishlistFolderResponse(BaseModel):
+    """Папка в вишлисте"""
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    wishlist_id: UUID
+    name: str
+    sort_order: int
+    items_count: int = 0
+    created_at: datetime
+    updated_at: datetime
+
+
+class WishlistFolderWithItems(WishlistFolderResponse):
+    """Папка с её содержимым"""
+    items: list[WishlistItemResponse] = []
+
+
+class WishlistFolderItemsAdd(BaseModel):
+    """Bulk-добавление items в папку"""
+    wishlist_item_ids: list[UUID] = Field(..., min_length=1)
+

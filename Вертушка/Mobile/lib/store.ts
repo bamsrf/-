@@ -38,6 +38,7 @@ import {
   CollectionItem,
   CollectionStats,
   WishlistItem,
+  WishlistFolder,
   CollectionTab,
   SearchFilters,
   MasterSearchResult,
@@ -529,6 +530,7 @@ interface CollectionState {
   collectionHasMore: boolean;
   isLoadingMore: boolean;
   wishlistItems: WishlistItem[];
+  wishlistFolders: WishlistFolder[];
   isLoading: boolean;
   stats: CollectionStats | null;
   isLoadingStats: boolean;
@@ -553,6 +555,13 @@ interface CollectionState {
   renameFolder: (id: string, name: string) => Promise<void>;
   deleteFolder: (id: string) => Promise<void>;
   addItemsToFolder: (folderId: string, collectionItemIds: string[]) => Promise<void>;
+
+  // Wishlist folder actions
+  fetchWishlistFolders: () => Promise<void>;
+  createWishlistFolder: (name: string) => Promise<WishlistFolder>;
+  renameWishlistFolder: (id: string, name: string) => Promise<void>;
+  deleteWishlistFolder: (id: string) => Promise<void>;
+  addItemsToWishlistFolder: (folderId: string, wishlistItemIds: string[]) => Promise<void>;
 }
 
 export const useCollectionStore = create<CollectionState>((set, get) => ({
@@ -565,6 +574,7 @@ export const useCollectionStore = create<CollectionState>((set, get) => ({
   collectionHasMore: false,
   isLoadingMore: false,
   wishlistItems: [],
+  wishlistFolders: [],
   isLoading: false,
   stats: null,
   isLoadingStats: false,
@@ -737,7 +747,12 @@ export const useCollectionStore = create<CollectionState>((set, get) => ({
   removeFromWishlist: async (itemId, skipRefetch = false) => {
     await api.removeFromWishlist(itemId);
     useCacheStore.getState().invalidateAll();
-    if (!skipRefetch) await get().fetchWishlistItems();
+    if (!skipRefetch) {
+      await Promise.all([
+        get().fetchWishlistItems(),
+        get().fetchWishlistFolders(),
+      ]);
+    }
   },
 
   moveToCollection: async (wishlistItemId) => {
@@ -781,6 +796,36 @@ export const useCollectionStore = create<CollectionState>((set, get) => ({
       items.map(item => api.addRecordToFolder(folderId, item.record_id))
     );
     await get().fetchCollections();
+  },
+
+  fetchWishlistFolders: async () => {
+    try {
+      const folders = await api.getWishlistFolders();
+      set({ wishlistFolders: folders });
+    } catch (error) {
+      console.error('Failed to fetch wishlist folders', error);
+    }
+  },
+
+  createWishlistFolder: async (name) => {
+    const folder = await api.createWishlistFolder(name);
+    await get().fetchWishlistFolders();
+    return folder;
+  },
+
+  renameWishlistFolder: async (id, name) => {
+    await api.renameWishlistFolder(id, name);
+    await get().fetchWishlistFolders();
+  },
+
+  deleteWishlistFolder: async (id) => {
+    await api.deleteWishlistFolder(id);
+    await get().fetchWishlistFolders();
+  },
+
+  addItemsToWishlistFolder: async (folderId, wishlistItemIds) => {
+    await api.addItemsToWishlistFolder(folderId, wishlistItemIds);
+    await get().fetchWishlistFolders();
   },
 
 }));
@@ -1329,6 +1374,7 @@ export function resetUserStores(): void {
     collectionHasMore: false,
     isLoadingMore: false,
     wishlistItems: [],
+    wishlistFolders: [],
     isLoading: false,
     stats: null,
     isLoadingStats: false,
