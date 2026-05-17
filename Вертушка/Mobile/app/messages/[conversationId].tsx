@@ -1,8 +1,14 @@
 /**
- * Экран одного диалога: список сообщений + ввод.
+ * Экран одного диалога (V2.3).
  *
- * M1: polling getConversation каждые 8с, пока экран открыт.
- * В M2 заменится на WebSocket push.
+ * - Группировка сообщений того же sender ≤5 минут (Telegram-style).
+ * - Date-разделители («Сегодня», «Вчера», конкретная дата).
+ * - Read-receipt галочки на своих сообщениях.
+ * - Composer: paperclip (заглушка под share record), TextInput до 5 строк,
+ *   круглая send-кнопка с плавным переходом disabled ↔ active.
+ * - Empty state: карточка с аватаркой собеседника.
+ *
+ * Поллинг 8с пока экран открыт (заменится на WS в M2).
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
@@ -17,6 +23,7 @@ import {
   ActivityIndicator,
   AppState,
   AppStateStatus,
+  ListRenderItem,
 } from 'react-native';
 import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -31,6 +38,7 @@ import { messagesApi } from '../../lib/messagesApi';
 import type { Conversation, Message } from '../../lib/messagesTypes';
 
 const POLL_INTERVAL_MS = 8000;
+const GROUP_GAP_MS = 5 * 60 * 1000; // сообщения подряд того же sender → одна группа
 const EMPTY_MESSAGES: Message[] = [];
 
 function formatBubbleTime(iso: string): string {
@@ -38,10 +46,101 @@ function formatBubbleTime(iso: string): string {
   return d.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
 }
 
-function MessageBubble({ message, isMine }: { message: Message; isMine: boolean }) {
+function formatDateLabel(d: Date): string {
+  const now = new Date();
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const yesterday = new Date(today.getTime() - 86_400_000);
+  const target = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+
+  if (target.getTime() === today.getTime()) return 'Сегодня';
+  if (target.getTime() === yesterday.getTime()) return 'Вчера';
+
+  const sameYear = d.getFullYear() === now.getFullYear();
+  return d.toLocaleDateString('ru-RU', {
+    day: 'numeric',
+    month: 'long',
+    year: sameYear ? undefined : 'numeric',
+  });
+}
+
+type FeedItem =
+  | { type: 'date'; key: string; date: Date }
+  | {
+      type: 'message';
+      key: string;
+      message: Message;
+      isMine: boolean;
+      isLastInGroup: boolean;
+      isFirstInGroup: boolean;
+    };
+
+function buildFeed(messages: Message[], meId: string | null): FeedItem[] {
+  if (messages.length === 0) return [];
+  const sorted = [...messages].sort(
+    (a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+  );
+
+  const items: FeedItem[] = [];
+  let prevDayKey: string | null = null;
+  let prevMsg: Message | null = null;
+
+  for (let i = 0; i < sorted.length; i++) {
+    const m = sorted[i];
+    const date = new Date(m.created_at);
+    const dayKey = `${date.getFullYear()}-${date.getMonth()}-${date.getDate()}`;
+
+    if (dayKey !== prevDayKey) {
+      items.push({ type: 'date', key: `date-${dayKey}`, date });
+      prevDayKey = dayKey;
+      prevMsg = null;
+    }
+
+    const isMine = !!meId && m.sender_id === meId;
+    const isFirstInGroup =
+      !prevMsg ||
+      prevMsg.sender_id !== m.sender_id ||
+      new Date(m.created_at).getTime() - new Date(prevMsg.created_at).getTime() > GROUP_GAP_MS;
+
+    const next = sorted[i + 1];
+    const isLastInGroup =
+      !next ||
+      next.sender_id !== m.sender_id ||
+      new Date(next.created_at).getTime() - new Date(m.created_at).getTime() > GROUP_GAP_MS;
+
+    items.push({
+      type: 'message',
+      key: m.id,
+      message: m,
+      isMine,
+      isFirstInGroup,
+      isLastInGroup,
+    });
+    prevMsg = m;
+  }
+  return items;
+}
+
+function ReadMark({ status }: { status: Message['_local_status'] }) {
+  if (status === 'sending') {
+    return <ActivityIndicator size="small" color="rgba(255,255,255,0.7)" />;
+  }
+  // 'sent' и без статуса (пришло с сервера) — двойная галка серая.
+  // Синяя ✓✓ (read) — после расширения backend partner.last_read_at в V2.5.
+  return <Icon name="check" size={12} color="rgba(255,255,255,0.75)" />;
+}
+
+function MessageBubble({
+  message,
+  isMine,
+  isLastInGroup,
+}: {
+  message: Message;
+  isMine: boolean;
+  isLastInGroup: boolean;
+}) {
   if (message.deleted_at) {
     return (
-      <View style={[styles.bubbleWrap, isMine ? styles.bubbleWrapMine : styles.bubbleWrapOther]}>
+      <View style={[styles.bubbleRow, isMine ? styles.bubbleRowMine : styles.bubbleRowOther]}>
         <View style={[styles.bubble, styles.bubbleDeleted]}>
           <Text style={styles.bubbleDeletedTxt}>Сообщение удалено</Text>
         </View>
@@ -50,26 +149,83 @@ function MessageBubble({ message, isMine }: { message: Message; isMine: boolean 
   }
 
   const isFailed = message._local_status === 'failed';
-  const isSending = message._local_status === 'sending';
 
   return (
-    <View style={[styles.bubbleWrap, isMine ? styles.bubbleWrapMine : styles.bubbleWrapOther]}>
-      <View style={[styles.bubble, isMine ? styles.bubbleMine : styles.bubbleOther]}>
+    <View style={[styles.bubbleRow, isMine ? styles.bubbleRowMine : styles.bubbleRowOther]}>
+      <View
+        style={[
+          styles.bubble,
+          isMine ? styles.bubbleMine : styles.bubbleOther,
+          isMine && !isLastInGroup && { borderBottomRightRadius: 18 },
+          !isMine && !isLastInGroup && { borderBottomLeftRadius: 18 },
+        ]}
+      >
         <Text style={[styles.bubbleBody, isMine && styles.bubbleBodyMine]}>
           {message.body}
         </Text>
-        <View style={styles.bubbleMeta}>
-          <Text style={[styles.bubbleTime, isMine && styles.bubbleTimeMine]}>
-            {formatBubbleTime(message.created_at)}
-          </Text>
-          {isMine && isSending ? (
-            <ActivityIndicator size="small" color="rgba(255,255,255,0.7)" />
-          ) : null}
-          {isMine && isFailed ? (
-            <Icon name="warning" size={12} color="#fff" />
-          ) : null}
-        </View>
+        {isLastInGroup ? (
+          <View style={styles.bubbleMeta}>
+            <Text style={[styles.bubbleTime, isMine && styles.bubbleTimeMine]}>
+              {formatBubbleTime(message.created_at)}
+            </Text>
+            {isMine && !isFailed ? <ReadMark status={message._local_status} /> : null}
+            {isMine && isFailed ? (
+              <Icon name="warning" size={12} color="#FCD2D4" />
+            ) : null}
+          </View>
+        ) : null}
       </View>
+    </View>
+  );
+}
+
+function DateDivider({ date }: { date: Date }) {
+  return (
+    <View style={styles.dateDivider}>
+      <View style={styles.dateChip}>
+        <Text style={styles.dateChipTxt}>{formatDateLabel(date)}</Text>
+      </View>
+    </View>
+  );
+}
+
+function EmptyState({ partner }: { partner: Conversation['partner'] | null }) {
+  if (!partner) {
+    return (
+      <View style={styles.emptyConv}>
+        <ActivityIndicator size="small" color={Colors.royalBlue} />
+      </View>
+    );
+  }
+  const initials = partner.username.slice(0, 2).toUpperCase();
+  return (
+    <View style={styles.emptyConv}>
+      <View style={styles.emptyAvatar}>
+        {partner.avatar_url ? (
+          <Image
+            source={resolveMediaUrl(partner.avatar_url)}
+            style={{ width: 72, height: 72, borderRadius: 36 }}
+            cachePolicy="disk"
+          />
+        ) : (
+          <LinearGradient
+            colors={[Colors.royalBlue, Colors.periwinkle]}
+            style={{
+              width: 72,
+              height: 72,
+              borderRadius: 36,
+              alignItems: 'center',
+              justifyContent: 'center',
+            }}
+          >
+            <Text style={styles.emptyAvatarTxt}>{initials}</Text>
+          </LinearGradient>
+        )}
+      </View>
+      <Text style={styles.emptyName}>
+        {partner.display_name || `@${partner.username}`}
+      </Text>
+      <Text style={styles.emptyHint}>Это начало вашей беседы</Text>
     </View>
   );
 }
@@ -105,13 +261,12 @@ export default function ConversationScreen() {
   const [partner, setPartner] = useState<Conversation['partner'] | null>(
     conversation?.partner ?? null
   );
-  const listRef = useRef<FlatList<Message>>(null);
+  const listRef = useRef<FlatList<FeedItem>>(null);
 
   useEffect(() => {
     if (conversation?.partner) setPartner(conversation.partner);
   }, [conversation?.partner]);
 
-  // Первая загрузка — берём детали + перешлём в store.
   useEffect(() => {
     if (!conversationId) return;
     (async () => {
@@ -120,12 +275,11 @@ export default function ConversationScreen() {
         setPartner(detail.conversation.partner);
         await loadThread(conversationId);
       } catch {
-        // молча, экран отрендерит пусто
+        // молча
       }
     })();
   }, [conversationId, loadThread]);
 
-  // Polling пока экран foreground и активен.
   useEffect(() => {
     if (!conversationId) return undefined;
     let timer: ReturnType<typeof setInterval> | null = null;
@@ -133,9 +287,7 @@ export default function ConversationScreen() {
 
     const start = () => {
       if (timer) return;
-      timer = setInterval(() => {
-        loadThread(conversationId);
-      }, POLL_INTERVAL_MS);
+      timer = setInterval(() => loadThread(conversationId), POLL_INTERVAL_MS);
     };
     const stop = () => {
       if (timer) {
@@ -161,12 +313,13 @@ export default function ConversationScreen() {
     };
   }, [conversationId, loadThread]);
 
-  // Отметить прочитанным когда есть свежие
   useEffect(() => {
     if (!conversationId || messages.length === 0) return;
     if (!conversation || conversation.unread_count === 0) return;
     markRead(conversationId);
   }, [conversationId, messages.length, conversation, markRead]);
+
+  const feed = useMemo(() => buildFeed(messages, me?.id ?? null), [messages, me?.id]);
 
   const handleSend = useCallback(async () => {
     if (!conversationId || !draft.trim()) return;
@@ -184,21 +337,32 @@ export default function ConversationScreen() {
     [conversationId, retrySend]
   );
 
-  const renderItem = useCallback(
-    ({ item }: { item: Message }) => {
-      const isMine = !!me && item.sender_id === me.id;
-      const isFailed = item._local_status === 'failed';
+  const renderItem: ListRenderItem<FeedItem> = useCallback(
+    ({ item }) => {
+      if (item.type === 'date') return <DateDivider date={item.date} />;
+      const m = item.message;
+      const isFailed = m._local_status === 'failed';
       if (isFailed) {
         return (
-          <TouchableOpacity activeOpacity={0.8} onPress={() => handleRetry(item)}>
-            <MessageBubble message={item} isMine={isMine} />
+          <TouchableOpacity activeOpacity={0.8} onPress={() => handleRetry(m)}>
+            <MessageBubble
+              message={m}
+              isMine={item.isMine}
+              isLastInGroup={item.isLastInGroup}
+            />
             <Text style={styles.failedHint}>Не отправлено — нажмите, чтобы повторить</Text>
           </TouchableOpacity>
         );
       }
-      return <MessageBubble message={item} isMine={isMine} />;
+      return (
+        <MessageBubble
+          message={m}
+          isMine={item.isMine}
+          isLastInGroup={item.isLastInGroup}
+        />
+      );
     },
-    [me, handleRetry]
+    [handleRetry]
   );
 
   const headerName = useMemo(() => {
@@ -211,7 +375,7 @@ export default function ConversationScreen() {
 
   return (
     <View style={styles.container}>
-      {/* Header — фиксированный, не уезжает с клавиатурой */}
+      {/* Header */}
       <View style={[styles.topbar, { paddingTop: insets.top + 6 }]}>
         <TouchableOpacity onPress={() => router.back()} style={styles.iconBtn}>
           <Icon name="arrow-left" size={22} color={Colors.text} />
@@ -251,8 +415,6 @@ export default function ConversationScreen() {
         <View style={{ width: 36 }} />
       </View>
 
-      {/* KeyboardAvoidingView оборачивает только список + input,
-          чтобы клавиатура не накладывалась на инпут и не двигала хедер */}
       <KeyboardAvoidingView
         style={styles.kbWrap}
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
@@ -260,25 +422,28 @@ export default function ConversationScreen() {
       >
         <FlatList
           ref={listRef}
-          data={messages}
-          keyExtractor={(item) => item.id}
+          data={feed}
+          keyExtractor={(item) => item.key}
           renderItem={renderItem}
-          contentContainerStyle={styles.list}
+          contentContainerStyle={feed.length === 0 ? styles.listEmpty : styles.list}
           onContentSizeChange={() => listRef.current?.scrollToEnd({ animated: false })}
           onLayout={() => listRef.current?.scrollToEnd({ animated: false })}
           onEndReachedThreshold={0.1}
           onStartReached={() => conversationId && loadMore(conversationId)}
-          ListEmptyComponent={
-            isLoading ? null : (
-              <View style={styles.emptyConv}>
-                <Text style={styles.emptyConvTxt}>Напишите первое сообщение</Text>
-              </View>
-            )
-          }
+          ListEmptyComponent={isLoading ? null : <EmptyState partner={partner} />}
           keyboardShouldPersistTaps="handled"
         />
 
         <View style={[styles.inputBar, { paddingBottom: insets.bottom + 8 }]}>
+          <TouchableOpacity
+            style={styles.attachBtn}
+            activeOpacity={0.7}
+            onPress={() => {
+              /* TODO V2.9: share record from collection/search */
+            }}
+          >
+            <Icon name="disc" size={20} color={Colors.textMuted} />
+          </TouchableOpacity>
           <TextInput
             style={styles.input}
             placeholder="Сообщение"
@@ -349,9 +514,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  partnerAvatarSkeleton: {
-    backgroundColor: Colors.surface,
-  },
+  partnerAvatarSkeleton: { backgroundColor: Colors.surface },
   partnerAvatarTxt: {
     fontSize: 13,
     fontWeight: '700',
@@ -360,15 +523,36 @@ const styles = StyleSheet.create({
   },
   partnerName: { fontSize: 15, fontWeight: '600', color: Colors.text, flex: 1 },
 
-  list: { paddingHorizontal: Spacing.md, paddingVertical: Spacing.md, gap: 6 },
+  list: { paddingHorizontal: Spacing.md, paddingVertical: Spacing.md },
+  listEmpty: { flexGrow: 1, justifyContent: 'center' },
 
-  bubbleWrap: { width: '100%', marginBottom: 4 },
-  bubbleWrapMine: { alignItems: 'flex-end' },
-  bubbleWrapOther: { alignItems: 'flex-start' },
+  /* Date divider */
+  dateDivider: {
+    alignItems: 'center',
+    marginVertical: Spacing.sm,
+  },
+  dateChip: {
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 12,
+    backgroundColor: 'rgba(154,168,255,0.15)',
+  },
+  dateChipTxt: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: Colors.royalBlue,
+    letterSpacing: 0.2,
+  },
+
+  /* Bubble */
+  bubbleRow: { width: '100%', marginVertical: 1 },
+  bubbleRowMine: { alignItems: 'flex-end' },
+  bubbleRowOther: { alignItems: 'flex-start' },
   bubble: {
     maxWidth: '78%',
     paddingHorizontal: 14,
-    paddingVertical: 8,
+    paddingTop: 8,
+    paddingBottom: 6,
     borderRadius: 18,
   },
   bubbleMine: {
@@ -395,8 +579,8 @@ const styles = StyleSheet.create({
   bubbleMeta: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
-    marginTop: 3,
+    gap: 5,
+    marginTop: 2,
     alignSelf: 'flex-end',
   },
   bubbleTime: { fontSize: 10, color: Colors.textMuted },
@@ -410,9 +594,33 @@ const styles = StyleSheet.create({
     marginRight: 4,
   },
 
-  emptyConv: { alignItems: 'center', paddingVertical: 80 },
-  emptyConvTxt: { fontSize: 14, color: Colors.textMuted },
+  /* Empty state */
+  emptyConv: {
+    alignItems: 'center',
+    paddingHorizontal: Spacing.lg,
+    gap: 8,
+  },
+  emptyAvatar: {
+    width: 72,
+    height: 72,
+    borderRadius: 36,
+    overflow: 'hidden',
+    marginBottom: 4,
+    shadowColor: Colors.royalBlue,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.2,
+    shadowRadius: 12,
+  },
+  emptyAvatarTxt: {
+    fontSize: 22,
+    fontWeight: '700',
+    color: '#fff',
+    letterSpacing: 0.5,
+  },
+  emptyName: { fontSize: 16, fontWeight: '600', color: Colors.text },
+  emptyHint: { fontSize: 13, color: Colors.textMuted },
 
+  /* Composer */
   inputBar: {
     flexDirection: 'row',
     alignItems: 'flex-end',
@@ -422,6 +630,13 @@ const styles = StyleSheet.create({
     borderTopColor: Colors.divider,
     backgroundColor: Colors.background,
     gap: Spacing.sm,
+  },
+  attachBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   input: {
     flex: 1,

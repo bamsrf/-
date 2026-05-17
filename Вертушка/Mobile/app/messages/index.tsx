@@ -1,30 +1,41 @@
 /**
- * Инбокс сообщений.
+ * Инбокс сообщений (V2.2).
  *
- * Папка «Запросы» доступна через строку-вход сверху списка, если есть pending
- * (фактическое разделение primary/requests включается на M3, в M1 все треды
- * лежат в primary).
+ * - Сегмент Личные / Запросы внутри экрана (Instagram-style).
+ * - Список диалогов: gradient-аватар, имя, mute-иконка, превью, time, read-mark / unread badge.
+ * - Если есть pending-запросы — в баннере сверху стек 3 аватарок и «От @a, @b и ещё N».
+ * - Empty state — карточкой с подсказкой.
+ *
+ * М3-эндпоинты accept/reject/block ещё не реализованы — в режиме «Запросы» открытие
+ * треда тапом работает; кнопки accept/reject подключим в V2.4.
  */
-import { useCallback, useEffect } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   View,
   Text,
   StyleSheet,
   FlatList,
   TouchableOpacity,
-  ActivityIndicator,
   RefreshControl,
 } from 'react-native';
 import { Image } from 'expo-image';
+import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Icon } from '@/components/ui';
-import { Colors, Spacing, BorderRadius, Typography } from '../../constants/theme';
+import { Icon, SegmentedControl } from '@/components/ui';
+import { Colors, Spacing, BorderRadius } from '../../constants/theme';
 import { useAuthStore } from '../../lib/store';
 import { useMessagesStore } from '../../lib/messagesStore';
 import { resolveMediaUrl } from '../../lib/api';
 import type { Conversation } from '../../lib/messagesTypes';
 import { Header } from '../../components/Header';
+
+type Folder = 'primary' | 'requests';
+
+const SEGMENTS: { key: Folder; label: string }[] = [
+  { key: 'primary', label: 'Личные' },
+  { key: 'requests', label: 'Запросы' },
+];
 
 function formatTime(iso: string | null): string {
   if (!iso) return '';
@@ -41,6 +52,43 @@ function formatTime(iso: string | null): string {
   return d.toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit' });
 }
 
+function Avatar({
+  url,
+  username,
+  size = 52,
+}: {
+  url?: string | null;
+  username: string;
+  size?: number;
+}) {
+  const initials = username.slice(0, 2).toUpperCase();
+  if (url) {
+    return (
+      <Image
+        source={resolveMediaUrl(url)}
+        style={{ width: size, height: size, borderRadius: size / 2 }}
+        cachePolicy="disk"
+      />
+    );
+  }
+  return (
+    <LinearGradient
+      colors={[Colors.royalBlue, Colors.periwinkle]}
+      style={{
+        width: size,
+        height: size,
+        borderRadius: size / 2,
+        alignItems: 'center',
+        justifyContent: 'center',
+      }}
+    >
+      <Text style={[styles.avatarInitials, { fontSize: size * 0.34 }]}>
+        {initials}
+      </Text>
+    </LinearGradient>
+  );
+}
+
 function ConversationRow({
   item,
   isMine,
@@ -50,42 +98,42 @@ function ConversationRow({
   isMine: boolean;
   onPress: () => void;
 }) {
-  const initials = item.partner.username.slice(0, 2).toLowerCase();
   const previewPrefix = isMine ? 'Вы: ' : '';
   const preview = item.last_message_preview ?? 'Нет сообщений';
+  const unread = item.unread_count;
+
   return (
-    <TouchableOpacity activeOpacity={0.85} style={styles.row} onPress={onPress}>
-      <View style={styles.avatar}>
-        {item.partner.avatar_url ? (
-          <Image
-            source={resolveMediaUrl(item.partner.avatar_url)}
-            style={{ width: 52, height: 52, borderRadius: 26 }}
-            cachePolicy="disk"
-          />
-        ) : (
-          <Text style={styles.avatarTxt}>{initials}</Text>
-        )}
-      </View>
+    <TouchableOpacity activeOpacity={0.7} style={styles.row} onPress={onPress}>
+      <Avatar url={item.partner.avatar_url} username={item.partner.username} size={52} />
       <View style={styles.rowMain}>
         <View style={styles.rowTop}>
-          <Text style={styles.rowName} numberOfLines={1}>
-            {item.partner.display_name || `@${item.partner.username}`}
+          <View style={styles.rowNameWrap}>
+            <Text style={styles.rowName} numberOfLines={1}>
+              {item.partner.display_name || `@${item.partner.username}`}
+            </Text>
+            {item.muted ? (
+              <Icon name="bell-slash" size={12} color={Colors.textMuted} />
+            ) : null}
+          </View>
+          <Text style={[styles.rowTime, unread > 0 && styles.rowTimeUnread]}>
+            {formatTime(item.last_message_at)}
           </Text>
-          <Text style={styles.rowTime}>{formatTime(item.last_message_at)}</Text>
         </View>
         <View style={styles.rowBottom}>
           <Text
-            style={[styles.rowPreview, item.unread_count > 0 && styles.rowPreviewUnread]}
+            style={[
+              styles.rowPreview,
+              unread > 0 && styles.rowPreviewUnread,
+              item.muted && unread > 0 && styles.rowPreviewMutedUnread,
+            ]}
             numberOfLines={1}
           >
             {previewPrefix}
             {preview}
           </Text>
-          {item.unread_count > 0 ? (
-            <View style={styles.unreadDot}>
-              <Text style={styles.unreadTxt}>
-                {item.unread_count > 99 ? '99+' : item.unread_count}
-              </Text>
+          {unread > 0 ? (
+            <View style={[styles.unreadDot, item.muted && styles.unreadDotMuted]}>
+              <Text style={styles.unreadTxt}>{unread > 99 ? '99+' : unread}</Text>
             </View>
           ) : null}
         </View>
@@ -94,15 +142,56 @@ function ConversationRow({
   );
 }
 
+function RequestsHint({ requests }: { requests: Conversation[] }) {
+  const top3 = requests.slice(0, 3);
+  const namesText = useMemo(() => {
+    if (requests.length === 0) return '';
+    if (requests.length === 1) return `От @${requests[0].partner.username}`;
+    if (requests.length === 2) {
+      return `От @${requests[0].partner.username} и @${requests[1].partner.username}`;
+    }
+    const rest = requests.length - 2;
+    return `От @${requests[0].partner.username}, @${requests[1].partner.username} и ещё ${rest}`;
+  }, [requests]);
+
+  return (
+    <View style={styles.requestsHint}>
+      <View style={styles.avatarsStack}>
+        {top3.map((r, i) => (
+          <View
+            key={r.id}
+            style={[
+              styles.stackedAvatar,
+              { marginLeft: i === 0 ? 0 : -12, zIndex: 3 - i },
+            ]}
+          >
+            <Avatar url={r.partner.avatar_url} username={r.partner.username} size={32} />
+          </View>
+        ))}
+      </View>
+      <View style={{ flex: 1, marginLeft: Spacing.sm }}>
+        <Text style={styles.requestsHintTitle}>
+          {requests.length} {requests.length === 1 ? 'запрос' : requests.length < 5 ? 'запроса' : 'запросов'}
+        </Text>
+        <Text style={styles.requestsHintSub} numberOfLines={1}>
+          {namesText}
+        </Text>
+      </View>
+    </View>
+  );
+}
+
 export default function MessagesInboxScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const me = useAuthStore((s) => s.user);
-  const conversations = useMessagesStore((s) => s.conversationsPrimary);
+  const primary = useMessagesStore((s) => s.conversationsPrimary);
   const requests = useMessagesStore((s) => s.conversationsRequests);
   const isLoading = useMessagesStore((s) => s.isLoadingList);
   const loadConversations = useMessagesStore((s) => s.loadConversations);
   const refreshUnread = useMessagesStore((s) => s.refreshUnread);
+
+  const [folder, setFolder] = useState<Folder>('primary');
 
   const reload = useCallback(async () => {
     await Promise.all([
@@ -115,6 +204,16 @@ export default function MessagesInboxScreen() {
   useEffect(() => {
     reload();
   }, [reload]);
+
+  const segments = useMemo(() => {
+    return SEGMENTS.map((s) =>
+      s.key === 'requests' && requests.length > 0
+        ? { ...s, label: `Запросы · ${requests.length}` }
+        : s
+    );
+  }, [requests.length]);
+
+  const data = folder === 'primary' ? primary : requests;
 
   const renderItem = useCallback(
     ({ item }: { item: Conversation }) => (
@@ -129,12 +228,33 @@ export default function MessagesInboxScreen() {
 
   const renderEmpty = () => {
     if (isLoading) return null;
+    if (folder === 'primary') {
+      return (
+        <View style={styles.empty}>
+          <View style={styles.emptyIconBg}>
+            <Icon name="chat-circle" size={36} color={Colors.royalBlue} />
+          </View>
+          <Text style={styles.emptyTitle}>Пока никто не написал</Text>
+          <Text style={styles.emptySub}>
+            Откройте чей-нибудь профиль и нажмите «Написать», или начните диалог через кнопку ниже.
+          </Text>
+          <TouchableOpacity
+            style={styles.emptyBtn}
+            activeOpacity={0.85}
+            onPress={() => router.push('/messages/new' as any)}
+          >
+            <Icon name="pencil" size={16} color="#fff" />
+            <Text style={styles.emptyBtnTxt}>Новое сообщение</Text>
+          </TouchableOpacity>
+        </View>
+      );
+    }
     return (
       <View style={styles.empty}>
-        <Icon name="chat-circle" size={48} color={Colors.textMuted} />
-        <Text style={styles.emptyTitle}>Пока нет сообщений</Text>
+        <Icon name="envelope" size={36} color={Colors.textMuted} />
+        <Text style={styles.emptyTitle}>Запросов нет</Text>
         <Text style={styles.emptySub}>
-          Откройте чей-нибудь профиль и нажмите «Написать»
+          Здесь появятся первые сообщения от тех, на кого вы не подписаны.
         </Text>
       </View>
     );
@@ -144,27 +264,24 @@ export default function MessagesInboxScreen() {
     <View style={[styles.container, { paddingTop: insets.top }]}>
       <Header title="Сообщения" showBack showProfile={false} />
 
-      {requests.length > 0 ? (
+      <SegmentedControl
+        segments={segments}
+        selectedKey={folder}
+        onSelect={setFolder}
+        style={styles.segmented}
+      />
+
+      {folder === 'primary' && requests.length > 0 ? (
         <TouchableOpacity
-          activeOpacity={0.85}
-          style={styles.requestsBanner}
-          onPress={() => router.push('/messages/requests' as any)}
+          activeOpacity={0.7}
+          onPress={() => setFolder('requests')}
         >
-          <View style={styles.requestsIcon}>
-            <Icon name="envelope" size={18} color={Colors.royalBlue} />
-          </View>
-          <View style={{ flex: 1 }}>
-            <Text style={styles.requestsTitle}>Запросы сообщений</Text>
-            <Text style={styles.requestsSub}>
-              {requests.length} новых
-            </Text>
-          </View>
-          <Icon name="arrow-right" size={18} color={Colors.textMuted} />
+          <RequestsHint requests={requests} />
         </TouchableOpacity>
       ) : null}
 
       <FlatList
-        data={conversations}
+        data={data}
         keyExtractor={(item) => item.id}
         renderItem={renderItem}
         ListEmptyComponent={renderEmpty}
@@ -179,13 +296,15 @@ export default function MessagesInboxScreen() {
         }
       />
 
-      <TouchableOpacity
-        style={[styles.fab, { bottom: insets.bottom + 100 }]}
-        activeOpacity={0.85}
-        onPress={() => router.push('/messages/new' as any)}
-      >
-        <Icon name="pencil" size={20} color="#fff" />
-      </TouchableOpacity>
+      {folder === 'primary' ? (
+        <TouchableOpacity
+          style={[styles.fab, { bottom: insets.bottom + 100 }]}
+          activeOpacity={0.85}
+          onPress={() => router.push('/messages/new' as any)}
+        >
+          <Icon name="pencil" size={20} color="#fff" />
+        </TouchableOpacity>
+      ) : null}
     </View>
   );
 }
@@ -193,30 +312,36 @@ export default function MessagesInboxScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: Colors.background },
 
-  requestsBanner: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: Spacing.md,
+  segmented: {
     marginHorizontal: Spacing.md,
     marginTop: 4,
     marginBottom: Spacing.sm,
+  },
+
+  /* Requests preview banner (Instagram-style stacked avatars) */
+  requestsHint: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginHorizontal: Spacing.md,
+    marginBottom: Spacing.sm,
     paddingHorizontal: Spacing.md,
-    paddingVertical: 12,
+    paddingVertical: 10,
     backgroundColor: Colors.surface,
     borderRadius: BorderRadius.md,
     borderWidth: 1,
     borderColor: Colors.border,
   },
-  requestsIcon: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: Colors.background,
-    alignItems: 'center',
-    justifyContent: 'center',
+  avatarsStack: { flexDirection: 'row', alignItems: 'center' },
+  stackedAvatar: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    borderWidth: 2,
+    borderColor: Colors.background,
+    overflow: 'hidden',
   },
-  requestsTitle: { fontSize: 14, fontWeight: '600', color: Colors.text },
-  requestsSub: { fontSize: 12, color: Colors.textMuted, marginTop: 2 },
+  requestsHintTitle: { fontSize: 13, fontWeight: '600', color: Colors.text },
+  requestsHintSub: { fontSize: 12, color: Colors.textMuted, marginTop: 1 },
 
   listContent: { paddingHorizontal: Spacing.md, paddingBottom: 160 },
 
@@ -224,20 +349,14 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: Spacing.md,
-    paddingVertical: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: Colors.divider,
+    paddingVertical: 10,
   },
-  avatar: {
-    width: 52,
-    height: 52,
-    borderRadius: 26,
-    backgroundColor: Colors.surface,
-    alignItems: 'center',
-    justifyContent: 'center',
-    overflow: 'hidden',
+  avatarInitials: {
+    color: '#fff',
+    fontWeight: '700',
+    letterSpacing: 0.3,
   },
-  avatarTxt: { fontSize: 14, fontWeight: '600', color: Colors.royalBlue, textTransform: 'uppercase' },
+
   rowMain: { flex: 1, minWidth: 0 },
   rowTop: {
     flexDirection: 'row',
@@ -245,8 +364,21 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     gap: Spacing.sm,
   },
-  rowName: { fontSize: 15, fontWeight: '600', color: Colors.text, flex: 1 },
+  rowNameWrap: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  rowName: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: Colors.text,
+    flexShrink: 1,
+  },
   rowTime: { fontSize: 11, color: Colors.textMuted },
+  rowTimeUnread: { color: Colors.royalBlue, fontWeight: '600' },
+
   rowBottom: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -256,6 +388,8 @@ const styles = StyleSheet.create({
   },
   rowPreview: { fontSize: 13, color: Colors.textMuted, flex: 1 },
   rowPreviewUnread: { color: Colors.text, fontWeight: '500' },
+  rowPreviewMutedUnread: { color: Colors.textMuted, fontWeight: '400' },
+
   unreadDot: {
     minWidth: 20,
     height: 20,
@@ -265,11 +399,47 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+  unreadDotMuted: { backgroundColor: Colors.textMuted },
   unreadTxt: { fontSize: 10, color: '#fff', fontWeight: '700' },
 
-  empty: { alignItems: 'center', paddingTop: 80, paddingHorizontal: Spacing.lg, gap: Spacing.sm },
-  emptyTitle: { fontSize: 16, fontWeight: '600', color: Colors.text, marginTop: Spacing.sm },
-  emptySub: { fontSize: 13, color: Colors.textMuted, textAlign: 'center' },
+  /* Empty state */
+  empty: {
+    alignItems: 'center',
+    paddingTop: 60,
+    paddingHorizontal: Spacing.lg,
+    gap: 10,
+  },
+  emptyIconBg: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    backgroundColor: Colors.surface,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: Spacing.sm,
+  },
+  emptyTitle: { fontSize: 17, fontWeight: '700', color: Colors.text },
+  emptySub: {
+    fontSize: 13,
+    color: Colors.textMuted,
+    textAlign: 'center',
+    lineHeight: 18,
+  },
+  emptyBtn: {
+    marginTop: Spacing.md,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: Colors.royalBlue,
+    paddingHorizontal: 18,
+    paddingVertical: 11,
+    borderRadius: BorderRadius.full,
+    shadowColor: Colors.royalBlue,
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.3,
+    shadowRadius: 12,
+  },
+  emptyBtnTxt: { color: '#fff', fontWeight: '600', fontSize: 14 },
 
   fab: {
     position: 'absolute',
