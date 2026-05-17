@@ -91,12 +91,31 @@ class KorobkaVinylaParser(BaseStoreParser):
         if price is None:
             price = parse_price(_itemprop(soup, "price"))
 
-        # Статус: ПРЕДЗАКАЗ → preorder, "нет в наличии" → out_of_stock, иначе in_stock
-        status = "in_stock"
+        # Статус: ключевой сигнал — `product.quantity` из Tilda JSON-объекта.
+        # Tilda пишет "quantity":"N" когда товар в наличии, и пропускает поле
+        # (или ставит "0") когда товар закончился. Это надёжнее, чем regex по
+        # ключевым словам — у out-of-stock товаров часто на странице нет фраз
+        # типа «нет в наличии», просто скрыта кнопка «купить».
+        qty_raw = product.get("quantity") if product else None
+        try:
+            qty = int(str(qty_raw)) if qty_raw is not None and str(qty_raw).strip() != "" else 0
+        except (ValueError, TypeError):
+            qty = 0
+
         if _PREORDER_KW_RE.search(title) or _PREORDER_KW_RE.search(full_text):
             status = "preorder"
+        elif qty > 0:
+            status = "in_stock"
         elif _OUT_OF_STOCK_KW_RE.search(full_text):
             status = "out_of_stock"
+        elif product is None:
+            # Tilda product объект не найден на странице — нет данных о наличии,
+            # фолбэк на старую эвристику (цена есть → on_request, иначе out_of_stock)
+            status = "on_request" if price is not None else "out_of_stock"
+        else:
+            # product есть, но quantity нет / 0 — товар закончился
+            status = "out_of_stock"
+
         if price is None and status == "in_stock":
             status = "on_request"
 

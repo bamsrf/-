@@ -274,8 +274,15 @@ export function AutoRail({
     <View>
       <View style={styles.railHead}>
         <View style={styles.railHeadLeft}>
-          <Text style={[styles.railTitle, { color: titleColor }]}>{title.toUpperCase()}</Text>
-          <Text style={styles.railSub}>{subtitle}</Text>
+          <Text
+            style={[styles.railTitle, { color: titleColor }]}
+            numberOfLines={1}
+          >
+            {title.toUpperCase()}
+          </Text>
+          <Text style={styles.railSub} numberOfLines={1} ellipsizeMode="tail">
+            {subtitle}
+          </Text>
         </View>
         {headerActionLabel && onHeaderActionPress ? (
           <Pressable
@@ -286,7 +293,10 @@ export function AutoRail({
               pressed && { opacity: 0.6 },
             ]}
           >
-            <Text style={[styles.railHeadActionText, { color: titleColor }]}>
+            <Text
+              style={[styles.railHeadActionText, { color: titleColor }]}
+              numberOfLines={1}
+            >
               {headerActionLabel}
             </Text>
           </Pressable>
@@ -325,11 +335,13 @@ const styles = StyleSheet.create({
   railHeadLeft: {
     flexDirection: 'row',
     alignItems: 'baseline',
-    flexShrink: 1,
+    flex: 1,            // занимает доступное место → action не перекрывает
+    minWidth: 0,        // даёт детям сжиматься (numberOfLines+ellipsize работают)
     gap: 8,
   },
   railHeadAction: {
     paddingVertical: 2,
+    flexShrink: 0,      // action не сжимается, subtitle обрезается раньше
   },
   railHeadActionText: {
     fontSize: 11,
@@ -341,7 +353,7 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     fontFamily: Platform.select({ ios: 'Menlo', android: 'monospace' }),
   },
-  railSub: { fontSize: 11, color: PALETTE.mute },
+  railSub: { fontSize: 11, color: PALETTE.mute, flexShrink: 1, minWidth: 0 },
   viewport: {
     overflow: 'hidden',
   },
