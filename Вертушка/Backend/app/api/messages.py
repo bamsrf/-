@@ -22,6 +22,7 @@ from app.models.conversation import (
     Message,
 )
 from app.models.user import User
+from app.models.user_block import UserBlock
 from app.api.auth import get_current_user
 from app.schemas.message import (
     ConversationCreate,
@@ -321,3 +322,198 @@ async def unread_count(
     """Счётчики непрочитанного для бейджа в табе сообщений."""
     primary, requests_n = await compute_total_unread(db, current_user.id)
     return UnreadCount(primary=primary, requests=requests_n)
+
+
+# ==================== Действия над диалогом ====================
+
+
+@router.post(
+    "/conversations/{conversation_id}/accept/",
+    status_code=status.HTTP_200_OK,
+)
+async def accept_conversation(
+    conversation_id: UUID,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Принять request — переносит тред из «Запросов» в «Личные» у получателя."""
+    me_part = await require_participant(db, conversation_id, current_user.id)
+    if me_part.request_status != "pending":
+        return {"status": "already_accepted"}
+    me_part.request_status = "accepted"
+    await db.commit()
+    return {"status": "ok"}
+
+
+@router.post(
+    "/conversations/{conversation_id}/reject/",
+    status_code=status.HTTP_200_OK,
+)
+async def reject_conversation(
+    conversation_id: UUID,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Отклонить request — у получателя ставим cleared_at + archived_at.
+
+    Тред больше не показывается у текущего пользователя.
+    Отправитель продолжает видеть диалог в своём primary, но новые сообщения
+    инициируются через check_can_send и проверяются на блок (если был).
+    """
+    from datetime import datetime as _dt
+
+    me_part = await require_participant(db, conversation_id, current_user.id)
+    now = _dt.utcnow()
+    me_part.cleared_at = now
+    me_part.archived_at = now
+    await db.commit()
+    return {"status": "ok"}
+
+
+@router.post(
+    "/conversations/{conversation_id}/mute/",
+    status_code=status.HTTP_200_OK,
+)
+async def toggle_mute(
+    conversation_id: UUID,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Переключить mute диалога у текущего пользователя."""
+    me_part = await require_participant(db, conversation_id, current_user.id)
+    me_part.muted = not me_part.muted
+    await db.commit()
+    return {"status": "ok", "muted": me_part.muted}
+
+
+@router.post(
+    "/conversations/{conversation_id}/clear/",
+    status_code=status.HTTP_200_OK,
+)
+async def clear_history(
+    conversation_id: UUID,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Очистить историю у себя — старые сообщения скрываются из выдачи."""
+    from datetime import datetime as _dt
+
+    me_part = await require_participant(db, conversation_id, current_user.id)
+    me_part.cleared_at = _dt.utcnow()
+    await db.commit()
+    return {"status": "ok"}
+
+
+@router.delete(
+    "/conversations/{conversation_id}/",
+    status_code=status.HTTP_200_OK,
+)
+async def archive_conversation(
+    conversation_id: UUID,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Удалить диалог у себя (архив). У собеседника тред остаётся."""
+    from datetime import datetime as _dt
+
+    me_part = await require_participant(db, conversation_id, current_user.id)
+    me_part.archived_at = _dt.utcnow()
+    await db.commit()
+    return {"status": "ok"}
+
+
+# ==================== Блокировки ====================
+
+
+@router.post("/block/{user_id}/", status_code=status.HTTP_200_OK)
+async def block_user(
+    user_id: UUID,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Заблокировать пользователя в DM. Идемпотентно.
+
+    Если есть совместный тред — у текущего пользователя он архивируется и
+    история очищается, чтобы UI скрыл его сразу после блока.
+    """
+    from datetime import datetime as _dt
+
+    if user_id == current_user.id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Нельзя заблокировать самого себя",
+        )
+
+    target = await db.get(User, user_id)
+    if not target:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Пользователь не найден"
+        )
+
+    existing = await db.execute(
+        select(UserBlock).where(
+            UserBlock.blocker_id == current_user.id,
+            UserBlock.blocked_id == user_id,
+        )
+    )
+    if existing.scalar_one_or_none() is None:
+        db.add(UserBlock(blocker_id=current_user.id, blocked_id=user_id))
+
+    # Архивируем существующий тред у блокирующего
+    a, b = (
+        (current_user.id, user_id) if str(current_user.id) < str(user_id) else (user_id, current_user.id)
+    )
+    conv_q = await db.execute(
+        select(Conversation).where(
+            Conversation.user_a_id == a,
+            Conversation.user_b_id == b,
+        )
+    )
+    conv = conv_q.scalar_one_or_none()
+    if conv:
+        my_part_q = await db.execute(
+            select(ConversationParticipant).where(
+                ConversationParticipant.conversation_id == conv.id,
+                ConversationParticipant.user_id == current_user.id,
+            )
+        )
+        my_part = my_part_q.scalar_one_or_none()
+        if my_part:
+            now = _dt.utcnow()
+            my_part.archived_at = now
+            my_part.cleared_at = now
+
+    await db.commit()
+    return {"status": "ok"}
+
+
+@router.delete("/block/{user_id}/", status_code=status.HTTP_200_OK)
+async def unblock_user(
+    user_id: UUID,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Снять блокировку. Идемпотентно."""
+    result = await db.execute(
+        select(UserBlock).where(
+            UserBlock.blocker_id == current_user.id,
+            UserBlock.blocked_id == user_id,
+        )
+    )
+    block = result.scalar_one_or_none()
+    if block:
+        await db.delete(block)
+        await db.commit()
+    return {"status": "ok"}
+
+
+@router.get("/blocks/", response_model=list[UUID])
+async def list_blocks(
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Список UUID заблокированных пользователей."""
+    result = await db.execute(
+        select(UserBlock.blocked_id).where(UserBlock.blocker_id == current_user.id)
+    )
+    return list(result.scalars().all())

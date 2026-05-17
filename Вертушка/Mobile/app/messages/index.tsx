@@ -93,14 +93,19 @@ function ConversationRow({
   item,
   isMine,
   onPress,
+  onAccept,
+  onReject,
 }: {
   item: Conversation;
   isMine: boolean;
   onPress: () => void;
+  onAccept?: () => void;
+  onReject?: () => void;
 }) {
   const previewPrefix = isMine ? 'Вы: ' : '';
   const preview = item.last_message_preview ?? 'Нет сообщений';
   const unread = item.unread_count;
+  const isRequest = item.request_status === 'pending';
 
   return (
     <TouchableOpacity activeOpacity={0.7} style={styles.row} onPress={onPress}>
@@ -126,17 +131,35 @@ function ConversationRow({
               unread > 0 && styles.rowPreviewUnread,
               item.muted && unread > 0 && styles.rowPreviewMutedUnread,
             ]}
-            numberOfLines={1}
+            numberOfLines={isRequest ? 2 : 1}
           >
             {previewPrefix}
             {preview}
           </Text>
-          {unread > 0 ? (
+          {!isRequest && unread > 0 ? (
             <View style={[styles.unreadDot, item.muted && styles.unreadDotMuted]}>
               <Text style={styles.unreadTxt}>{unread > 99 ? '99+' : unread}</Text>
             </View>
           ) : null}
         </View>
+        {isRequest && (onAccept || onReject) ? (
+          <View style={styles.requestActions}>
+            <TouchableOpacity
+              style={[styles.reqBtn, styles.reqBtnAccept]}
+              onPress={onAccept}
+              activeOpacity={0.8}
+            >
+              <Text style={styles.reqBtnAcceptTxt}>Принять</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.reqBtn, styles.reqBtnReject]}
+              onPress={onReject}
+              activeOpacity={0.8}
+            >
+              <Text style={styles.reqBtnRejectTxt}>Удалить</Text>
+            </TouchableOpacity>
+          </View>
+        ) : null}
       </View>
     </TouchableOpacity>
   );
@@ -190,6 +213,8 @@ export default function MessagesInboxScreen() {
   const isLoading = useMessagesStore((s) => s.isLoadingList);
   const loadConversations = useMessagesStore((s) => s.loadConversations);
   const refreshUnread = useMessagesStore((s) => s.refreshUnread);
+  const acceptRequest = useMessagesStore((s) => s.acceptRequest);
+  const rejectRequest = useMessagesStore((s) => s.rejectRequest);
 
   const [folder, setFolder] = useState<Folder>('primary');
 
@@ -221,9 +246,25 @@ export default function MessagesInboxScreen() {
         item={item}
         isMine={!!me && item.last_message_sender_id === me.id}
         onPress={() => router.push(`/messages/${item.id}` as any)}
+        onAccept={
+          item.request_status === 'pending'
+            ? () => {
+                acceptRequest(item.id).then(() => {
+                  router.push(`/messages/${item.id}` as any);
+                });
+              }
+            : undefined
+        }
+        onReject={
+          item.request_status === 'pending'
+            ? () => {
+                rejectRequest(item.id);
+              }
+            : undefined
+        }
       />
     ),
-    [me, router]
+    [me, router, acceptRequest, rejectRequest]
   );
 
   const renderEmpty = () => {
@@ -401,6 +442,28 @@ const styles = StyleSheet.create({
   },
   unreadDotMuted: { backgroundColor: Colors.textMuted },
   unreadTxt: { fontSize: 10, color: '#fff', fontWeight: '700' },
+
+  /* Request action buttons */
+  requestActions: {
+    flexDirection: 'row',
+    gap: 8,
+    marginTop: 8,
+  },
+  reqBtn: {
+    flex: 1,
+    paddingVertical: 8,
+    borderRadius: BorderRadius.sm,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  reqBtnAccept: { backgroundColor: Colors.royalBlue },
+  reqBtnAcceptTxt: { color: '#fff', fontSize: 13, fontWeight: '600' },
+  reqBtnReject: {
+    backgroundColor: Colors.surface,
+    borderWidth: 1,
+    borderColor: Colors.border,
+  },
+  reqBtnRejectTxt: { color: Colors.text, fontSize: 13, fontWeight: '600' },
 
   /* Empty state */
   empty: {

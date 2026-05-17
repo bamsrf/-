@@ -100,4 +100,38 @@ export const messagesApi = {
     const r = await getClient().get('/messages/unread-count/');
     return r.data;
   },
+
+  async acceptConversation(conversationId: string): Promise<void> {
+    await getClient().post(`/messages/conversations/${conversationId}/accept/`);
+  },
+
+  async rejectConversation(conversationId: string): Promise<void> {
+    await getClient().post(`/messages/conversations/${conversationId}/reject/`);
+  },
+
+  async toggleMute(conversationId: string): Promise<{ muted: boolean }> {
+    const r = await getClient().post(`/messages/conversations/${conversationId}/mute/`);
+    return r.data;
+  },
+
+  async clearHistory(conversationId: string): Promise<void> {
+    await getClient().post(`/messages/conversations/${conversationId}/clear/`);
+  },
+
+  async archiveConversation(conversationId: string): Promise<void> {
+    await getClient().delete(`/messages/conversations/${conversationId}/`);
+  },
+
+  async blockUser(userId: string): Promise<void> {
+    await getClient().post(`/messages/block/${userId}/`);
+  },
+
+  async unblockUser(userId: string): Promise<void> {
+    await getClient().delete(`/messages/block/${userId}/`);
+  },
+
+  async listBlocks(): Promise<string[]> {
+    const r = await getClient().get('/messages/blocks/');
+    return r.data;
+  },
 };

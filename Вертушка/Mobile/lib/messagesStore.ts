@@ -36,6 +36,12 @@ interface MessagesState {
   markRead: (conversationId: string) => Promise<void>;
   refreshUnread: () => Promise<void>;
   openOrCreate: (recipientUserId: string) => Promise<Conversation>;
+  acceptRequest: (conversationId: string) => Promise<void>;
+  rejectRequest: (conversationId: string) => Promise<void>;
+  toggleMute: (conversationId: string) => Promise<void>;
+  archive: (conversationId: string) => Promise<void>;
+  clearHistory: (conversationId: string) => Promise<void>;
+  blockUser: (userId: string, conversationId?: string) => Promise<void>;
   reset: () => void;
 }
 
@@ -285,6 +291,63 @@ export const useMessagesStore = create<MessagesState>((set, get) => ({
           : s.conversationsRequests,
     }));
     return conv;
+  },
+
+  acceptRequest: async (conversationId) => {
+    await messagesApi.acceptConversation(conversationId);
+    set((s) => {
+      const req = s.conversationsRequests.find((c) => c.id === conversationId);
+      if (!req) return s;
+      const accepted: Conversation = { ...req, request_status: 'accepted' };
+      return {
+        conversationsRequests: s.conversationsRequests.filter((c) => c.id !== conversationId),
+        conversationsPrimary: upsertConversation(s.conversationsPrimary, accepted),
+      };
+    });
+  },
+
+  rejectRequest: async (conversationId) => {
+    await messagesApi.rejectConversation(conversationId);
+    set((s) => ({
+      conversationsRequests: s.conversationsRequests.filter((c) => c.id !== conversationId),
+    }));
+  },
+
+  toggleMute: async (conversationId) => {
+    const { muted } = await messagesApi.toggleMute(conversationId);
+    set((s) => ({
+      conversationsPrimary: s.conversationsPrimary.map((c) =>
+        c.id === conversationId ? { ...c, muted } : c
+      ),
+      conversationsRequests: s.conversationsRequests.map((c) =>
+        c.id === conversationId ? { ...c, muted } : c
+      ),
+    }));
+  },
+
+  archive: async (conversationId) => {
+    await messagesApi.archiveConversation(conversationId);
+    set((s) => ({
+      conversationsPrimary: s.conversationsPrimary.filter((c) => c.id !== conversationId),
+      conversationsRequests: s.conversationsRequests.filter((c) => c.id !== conversationId),
+    }));
+  },
+
+  clearHistory: async (conversationId) => {
+    await messagesApi.clearHistory(conversationId);
+    set((s) => ({
+      threads: { ...s.threads, [conversationId]: [] },
+    }));
+  },
+
+  blockUser: async (userId, conversationId) => {
+    await messagesApi.blockUser(userId);
+    if (conversationId) {
+      set((s) => ({
+        conversationsPrimary: s.conversationsPrimary.filter((c) => c.id !== conversationId),
+        conversationsRequests: s.conversationsRequests.filter((c) => c.id !== conversationId),
+      }));
+    }
   },
 
   reset: () =>

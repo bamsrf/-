@@ -24,6 +24,8 @@ import {
   AppState,
   AppStateStatus,
   ListRenderItem,
+  ActionSheetIOS,
+  Alert,
 } from 'react-native';
 import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -256,6 +258,10 @@ export default function ConversationScreen() {
   const sendMessage = useMessagesStore((s) => s.send);
   const markRead = useMessagesStore((s) => s.markRead);
   const retrySend = useMessagesStore((s) => s.retrySend);
+  const toggleMute = useMessagesStore((s) => s.toggleMute);
+  const clearHistory = useMessagesStore((s) => s.clearHistory);
+  const archive = useMessagesStore((s) => s.archive);
+  const blockUser = useMessagesStore((s) => s.blockUser);
 
   const [draft, setDraft] = useState('');
   const [partner, setPartner] = useState<Conversation['partner'] | null>(
@@ -372,6 +378,58 @@ export default function ConversationScreen() {
 
   const partnerInitials = (partner?.username ?? '').slice(0, 2).toUpperCase();
   const canSend = !!draft.trim();
+  const isMuted = !!conversation?.muted;
+
+  const handleMenu = useCallback(() => {
+    if (!conversationId || !partner) return;
+    const muteLabel = isMuted ? 'Включить уведомления' : 'Отключить уведомления';
+    const options = [muteLabel, 'Очистить историю', `Заблокировать @${partner.username}`, 'Удалить диалог', 'Отмена'];
+    const cancel = 4;
+    const destructive = [2, 3];
+
+    const exec = (i: number) => {
+      if (i === 0) toggleMute(conversationId);
+      else if (i === 1) {
+        Alert.alert('Очистить историю?', 'Сообщения будут скрыты у вас, у собеседника останутся.', [
+          { text: 'Отмена', style: 'cancel' },
+          { text: 'Очистить', style: 'destructive', onPress: () => clearHistory(conversationId) },
+        ]);
+      } else if (i === 2) {
+        Alert.alert(
+          `Заблокировать @${partner.username}?`,
+          'Вы не сможете обмениваться сообщениями. Диалог исчезнет у вас.',
+          [
+            { text: 'Отмена', style: 'cancel' },
+            {
+              text: 'Заблокировать',
+              style: 'destructive',
+              onPress: async () => {
+                await blockUser(partner.id, conversationId);
+                router.back();
+              },
+            },
+          ],
+        );
+      } else if (i === 3) {
+        archive(conversationId).then(() => router.back());
+      }
+    };
+
+    if (Platform.OS === 'ios') {
+      ActionSheetIOS.showActionSheetWithOptions(
+        { options, cancelButtonIndex: cancel, destructiveButtonIndex: destructive },
+        exec,
+      );
+    } else {
+      Alert.alert(`@${partner.username}`, undefined, [
+        { text: muteLabel, onPress: () => exec(0) },
+        { text: 'Очистить историю', style: 'destructive', onPress: () => exec(1) },
+        { text: `Заблокировать @${partner.username}`, style: 'destructive', onPress: () => exec(2) },
+        { text: 'Удалить диалог', style: 'destructive', onPress: () => exec(3) },
+        { text: 'Отмена', style: 'cancel' },
+      ]);
+    }
+  }, [conversationId, partner, isMuted, toggleMute, clearHistory, archive, blockUser, router]);
 
   return (
     <View style={styles.container}>
@@ -412,7 +470,13 @@ export default function ConversationScreen() {
             {partner ? headerName : 'Загрузка…'}
           </Text>
         </TouchableOpacity>
-        <View style={{ width: 36 }} />
+        <TouchableOpacity
+          onPress={handleMenu}
+          style={styles.iconBtn}
+          disabled={!partner}
+        >
+          <Icon name="ellipsis-horizontal" size={20} color={Colors.text} />
+        </TouchableOpacity>
       </View>
 
       <KeyboardAvoidingView
