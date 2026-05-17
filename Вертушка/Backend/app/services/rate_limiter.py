@@ -71,6 +71,16 @@ class TokenBucketRateLimiter:
         Raises:
             asyncio.TimeoutError: если токен не получен за timeout
         """
+        # Ленивый старт processor'а. Когда лимитер используется из CLI-скриптов
+        # (scrape_all, match_unmatched_batch, etc.) lifespan() из app.main не
+        # запускается → _processor_task == None → events падают в очередь, но
+        # никто их не обрабатывает → каждый acquire() висит ровно 30s и валится
+        # TimeoutError. Из-за этого on-demand Discogs fetch в listing_matcher
+        # тихо возвращал None для всех листингов. Старт идемпотентен (проверка
+        # done()), event loop в acquire() гарантированно есть.
+        if self._processor_task is None or self._processor_task.done():
+            self.start()
+
         event = asyncio.Event()
         await self._queue.put((priority, time.monotonic(), event))
         try:
