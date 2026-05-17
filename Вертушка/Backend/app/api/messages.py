@@ -61,6 +61,7 @@ def _conv_to_read(
     conv: Conversation,
     partner: User,
     me_part: ConversationParticipant,
+    partner_part: ConversationParticipant | None,
     unread: int,
     is_blocked: bool,
 ) -> ConversationRead:
@@ -79,6 +80,7 @@ def _conv_to_read(
         muted=me_part.muted,
         request_status=me_part.request_status,  # type: ignore[arg-type]
         is_blocked=is_blocked,
+        partner_last_read_at=partner_part.last_read_at if partner_part else None,
     )
 
 
@@ -116,6 +118,15 @@ async def list_conversations(
     partners_q = await db.execute(select(User).where(User.id.in_(partner_ids)))
     partners = {u.id: u for u in partners_q.scalars().all()}
 
+    # Batch-загрузка participant-строк собеседников для read-receipts
+    partner_parts_q = await db.execute(
+        select(ConversationParticipant).where(
+            ConversationParticipant.conversation_id.in_(conv_ids),
+            ConversationParticipant.user_id != current_user.id,
+        )
+    )
+    partner_parts_by_conv = {pp.conversation_id: pp for pp in partner_parts_q.scalars().all()}
+
     items: list[ConversationRead] = []
     for p in parts:
         conv = convs.get(p.conversation_id)
@@ -128,7 +139,9 @@ async def list_conversations(
             db, conv.id, current_user.id, p.last_read_at
         )
         blocked = await is_user_blocked(db, current_user.id, partner.id)
-        items.append(_conv_to_read(conv, partner, p, unread, blocked))
+        items.append(
+            _conv_to_read(conv, partner, p, partner_parts_by_conv.get(conv.id), unread, blocked)
+        )
 
     items.sort(
         key=lambda r: r.last_message_at or r.partner.username,
@@ -157,7 +170,14 @@ async def create_or_get_conversation(
         db, conv.id, current_user.id, me_part.last_read_at
     )
     blocked = await is_user_blocked(db, current_user.id, recipient.id)
-    return _conv_to_read(conv, recipient, me_part, unread, blocked)
+    partner_part_q = await db.execute(
+        select(ConversationParticipant).where(
+            ConversationParticipant.conversation_id == conv.id,
+            ConversationParticipant.user_id == recipient.id,
+        )
+    )
+    partner_part = partner_part_q.scalar_one_or_none()
+    return _conv_to_read(conv, recipient, me_part, partner_part, unread, blocked)
 
 
 @router.get("/conversations/{conversation_id}/", response_model=ConversationDetail)
@@ -194,8 +214,15 @@ async def get_conversation_detail(
         db, conv.id, current_user.id, me_part.last_read_at
     )
     blocked = await is_user_blocked(db, current_user.id, partner.id)
+    partner_part_q = await db.execute(
+        select(ConversationParticipant).where(
+            ConversationParticipant.conversation_id == conv.id,
+            ConversationParticipant.user_id == partner.id,
+        )
+    )
+    partner_part = partner_part_q.scalar_one_or_none()
     return ConversationDetail(
-        conversation=_conv_to_read(conv, partner, me_part, unread, blocked),
+        conversation=_conv_to_read(conv, partner, me_part, partner_part, unread, blocked),
         messages=[MessageRead.model_validate(m) for m in messages],
     )
 

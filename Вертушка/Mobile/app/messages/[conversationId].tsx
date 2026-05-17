@@ -122,12 +122,27 @@ function buildFeed(messages: Message[], meId: string | null): FeedItem[] {
   return items;
 }
 
-function ReadMark({ status }: { status: Message['_local_status'] }) {
+function ReadMark({
+  status,
+  isRead,
+}: {
+  status: Message['_local_status'];
+  isRead: boolean;
+}) {
   if (status === 'sending') {
     return <ActivityIndicator size="small" color="rgba(255,255,255,0.7)" />;
   }
-  // 'sent' и без статуса (пришло с сервера) — двойная галка серая.
-  // Синяя ✓✓ (read) — после расширения backend partner.last_read_at в V2.5.
+  // Двойная галка — собеседник прочитал; одинарная — отправлено.
+  if (isRead) {
+    return (
+      <View style={{ flexDirection: 'row' }}>
+        <Icon name="check" size={12} color="#7AE2FF" />
+        <View style={{ marginLeft: -6 }}>
+          <Icon name="check" size={12} color="#7AE2FF" />
+        </View>
+      </View>
+    );
+  }
   return <Icon name="check" size={12} color="rgba(255,255,255,0.75)" />;
 }
 
@@ -135,10 +150,20 @@ function MessageBubble({
   message,
   isMine,
   isLastInGroup,
+  isRead,
+  isSelected,
+  selectionMode,
+  onLongPress,
+  onPress,
 }: {
   message: Message;
   isMine: boolean;
   isLastInGroup: boolean;
+  isRead: boolean;
+  isSelected: boolean;
+  selectionMode: boolean;
+  onLongPress: () => void;
+  onPress: () => void;
 }) {
   if (message.deleted_at) {
     return (
@@ -153,13 +178,23 @@ function MessageBubble({
   const isFailed = message._local_status === 'failed';
 
   return (
-    <View style={[styles.bubbleRow, isMine ? styles.bubbleRowMine : styles.bubbleRowOther]}>
+    <TouchableOpacity
+      activeOpacity={0.75}
+      onLongPress={isMine ? onLongPress : undefined}
+      onPress={selectionMode && isMine ? onPress : undefined}
+      style={[
+        styles.bubbleRow,
+        isMine ? styles.bubbleRowMine : styles.bubbleRowOther,
+        isSelected && styles.bubbleRowSelected,
+      ]}
+    >
       <View
         style={[
           styles.bubble,
           isMine ? styles.bubbleMine : styles.bubbleOther,
           isMine && !isLastInGroup && { borderBottomRightRadius: 18 },
           !isMine && !isLastInGroup && { borderBottomLeftRadius: 18 },
+          isSelected && styles.bubbleSelected,
         ]}
       >
         <Text style={[styles.bubbleBody, isMine && styles.bubbleBodyMine]}>
@@ -170,14 +205,16 @@ function MessageBubble({
             <Text style={[styles.bubbleTime, isMine && styles.bubbleTimeMine]}>
               {formatBubbleTime(message.created_at)}
             </Text>
-            {isMine && !isFailed ? <ReadMark status={message._local_status} /> : null}
+            {isMine && !isFailed ? (
+              <ReadMark status={message._local_status} isRead={isRead} />
+            ) : null}
             {isMine && isFailed ? (
               <Icon name="warning" size={12} color="#FCD2D4" />
             ) : null}
           </View>
         ) : null}
       </View>
-    </View>
+    </TouchableOpacity>
   );
 }
 
@@ -267,7 +304,50 @@ export default function ConversationScreen() {
   const [partner, setPartner] = useState<Conversation['partner'] | null>(
     conversation?.partner ?? null
   );
+  const [selected, setSelected] = useState<Set<string>>(new Set());
   const listRef = useRef<FlatList<FeedItem>>(null);
+
+  const selectionMode = selected.size > 0;
+  const partnerLastReadAt = conversation?.partner_last_read_at
+    ? new Date(conversation.partner_last_read_at).getTime()
+    : 0;
+
+  const toggleSelection = useCallback((id: string) => {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }, []);
+
+  const clearSelection = useCallback(() => setSelected(new Set()), []);
+
+  const handleDeleteSelected = useCallback(() => {
+    if (!conversationId || selected.size === 0) return;
+    const count = selected.size;
+    Alert.alert(
+      'Удалить сообщения?',
+      `Удалить ${count} ${count === 1 ? 'сообщение' : count < 5 ? 'сообщения' : 'сообщений'} у всех?`,
+      [
+        { text: 'Отмена', style: 'cancel' },
+        {
+          text: 'Удалить',
+          style: 'destructive',
+          onPress: async () => {
+            const ids = Array.from(selected);
+            await Promise.all(
+              ids.map((id) =>
+                messagesApi.deleteMessage(id).catch(() => null),
+              ),
+            );
+            clearSelection();
+            loadThread(conversationId);
+          },
+        },
+      ],
+    );
+  }, [conversationId, selected, clearSelection, loadThread]);
 
   useEffect(() => {
     if (conversation?.partner) setPartner(conversation.partner);
@@ -348,13 +428,24 @@ export default function ConversationScreen() {
       if (item.type === 'date') return <DateDivider date={item.date} />;
       const m = item.message;
       const isFailed = m._local_status === 'failed';
-      if (isFailed) {
+      const isRead =
+        item.isMine &&
+        partnerLastReadAt > 0 &&
+        new Date(m.created_at).getTime() <= partnerLastReadAt;
+      const isSelected = selected.has(m.id);
+
+      if (isFailed && !selectionMode) {
         return (
           <TouchableOpacity activeOpacity={0.8} onPress={() => handleRetry(m)}>
             <MessageBubble
               message={m}
               isMine={item.isMine}
               isLastInGroup={item.isLastInGroup}
+              isRead={isRead}
+              isSelected={isSelected}
+              selectionMode={selectionMode}
+              onLongPress={() => toggleSelection(m.id)}
+              onPress={() => toggleSelection(m.id)}
             />
             <Text style={styles.failedHint}>Не отправлено — нажмите, чтобы повторить</Text>
           </TouchableOpacity>
@@ -365,10 +456,15 @@ export default function ConversationScreen() {
           message={m}
           isMine={item.isMine}
           isLastInGroup={item.isLastInGroup}
+          isRead={isRead}
+          isSelected={isSelected}
+          selectionMode={selectionMode}
+          onLongPress={() => toggleSelection(m.id)}
+          onPress={() => toggleSelection(m.id)}
         />
       );
     },
-    [handleRetry]
+    [handleRetry, partnerLastReadAt, selected, selectionMode, toggleSelection]
   );
 
   const headerName = useMemo(() => {
@@ -433,51 +529,64 @@ export default function ConversationScreen() {
 
   return (
     <View style={styles.container}>
-      {/* Header */}
-      <View style={[styles.topbar, { paddingTop: insets.top + 6 }]}>
-        <TouchableOpacity onPress={() => router.back()} style={styles.iconBtn}>
-          <Icon name="arrow-left" size={22} color={Colors.text} />
-        </TouchableOpacity>
-        <TouchableOpacity
-          activeOpacity={0.85}
-          style={styles.partnerWrap}
-          onPress={() => {
-            if (partner) router.push(`/user/${partner.username}` as any);
-          }}
-          disabled={!partner}
-        >
-          {partner ? (
-            <View style={styles.partnerAvatarWrap}>
-              {partner.avatar_url ? (
-                <Image
-                  source={resolveMediaUrl(partner.avatar_url)}
-                  style={styles.partnerAvatarImg}
-                  cachePolicy="disk"
-                />
-              ) : (
-                <LinearGradient
-                  colors={[Colors.royalBlue, Colors.periwinkle]}
-                  style={styles.partnerAvatarImg}
-                >
-                  <Text style={styles.partnerAvatarTxt}>{partnerInitials}</Text>
-                </LinearGradient>
-              )}
-            </View>
-          ) : (
-            <View style={[styles.partnerAvatarWrap, styles.partnerAvatarSkeleton]} />
-          )}
-          <Text style={styles.partnerName} numberOfLines={1}>
-            {partner ? headerName : 'Загрузка…'}
-          </Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          onPress={handleMenu}
-          style={styles.iconBtn}
-          disabled={!partner}
-        >
-          <Icon name="ellipsis-horizontal" size={20} color={Colors.text} />
-        </TouchableOpacity>
-      </View>
+      {/* Header — обычный, или action-bar при selection */}
+      {selectionMode ? (
+        <View style={[styles.topbar, styles.topbarSelection, { paddingTop: insets.top + 6 }]}>
+          <TouchableOpacity onPress={clearSelection} style={styles.iconBtn}>
+            <Icon name="close" size={20} color={Colors.text} />
+          </TouchableOpacity>
+          <Text style={styles.selectionCount}>{selected.size}</Text>
+          <View style={{ flex: 1 }} />
+          <TouchableOpacity onPress={handleDeleteSelected} style={styles.iconBtn}>
+            <Icon name="trash" size={20} color="#E5484D" />
+          </TouchableOpacity>
+        </View>
+      ) : (
+        <View style={[styles.topbar, { paddingTop: insets.top + 6 }]}>
+          <TouchableOpacity onPress={() => router.back()} style={styles.iconBtn}>
+            <Icon name="arrow-left" size={22} color={Colors.text} />
+          </TouchableOpacity>
+          <TouchableOpacity
+            activeOpacity={0.85}
+            style={styles.partnerWrap}
+            onPress={() => {
+              if (partner) router.push(`/user/${partner.username}` as any);
+            }}
+            disabled={!partner}
+          >
+            {partner ? (
+              <View style={styles.partnerAvatarWrap}>
+                {partner.avatar_url ? (
+                  <Image
+                    source={resolveMediaUrl(partner.avatar_url)}
+                    style={styles.partnerAvatarImg}
+                    cachePolicy="disk"
+                  />
+                ) : (
+                  <LinearGradient
+                    colors={[Colors.royalBlue, Colors.periwinkle]}
+                    style={styles.partnerAvatarImg}
+                  >
+                    <Text style={styles.partnerAvatarTxt}>{partnerInitials}</Text>
+                  </LinearGradient>
+                )}
+              </View>
+            ) : (
+              <View style={[styles.partnerAvatarWrap, styles.partnerAvatarSkeleton]} />
+            )}
+            <Text style={styles.partnerName} numberOfLines={1}>
+              {partner ? headerName : 'Загрузка…'}
+            </Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            onPress={handleMenu}
+            style={styles.iconBtn}
+            disabled={!partner}
+          >
+            <Icon name="ellipsis-horizontal" size={20} color={Colors.text} />
+          </TouchableOpacity>
+        </View>
+      )}
 
       <KeyboardAvoidingView
         style={styles.kbWrap}
@@ -549,6 +658,15 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.background,
     gap: Spacing.sm,
   },
+  topbarSelection: {
+    backgroundColor: Colors.surface,
+  },
+  selectionCount: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: Colors.text,
+    marginLeft: 4,
+  },
   iconBtn: {
     width: 36,
     height: 36,
@@ -612,6 +730,13 @@ const styles = StyleSheet.create({
   bubbleRow: { width: '100%', marginVertical: 1 },
   bubbleRowMine: { alignItems: 'flex-end' },
   bubbleRowOther: { alignItems: 'flex-start' },
+  bubbleRowSelected: {
+    backgroundColor: 'rgba(59,75,245,0.06)',
+  },
+  bubbleSelected: {
+    borderWidth: 2,
+    borderColor: Colors.royalBlue,
+  },
   bubble: {
     maxWidth: '78%',
     paddingHorizontal: 14,

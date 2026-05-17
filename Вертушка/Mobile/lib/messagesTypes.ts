@@ -22,6 +22,8 @@ export interface Conversation {
   muted: boolean;
   request_status: RequestStatus;
   is_blocked: boolean;
+  /** ISO datetime — last_read_at собеседника, для отрисовки ✓✓ на своих сообщениях. */
+  partner_last_read_at?: string | null;
 }
 
 export interface Message {
