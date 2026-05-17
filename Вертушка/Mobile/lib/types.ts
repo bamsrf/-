@@ -118,6 +118,24 @@ export interface Offer {
 
 export type OfferSort = 'price' | 'rating';
 
+/**
+ * Карточка для карусели «В наличии сейчас» на экране поиска
+ * (OFFERS_UX.md Фича 4). Backend дедуплицирует по записи и отдаёт
+ * самый дешёвый листинг — один товар = одна обложка в карусели.
+ */
+export interface MarketCarouselItem {
+  record_id: string;
+  discogs_id?: string | null;
+  artist: string;
+  title: string;
+  year?: number | null;
+  format_type?: string | null;
+  cover_image_url?: string | null;
+  min_price_rub: string;     // Decimal приходит строкой
+  store_slug: string;        // для аналитики «откуда товар»
+  first_seen_at: string;     // ISO
+}
+
 export interface RecordSearchResult {
   discogs_id: string;
   title: string;

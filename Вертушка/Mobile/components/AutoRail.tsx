@@ -7,12 +7,13 @@
  * тапов в шапке, а сам свайп идёт за пальцем без срывов и поддерживает
  * инерцию через withDecay.
  */
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   View,
   Text,
   StyleSheet,
   TouchableOpacity,
+  Pressable,
   Platform,
   LayoutChangeEvent,
 } from 'react-native';
@@ -53,6 +54,17 @@ interface AutoRailProps {
   titleColor: string;
   showYear?: boolean;
   onPick?: (record: PublicProfileRecord) => void;
+  /** Кнопка-ссылка справа от заголовка (например «Смотреть все →»). */
+  headerActionLabel?: string;
+  /** Хендлер тапа по кнопке-ссылке. Если не задан — кнопка не рендерится. */
+  onHeaderActionPress?: () => void;
+  /**
+   * Кастомный рендерер для последней мета-строки карточки. Используется когда
+   * карусель показывает не ♥ want-count, а, например, цену магазина
+   * («◉ 4 990 ₽» для маркета). Если задан — заменяет дефолтную строку с
+   * year/format/want. Получает PublicProfileRecord и возвращает любой ReactNode.
+   */
+  itemBadgeRenderer?: (record: PublicProfileRecord) => ReactNode;
 }
 
 export function AutoRail({
@@ -62,6 +74,9 @@ export function AutoRail({
   showYear,
   onPick,
   titleColor,
+  headerActionLabel,
+  onHeaderActionPress,
+  itemBadgeRenderer,
 }: AutoRailProps) {
   const tx = useSharedValue(0);
   const startTx = useSharedValue(0);
@@ -232,7 +247,11 @@ export function AutoRail({
       <Text numberOfLines={1} style={styles.railTitleSmall}>
         {r.title}
       </Text>
-      {showYear && r.year ? (
+      {itemBadgeRenderer ? (
+        // Кастомная мета-строка (например, цена магазина для маркет-карусели).
+        // Заменяет дефолтный «year · format · ♥ want».
+        <View style={{ marginTop: 2 }}>{itemBadgeRenderer(r)}</View>
+      ) : showYear && r.year ? (
         <Text style={styles.railYear}>
           {r.year}
           {r.format_type ? ` · ${r.format_type}` : ''}
@@ -254,8 +273,24 @@ export function AutoRail({
   return (
     <View>
       <View style={styles.railHead}>
-        <Text style={[styles.railTitle, { color: titleColor }]}>{title.toUpperCase()}</Text>
-        <Text style={styles.railSub}>{subtitle}</Text>
+        <View style={styles.railHeadLeft}>
+          <Text style={[styles.railTitle, { color: titleColor }]}>{title.toUpperCase()}</Text>
+          <Text style={styles.railSub}>{subtitle}</Text>
+        </View>
+        {headerActionLabel && onHeaderActionPress ? (
+          <Pressable
+            onPress={onHeaderActionPress}
+            hitSlop={12}
+            style={({ pressed }) => [
+              styles.railHeadAction,
+              pressed && { opacity: 0.6 },
+            ]}
+          >
+            <Text style={[styles.railHeadActionText, { color: titleColor }]}>
+              {headerActionLabel}
+            </Text>
+          </Pressable>
+        ) : null}
       </View>
       <GestureDetector gesture={panGesture}>
         <View
@@ -285,6 +320,20 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     paddingHorizontal: HORIZONTAL_PADDING,
     marginBottom: 12,
+    gap: 12,
+  },
+  railHeadLeft: {
+    flexDirection: 'row',
+    alignItems: 'baseline',
+    flexShrink: 1,
+    gap: 8,
+  },
+  railHeadAction: {
+    paddingVertical: 2,
+  },
+  railHeadActionText: {
+    fontSize: 11,
+    fontWeight: '600',
   },
   railTitle: {
     fontSize: 10,

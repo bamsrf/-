@@ -30,7 +30,8 @@ import { useSearchStore, useCollectionStore, useUserSearchStore, useAuthStore, u
 import { useTourTarget } from '../../lib/useTourTarget';
 import { analytics } from '../../lib/analytics';
 import { api, resolveMediaUrl } from '../../lib/api';
-import { MasterSearchResult, ReleaseSearchResult, ArtistSearchResult, UserWithStats, PublicProfileRecord } from '../../lib/types';
+import { MasterSearchResult, ReleaseSearchResult, ArtistSearchResult, UserWithStats, PublicProfileRecord, MarketCarouselItem } from '../../lib/types';
+import { MiniPriceBadge } from '../../components/MiniPriceBadge';
 import { Colors, Typography, Spacing, BorderRadius, Gradients } from '../../constants/theme';
 import { toast } from '../../lib/toast';
 import { cleanArtistName } from '../../lib/format';
@@ -241,9 +242,51 @@ export default function SearchScreen() {
     return () => { cancelled = true; };
   }, []);
 
+  // OFFERS_UX.md Фича 4 — «Маркет» в поиске. Карусель новинок в продаже
+  // из подключённых магазинов. На бэке (`/api/market/new-arrivals`) уже
+  // дедуплицируется по записи: один товар = одна обложка.
+  const [marketItems, setMarketItems] = useState<MarketCarouselItem[]>([]);
+  useEffect(() => {
+    let cancelled = false;
+    api.getMarketFeed(24)
+      .then((items) => { if (!cancelled) setMarketItems(items); })
+      .catch(() => { /* silent: блок просто не появится — нет данных или ошибка */ });
+    return () => { cancelled = true; };
+  }, []);
+
+  // Маппинг MarketCarouselItem → PublicProfileRecord для AutoRail.
+  // AutoRail знает только эту форму, а мета-строку с ценой мы рендерим
+  // через `itemBadgeRenderer` (см. использование AutoRail ниже).
+  const marketAsProfileRecords: PublicProfileRecord[] = marketItems.map((m) => ({
+    id: m.record_id,
+    title: m.title,
+    artist: m.artist,
+    year: m.year ?? undefined,
+    format_type: m.format_type ?? undefined,
+    cover_image_url: m.cover_image_url ?? undefined,
+    price_currency: 'RUB',
+    discogs_id: m.discogs_id ?? null,
+  }));
+
+  // Карта record_id → цена, чтобы renderer мог быстро найти цену по карточке.
+  const marketPriceByRecordId = new Map(
+    marketItems.map((m) => [m.record_id, Number(m.min_price_rub)]),
+  );
+
   const handleNewReleasePick = useCallback((r: PublicProfileRecord) => {
     router.push(`/record/${r.id}`);
   }, [router]);
+
+  const handleMarketPick = useCallback((r: PublicProfileRecord) => {
+    // Карусельная запись = matched_record_id, открываем по нему детальную.
+    router.push(`/record/${r.id}`);
+  }, [router]);
+
+  const handleMarketShowAll = useCallback(() => {
+    // OFFERS_UX.md Фича 3 — чип-фильтр «В продаже» в поиске. До его реализации
+    // даём явный сигнал, что фильтр на подходе, чтобы кнопка не была мёртвой.
+    toast.info('Скоро', 'Фильтр «В продаже» появится в ближайшем апдейте поиска');
+  }, []);
 
   const handleSearch = useCallback(async () => {
     const trimmed = searchInput.trim();
@@ -571,6 +614,31 @@ export default function SearchScreen() {
             items={newReleases}
             showYear
             onPick={handleNewReleasePick}
+          />
+        </Section>
+      )}
+
+      {/*
+        OFFERS_UX.md Фича 4 — карусель «В наличии сейчас».
+        Тот же AutoRail-паттерн что и Новинки Discogs выше, но мета-строка с
+        ценой (через `itemBadgeRenderer`) вместо ♥-want-count. Кнопка
+        «Смотреть все →» сейчас показывает toast — до реализации Фичи 3
+        (чип-фильтр «В продаже»).
+      */}
+      {marketAsProfileRecords.length > 0 && (
+        <Section id="search-market-arrivals">
+          <AutoRail
+            title="В наличии сейчас"
+            subtitle={`Свежие предложения${marketItems.length ? ` · ${marketItems.length}` : ''}`}
+            titleColor={Colors.royalBlue}
+            items={marketAsProfileRecords}
+            onPick={handleMarketPick}
+            headerActionLabel="Смотреть все →"
+            onHeaderActionPress={handleMarketShowAll}
+            itemBadgeRenderer={(r) => {
+              const price = marketPriceByRecordId.get(r.id);
+              return price ? <MiniPriceBadge price={price} /> : null;
+            }}
           />
         </Section>
       )}

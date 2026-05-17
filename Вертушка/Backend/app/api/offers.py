@@ -13,7 +13,7 @@ from typing import Literal, Optional
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
-from sqlalchemy import select
+from sqlalchemy import select, text
 from sqlalchemy.orm import joinedload
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -25,7 +25,7 @@ from app.models.record import Record
 from app.models.store import Store
 from app.models.store_listing import StoreListing, ListingStatus
 from app.models.user import User
-from app.schemas.offer import OfferClickResponse, OfferResponse, StoreInfo
+from app.schemas.offer import MarketCarouselItem, OfferClickResponse, OfferResponse, StoreInfo
 from app.services.affiliate import wrap_url
 from app.services.cache import cache
 
@@ -36,6 +36,9 @@ router = APIRouter()
 OFFERS_CACHE_NS = "offers"
 OFFERS_CACHE_TTL = 1800  # 30 мин — синхронизировано с Mobile useCacheStore
 STALE_AFTER_DAYS = 7
+
+MARKET_CACHE_NS = "market"
+MARKET_CACHE_TTL = 900  # 15 мин — карусель не критична к мгновенному обновлению
 
 
 @router.get(
@@ -165,6 +168,111 @@ async def track_offer_click(
     await db.commit()
 
     return OfferClickResponse(click_id=click.id, url=final_url)
+
+
+# ============================================================================
+# Market carousel (OFFERS_UX.md Фича 4 — «В наличии сейчас» на search.tsx)
+# ============================================================================
+
+
+@router.get(
+    "/market/new-arrivals",
+    response_model=list[MarketCarouselItem],
+    summary="Свежие предложения магазинов для карусели в поиске",
+)
+async def get_market_new_arrivals(
+    limit: int = Query(24, ge=1, le=50),
+    db: AsyncSession = Depends(get_db),
+) -> list[MarketCarouselItem]:
+    """
+    Возвращает последние N листингов со статусом in_stock из всех активных магазинов.
+
+    Дедуп по `matched_record_id`: на одну запись отдаём только самый дешёвый листинг
+    из всех магазинов. Сортировка — по дате появления листинга в БД (новинки в продаже
+    сверху). Это даёт «N разных пластинок» в карусели, а не «N дублей одной обложки».
+
+    Кэш — Redis, TTL 15 минут. Инвалидируется при `parse_listing` через
+    `invalidate_market_feed` (по аналогии с `invalidate_record_offers`).
+    """
+    cache_key = f"new_arrivals:{limit}"
+    cached = await cache.get(MARKET_CACHE_NS, cache_key)
+    if cached is not None:
+        return [MarketCarouselItem.model_validate(item) for item in cached]
+
+    cutoff = datetime.utcnow() - timedelta(days=STALE_AFTER_DAYS)
+
+    # Сначала находим минимальную цену на каждую matched запись — это
+    # дешевле, чем тянуть все листинги и группировать в Python.
+    # DISTINCT ON по matched_record_id + ORDER BY price даёт нам по
+    # одному (самому дешёвому) листингу на запись.
+    sql = text(
+        """
+        WITH ranked AS (
+            SELECT DISTINCT ON (sl.matched_record_id)
+                sl.matched_record_id AS record_id,
+                sl.price_rub,
+                sl.first_seen_at,
+                s.slug AS store_slug,
+                r.discogs_id,
+                r.artist,
+                r.title,
+                r.year,
+                r.format_type,
+                r.cover_image_url
+            FROM store_listings sl
+            JOIN stores s ON s.id = sl.store_id
+            JOIN records r ON r.id = sl.matched_record_id
+            WHERE sl.status = 'in_stock'
+              AND sl.matched_record_id IS NOT NULL
+              AND sl.price_rub IS NOT NULL
+              AND sl.last_seen_at >= :cutoff
+              AND s.is_active = true
+            ORDER BY sl.matched_record_id, sl.price_rub ASC NULLS LAST
+        )
+        SELECT *
+        FROM ranked
+        ORDER BY first_seen_at DESC
+        LIMIT :limit
+        """
+    )
+    rows = (await db.execute(sql, {"cutoff": cutoff, "limit": limit})).mappings().all()
+
+    items = [
+        MarketCarouselItem(
+            record_id=row["record_id"],
+            discogs_id=row["discogs_id"],
+            artist=row["artist"],
+            title=row["title"],
+            year=row["year"],
+            format_type=row["format_type"],
+            cover_image_url=row["cover_image_url"],
+            min_price_rub=row["price_rub"],
+            store_slug=row["store_slug"],
+            first_seen_at=row["first_seen_at"],
+        )
+        for row in rows
+    ]
+
+    await cache.set(
+        MARKET_CACHE_NS,
+        cache_key,
+        [item.model_dump(mode="json") for item in items],
+        ttl=MARKET_CACHE_TTL,
+    )
+    return items
+
+
+async def invalidate_market_feed() -> None:
+    """Хелпер для scraper_tasks: сбросить кэш карусели после новых листингов."""
+    if not cache.available:
+        return
+    try:
+        assert cache._pool is not None
+        prefix = cache._key(MARKET_CACHE_NS, "new_arrivals:")
+        async for key in cache._pool.scan_iter(match=f"{prefix}*"):
+            await cache._pool.delete(key)
+    except Exception:
+        logger.debug("invalidate market cache failed", exc_info=True)
 
 
 def _hash_ip(request: Request) -> str | None:

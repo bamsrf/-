@@ -52,6 +52,7 @@ import {
   FollowActionResult,
   Offer,
   OfferSort,
+  MarketCarouselItem,
 } from './types';
 
 // API сервер
@@ -478,6 +479,29 @@ class ApiClient {
    */
   async getRecordOffers(discogsId: string, sort: OfferSort = 'price'): Promise<Offer[]> {
     return this.deduplicatedGet<Offer[]>(`/records/${discogsId}/offers`, { params: { sort } });
+  }
+
+  /**
+   * Свежие листинги для карусели «В наличии сейчас» на экране поиска
+   * (OFFERS_UX.md Фича 4). Backend дедуплицирует по записи и отдаёт самый
+   * дешёвый листинг — один товар = одна обложка в карусели.
+   */
+  async getMarketFeed(limit = 24): Promise<MarketCarouselItem[]> {
+    return this.deduplicatedGet<MarketCarouselItem[]>('/market/new-arrivals', {
+      params: { limit },
+    });
+  }
+
+  /**
+   * Phase A affiliate — регистрация клика «Купить» и получение финального URL
+   * с subid для атрибуции. Если бэк недоступен — клиент использует preview-URL
+   * из offer.url (только UTM, без affiliate).
+   */
+  async trackOfferClick(listingId: string): Promise<{ click_id: string; url: string }> {
+    const response = await this.client.post<{ click_id: string; url: string }>(
+      `/offers/${listingId}/click`,
+    );
+    return response.data;
   }
 
   // ==================== Masters ====================
