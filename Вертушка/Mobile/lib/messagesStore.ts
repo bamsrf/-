@@ -294,59 +294,105 @@ export const useMessagesStore = create<MessagesState>((set, get) => ({
   },
 
   acceptRequest: async (conversationId) => {
-    await messagesApi.acceptConversation(conversationId);
-    set((s) => {
-      const req = s.conversationsRequests.find((c) => c.id === conversationId);
-      if (!req) return s;
-      const accepted: Conversation = { ...req, request_status: 'accepted' };
-      return {
-        conversationsRequests: s.conversationsRequests.filter((c) => c.id !== conversationId),
-        conversationsPrimary: upsertConversation(s.conversationsPrimary, accepted),
-      };
-    });
+    try {
+      await messagesApi.acceptConversation(conversationId);
+      set((s) => {
+        const req = s.conversationsRequests.find((c) => c.id === conversationId);
+        if (!req) return s;
+        const accepted: Conversation = { ...req, request_status: 'accepted' };
+        return {
+          conversationsRequests: s.conversationsRequests.filter((c) => c.id !== conversationId),
+          conversationsPrimary: upsertConversation(s.conversationsPrimary, accepted),
+        };
+      });
+    } catch (e: any) {
+      const detail = e?.response?.data?.detail;
+      const status = e?.response?.status;
+      if (status === 404) {
+        toast.error(
+          'Не удалось принять',
+          'Сервер ещё не задеплоен с новым эндпоинтом. Обновите бекенд.',
+        );
+      } else {
+        toast.error('Не удалось принять', String(detail || 'Попробуйте позже'));
+      }
+      throw e;
+    }
   },
 
   rejectRequest: async (conversationId) => {
-    await messagesApi.rejectConversation(conversationId);
-    set((s) => ({
-      conversationsRequests: s.conversationsRequests.filter((c) => c.id !== conversationId),
-    }));
+    try {
+      await messagesApi.rejectConversation(conversationId);
+      set((s) => ({
+        conversationsRequests: s.conversationsRequests.filter((c) => c.id !== conversationId),
+      }));
+    } catch (e: any) {
+      const detail = e?.response?.data?.detail;
+      const status = e?.response?.status;
+      if (status === 404) {
+        toast.error(
+          'Не удалось отклонить',
+          'Сервер ещё не задеплоен с новым эндпоинтом.',
+        );
+      } else {
+        toast.error('Не удалось отклонить', String(detail || 'Попробуйте позже'));
+      }
+      throw e;
+    }
   },
 
   toggleMute: async (conversationId) => {
-    const { muted } = await messagesApi.toggleMute(conversationId);
-    set((s) => ({
-      conversationsPrimary: s.conversationsPrimary.map((c) =>
-        c.id === conversationId ? { ...c, muted } : c
-      ),
-      conversationsRequests: s.conversationsRequests.map((c) =>
-        c.id === conversationId ? { ...c, muted } : c
-      ),
-    }));
+    try {
+      const { muted } = await messagesApi.toggleMute(conversationId);
+      set((s) => ({
+        conversationsPrimary: s.conversationsPrimary.map((c) =>
+          c.id === conversationId ? { ...c, muted } : c
+        ),
+        conversationsRequests: s.conversationsRequests.map((c) =>
+          c.id === conversationId ? { ...c, muted } : c
+        ),
+      }));
+    } catch (e: any) {
+      toast.error('Не удалось', String(e?.response?.data?.detail || 'Попробуйте позже'));
+    }
   },
 
   archive: async (conversationId) => {
-    await messagesApi.archiveConversation(conversationId);
-    set((s) => ({
-      conversationsPrimary: s.conversationsPrimary.filter((c) => c.id !== conversationId),
-      conversationsRequests: s.conversationsRequests.filter((c) => c.id !== conversationId),
-    }));
-  },
-
-  clearHistory: async (conversationId) => {
-    await messagesApi.clearHistory(conversationId);
-    set((s) => ({
-      threads: { ...s.threads, [conversationId]: [] },
-    }));
-  },
-
-  blockUser: async (userId, conversationId) => {
-    await messagesApi.blockUser(userId);
-    if (conversationId) {
+    try {
+      await messagesApi.archiveConversation(conversationId);
       set((s) => ({
         conversationsPrimary: s.conversationsPrimary.filter((c) => c.id !== conversationId),
         conversationsRequests: s.conversationsRequests.filter((c) => c.id !== conversationId),
       }));
+    } catch (e: any) {
+      toast.error('Не удалось удалить', String(e?.response?.data?.detail || 'Попробуйте позже'));
+      throw e;
+    }
+  },
+
+  clearHistory: async (conversationId) => {
+    try {
+      await messagesApi.clearHistory(conversationId);
+      set((s) => ({
+        threads: { ...s.threads, [conversationId]: [] },
+      }));
+    } catch (e: any) {
+      toast.error('Не удалось очистить', String(e?.response?.data?.detail || 'Попробуйте позже'));
+    }
+  },
+
+  blockUser: async (userId, conversationId) => {
+    try {
+      await messagesApi.blockUser(userId);
+      if (conversationId) {
+        set((s) => ({
+          conversationsPrimary: s.conversationsPrimary.filter((c) => c.id !== conversationId),
+          conversationsRequests: s.conversationsRequests.filter((c) => c.id !== conversationId),
+        }));
+      }
+    } catch (e: any) {
+      toast.error('Не удалось заблокировать', String(e?.response?.data?.detail || 'Попробуйте позже'));
+      throw e;
     }
   },
 

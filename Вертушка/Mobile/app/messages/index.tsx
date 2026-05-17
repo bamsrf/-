@@ -249,16 +249,18 @@ export default function MessagesInboxScreen() {
         onAccept={
           item.request_status === 'pending'
             ? () => {
-                acceptRequest(item.id).then(() => {
-                  router.push(`/messages/${item.id}` as any);
-                });
+                acceptRequest(item.id)
+                  .then(() => router.push(`/messages/${item.id}` as any))
+                  .catch(() => {
+                    // ошибка уже показана toast'ом в сторе
+                  });
               }
             : undefined
         }
         onReject={
           item.request_status === 'pending'
             ? () => {
-                rejectRequest(item.id);
+                rejectRequest(item.id).catch(() => {});
               }
             : undefined
         }
