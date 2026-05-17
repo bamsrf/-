@@ -45,6 +45,7 @@ import {
 } from 'react-native-reanimated';
 import { api, resolveMediaUrl } from '../../../lib/api';
 import { useAuthStore, useFollowStore } from '../../../lib/store';
+import { useMessagesStore } from '../../../lib/messagesStore';
 import {
   PublicProfile,
   PublicProfileRecord,
@@ -392,12 +393,23 @@ export default function UserProfileScreen() {
   }, [profileUserId, unfollowUser, pubProfile?.username]);
 
   /**
-   * Кнопка «Написать» — прямых сообщений пока нет. Показываем toast-плейсхолдер,
-   * место для будущей фичи DM (см. roadmap).
+   * Кнопка «Написать» — открывает/создаёт диалог с пользователем и переходит в тред.
+   * Если у получателя приватный профиль и нет взаимной подписки — бекенд вернёт 403,
+   * показываем понятный toast.
    */
-  const handleMessage = useCallback(() => {
-    toast.info('Скоро', 'Прямые сообщения появятся в одной из следующих версий');
-  }, []);
+  const handleMessage = useCallback(async () => {
+    if (!profileUserId) return;
+    if (!currentUser) {
+      router.push('/(auth)/register');
+      return;
+    }
+    try {
+      const conv = await useMessagesStore.getState().openOrCreate(profileUserId);
+      router.push(`/messages/${conv.id}` as any);
+    } catch (error: any) {
+      toast.error('Ошибка', error?.response?.data?.detail || 'Не удалось открыть чат');
+    }
+  }, [profileUserId, currentUser, router]);
 
   const handleShare = useCallback(async () => {
     try {
