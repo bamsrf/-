@@ -21,10 +21,12 @@ from app.models.store import Store
 from app.services.cache import cache
 from app.services.scrapers.http_client import http_client
 from app.services.scrapers.browser import browser_pool
-from app.services.scrapers.runner import crawl_store
+from app.services.scrapers.runner import crawl_store, _upsert_listing
 from app.services.scrapers.shops import *  # noqa: F401,F403  — register all parsers
-from app.services.scrapers.registry import all_parsers
+from app.services.scrapers.registry import all_parsers, get_parser
+from app.services.scrapers.http_client import ScraperHttpClient
 from app.services.listing_matcher import match_unmatched_batch
+from app.models.store_listing import StoreListing, ListingStatus
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 logger = logging.getLogger("scrape_all")
@@ -71,6 +73,51 @@ async def _match_only(batch: int) -> None:
     print(f"matcher: {res}")
 
 
+async def _refresh_known(slug: str | None) -> None:
+    """Перепарсить точечно URL'ы уже-известных in_stock листингов.
+
+    Зачем: после фикса парсера (например, новая логика out-of-stock через
+    Tilda quantity) нужно прогнать UPSERT по уже-сохранённым URL'ам — но
+    sitemap может содержать тысячи URL'ов, а нам нужны только конкретные
+    ~N штук которые сейчас торчат в карусели. crawl_full ходит по sitemap
+    топ-N и наши URL может не захватить.
+
+    Этот режим читает listings.url напрямую из БД и парсит каждый.
+    """
+    async with async_session_maker() as db:
+        stmt = select(Store).where(Store.is_active.is_(True))
+        if slug:
+            stmt = stmt.where(Store.slug == slug)
+        stores = list((await db.execute(stmt)).scalars().all())
+
+    for store in stores:
+        cls = get_parser(store.parser_class)
+        parser = cls(http=ScraperHttpClient(), browser=None)
+        async with async_session_maker() as db:
+            res = await db.execute(
+                select(StoreListing.url, StoreListing.id)
+                .where(StoreListing.store_id == store.id)
+                .where(StoreListing.status == ListingStatus.IN_STOCK)
+            )
+            rows = res.all()
+
+        print(f"[{store.slug}] refresh-known: {len(rows)} URLs")
+        ok = err = changed = 0
+        for row in rows:
+            try:
+                dto = await parser.parse_listing(row.url)
+                async with async_session_maker() as db:
+                    await _upsert_listing(db, store.id, dto)
+                    await db.commit()
+                ok += 1
+                if dto.status != "in_stock":
+                    changed += 1
+            except Exception as e:
+                err += 1
+                logger.warning("refresh-known failed for %s: %s", row.url, e)
+        print(f"[{store.slug}] refresh-known done: ok={ok}, errors={err}, status_changed={changed}")
+
+
 async def main_async(args: argparse.Namespace) -> None:
     await cache.connect()
     try:
@@ -78,6 +125,8 @@ async def main_async(args: argparse.Namespace) -> None:
             await _list_stores()
         elif args.match_only:
             await _match_only(args.batch)
+        elif args.refresh_known:
+            await _refresh_known(args.slug)
         elif args.all:
             await _crawl_all(args.include_browser, args.mode)
             if not args.no_match:
@@ -104,6 +153,11 @@ def main() -> None:
     p.add_argument("--limit", type=int, default=None, help="максимум листингов на магазин")
     p.add_argument("--list", action="store_true", help="показать магазины и зарегистрированные парсеры")
     p.add_argument("--match-only", action="store_true", help="только матчить unmatched, без парсинга")
+    p.add_argument(
+        "--refresh-known",
+        action="store_true",
+        help="перепарсить URL'ы уже-известных in_stock листингов из БД (для применения новой логики status, после фикса парсера)",
+    )
     p.add_argument("--no-match", action="store_true", help="пропустить матчинг после парсинга")
     p.add_argument("--batch", type=int, default=500, help="batch size для matcher (default 500)")
     args = p.parse_args()
