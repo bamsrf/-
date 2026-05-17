@@ -30,6 +30,7 @@ import { messagesApi } from '../../lib/messagesApi';
 import type { Conversation, Message } from '../../lib/messagesTypes';
 
 const POLL_INTERVAL_MS = 8000;
+const EMPTY_MESSAGES: Message[] = [];
 
 function formatBubbleTime(iso: string): string {
   const d = new Date(iso);
@@ -78,7 +79,9 @@ export default function ConversationScreen() {
   const insets = useSafeAreaInsets();
   const me = useAuthStore((s) => s.user);
 
-  const messages = useMessagesStore((s) => s.threads[conversationId ?? ''] ?? []);
+  const messages = useMessagesStore(
+    (s) => s.threads[conversationId ?? ''] ?? EMPTY_MESSAGES
+  );
   const conversation = useMessagesStore((s) => {
     const id = conversationId;
     if (!id) return null;
