@@ -117,7 +117,7 @@ export default function NewMessageScreen() {
     <View style={[styles.container, { paddingTop: insets.top }]}>
       <View style={styles.topbar}>
         <TouchableOpacity onPress={() => router.back()} style={styles.iconBtn}>
-          <Icon name="chevron-left" size={22} color={Colors.text} />
+          <Icon name="arrow-left" size={22} color={Colors.text} />
         </TouchableOpacity>
         <Text style={styles.title}>Новое сообщение</Text>
         <View style={{ width: 36 }} />

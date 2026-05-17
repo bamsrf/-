@@ -19,6 +19,7 @@ import {
   AppStateStatus,
 } from 'react-native';
 import { Image } from 'expo-image';
+import { LinearGradient } from 'expo-linear-gradient';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Icon } from '@/components/ui';
@@ -205,16 +206,15 @@ export default function ConversationScreen() {
     return partner.display_name || `@${partner.username}`;
   }, [partner]);
 
+  const partnerInitials = (partner?.username ?? '').slice(0, 2).toUpperCase();
+  const canSend = !!draft.trim();
+
   return (
-    <KeyboardAvoidingView
-      style={[styles.container, { paddingTop: insets.top }]}
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-      keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 0}
-    >
-      {/* Header */}
-      <View style={styles.topbar}>
+    <View style={styles.container}>
+      {/* Header — фиксированный, не уезжает с клавиатурой */}
+      <View style={[styles.topbar, { paddingTop: insets.top + 6 }]}>
         <TouchableOpacity onPress={() => router.back()} style={styles.iconBtn}>
-          <Icon name="chevron-left" size={22} color={Colors.text} />
+          <Icon name="arrow-left" size={22} color={Colors.text} />
         </TouchableOpacity>
         <TouchableOpacity
           activeOpacity={0.85}
@@ -222,79 +222,102 @@ export default function ConversationScreen() {
           onPress={() => {
             if (partner) router.push(`/user/${partner.username}` as any);
           }}
+          disabled={!partner}
         >
-          <View style={styles.partnerAvatar}>
-            {partner?.avatar_url ? (
-              <Image
-                source={resolveMediaUrl(partner.avatar_url)}
-                style={{ width: 32, height: 32, borderRadius: 16 }}
-                cachePolicy="disk"
-              />
-            ) : (
-              <Text style={styles.partnerAvatarTxt}>
-                {(partner?.username ?? '').slice(0, 2).toLowerCase()}
-              </Text>
-            )}
-          </View>
+          {partner ? (
+            <View style={styles.partnerAvatarWrap}>
+              {partner.avatar_url ? (
+                <Image
+                  source={resolveMediaUrl(partner.avatar_url)}
+                  style={styles.partnerAvatarImg}
+                  cachePolicy="disk"
+                />
+              ) : (
+                <LinearGradient
+                  colors={[Colors.royalBlue, Colors.periwinkle]}
+                  style={styles.partnerAvatarImg}
+                >
+                  <Text style={styles.partnerAvatarTxt}>{partnerInitials}</Text>
+                </LinearGradient>
+              )}
+            </View>
+          ) : (
+            <View style={[styles.partnerAvatarWrap, styles.partnerAvatarSkeleton]} />
+          )}
           <Text style={styles.partnerName} numberOfLines={1}>
-            {headerName}
+            {partner ? headerName : 'Загрузка…'}
           </Text>
         </TouchableOpacity>
         <View style={{ width: 36 }} />
       </View>
 
-      <FlatList
-        ref={listRef}
-        data={messages}
-        keyExtractor={(item) => item.id}
-        renderItem={renderItem}
-        contentContainerStyle={styles.list}
-        onContentSizeChange={() => listRef.current?.scrollToEnd({ animated: false })}
-        onLayout={() => listRef.current?.scrollToEnd({ animated: false })}
-        onEndReachedThreshold={0.1}
-        onStartReached={() => conversationId && loadMore(conversationId)}
-        ListEmptyComponent={
-          isLoading ? null : (
-            <View style={styles.emptyConv}>
-              <Text style={styles.emptyConvTxt}>Напишите первое сообщение</Text>
-            </View>
-          )
-        }
-      />
-
-      <View style={[styles.inputBar, { paddingBottom: insets.bottom + 8 }]}>
-        <TextInput
-          style={styles.input}
-          placeholder="Сообщение"
-          placeholderTextColor={Colors.textMuted}
-          value={draft}
-          onChangeText={setDraft}
-          multiline
-          maxLength={4000}
+      {/* KeyboardAvoidingView оборачивает только список + input,
+          чтобы клавиатура не накладывалась на инпут и не двигала хедер */}
+      <KeyboardAvoidingView
+        style={styles.kbWrap}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        keyboardVerticalOffset={Platform.OS === 'ios' ? insets.top + 52 : 0}
+      >
+        <FlatList
+          ref={listRef}
+          data={messages}
+          keyExtractor={(item) => item.id}
+          renderItem={renderItem}
+          contentContainerStyle={styles.list}
+          onContentSizeChange={() => listRef.current?.scrollToEnd({ animated: false })}
+          onLayout={() => listRef.current?.scrollToEnd({ animated: false })}
+          onEndReachedThreshold={0.1}
+          onStartReached={() => conversationId && loadMore(conversationId)}
+          ListEmptyComponent={
+            isLoading ? null : (
+              <View style={styles.emptyConv}>
+                <Text style={styles.emptyConvTxt}>Напишите первое сообщение</Text>
+              </View>
+            )
+          }
+          keyboardShouldPersistTaps="handled"
         />
-        <TouchableOpacity
-          style={[styles.sendBtn, !draft.trim() && styles.sendBtnDisabled]}
-          onPress={handleSend}
-          disabled={!draft.trim()}
-          activeOpacity={0.85}
-        >
-          <Icon name="arrow-up" size={18} color="#fff" />
-        </TouchableOpacity>
-      </View>
-    </KeyboardAvoidingView>
+
+        <View style={[styles.inputBar, { paddingBottom: insets.bottom + 8 }]}>
+          <TextInput
+            style={styles.input}
+            placeholder="Сообщение"
+            placeholderTextColor={Colors.textMuted}
+            value={draft}
+            onChangeText={setDraft}
+            multiline
+            maxLength={4000}
+          />
+          <TouchableOpacity
+            style={[styles.sendBtn, !canSend && styles.sendBtnDisabled]}
+            onPress={handleSend}
+            disabled={!canSend}
+            activeOpacity={0.85}
+          >
+            <Icon
+              name="arrow-up"
+              size={18}
+              color={canSend ? '#fff' : Colors.textMuted}
+            />
+          </TouchableOpacity>
+        </View>
+      </KeyboardAvoidingView>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: Colors.background },
+  kbWrap: { flex: 1 },
 
   topbar: {
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: Spacing.md,
-    paddingVertical: 8,
+    paddingBottom: 10,
     borderBottomWidth: 1,
     borderBottomColor: Colors.divider,
+    backgroundColor: Colors.background,
     gap: Spacing.sm,
   },
   iconBtn: {
@@ -311,20 +334,29 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: Spacing.sm,
   },
-  partnerAvatar: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    backgroundColor: Colors.surface,
+  partnerAvatarWrap: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    overflow: 'hidden',
     alignItems: 'center',
     justifyContent: 'center',
-    overflow: 'hidden',
+  },
+  partnerAvatarImg: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  partnerAvatarSkeleton: {
+    backgroundColor: Colors.surface,
   },
   partnerAvatarTxt: {
-    fontSize: 10,
+    fontSize: 13,
     fontWeight: '700',
-    color: Colors.royalBlue,
-    textTransform: 'uppercase',
+    color: '#fff',
+    letterSpacing: 0.3,
   },
   partnerName: { fontSize: 15, fontWeight: '600', color: Colors.text, flex: 1 },
 
@@ -411,7 +443,8 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   sendBtnDisabled: {
-    backgroundColor: Colors.textMuted,
-    opacity: 0.6,
+    backgroundColor: Colors.surface,
+    borderWidth: 1,
+    borderColor: Colors.border,
   },
 });

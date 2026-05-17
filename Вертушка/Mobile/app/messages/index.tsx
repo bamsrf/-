@@ -159,7 +159,7 @@ export default function MessagesInboxScreen() {
               {requests.length} новых
             </Text>
           </View>
-          <Icon name="chevron-right" size={18} color={Colors.textMuted} />
+          <Icon name="arrow-right" size={18} color={Colors.textMuted} />
         </TouchableOpacity>
       ) : null}
 
