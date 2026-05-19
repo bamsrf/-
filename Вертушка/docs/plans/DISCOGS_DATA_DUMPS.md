@@ -1,6 +1,6 @@
 # Discogs Data Dumps — план для независимости от API
 
-> Обзор операционки парсинга — в [PARSING.md](../PARSING.md).
+> Обзор операционки парсинга — в [PARSING.md](PARSING.md).
 > План верхнего уровня (магазины, аффилиаты) — в [SHOPS_PARSING.md](SHOPS_PARSING.md).
 
 ## Context — зачем
@@ -311,7 +311,7 @@ Backend/
 
 ## 10. Связанные документы
 
-- [PARSING.md](../PARSING.md) — текущая операционка
+- [PARSING.md](PARSING.md) — текущая операционка
 - [SHOPS_PARSING.md](SHOPS_PARSING.md) — план магазинов
 - [OFFERS_UX.md](OFFERS_UX.md) — UI карусели/Hot Stock
 - Discogs Developers: https://www.discogs.com/developers/#page:database-download

@@ -1,8 +1,8 @@
 # Парсинг магазинов — операционная инструкция
 
 > Что делает наша scraping-инфра, какие у неё периодичность, лимиты и ресурсы.
-> План более высокого уровня (UX, бизнес-логика, аффилиаты) — в [SHOPS_PARSING.md](plans/SHOPS_PARSING.md).
-> Будущее решение независимости от Discogs API — в [DISCOGS_DATA_DUMPS.md](plans/DISCOGS_DATA_DUMPS.md).
+> План более высокого уровня (UX, бизнес-логика, аффилиаты) — в [SHOPS_PARSING.md](SHOPS_PARSING.md).
+> Будущее решение независимости от Discogs API — в [DISCOGS_DATA_DUMPS.md](DISCOGS_DATA_DUMPS.md).
 
 ---
 
@@ -179,7 +179,7 @@ python -m app.scripts.scrape_all --refresh-known --slug=korobkavinyla
 ### Что делать если хочется быстрее
 
 - Поднять `DISCOGS_FETCH_HOURLY_LIMIT` до 1000-2000 (всё ещё в безопасной зоне 60/min среднем)
-- Перейти на Discogs Data Dumps (см. [DISCOGS_DATA_DUMPS.md](plans/DISCOGS_DATA_DUMPS.md)) — это убирает зависимость от API полностью
+- Перейти на Discogs Data Dumps (см. [DISCOGS_DATA_DUMPS.md](DISCOGS_DATA_DUMPS.md)) — это убирает зависимость от API полностью
 
 ---
 
@@ -321,17 +321,17 @@ ssh deploy@85.198.85.12 "docker exec -d -e PYTHONPATH=/app -w /app vertushka_api
 
 ## 11. Будущее (Roadmap)
 
-- **Discogs Data Dumps**: импортировать local mirror `records` чтобы перестать зависеть от Discogs API на матчинге. План — [DISCOGS_DATA_DUMPS.md](plans/DISCOGS_DATA_DUMPS.md)
+- **Discogs Data Dumps**: импортировать local mirror `records` чтобы перестать зависеть от Discogs API на матчинге. План — [DISCOGS_DATA_DUMPS.md](DISCOGS_DATA_DUMPS.md)
 - **Расширение покрытия форматов**: парсер Plastinka сейчас берёт только LP. CD/Box/Cassette — добавить (URL pattern + UX в карусели)
 - **Cloudflare-stack**: пока ни один из подключённых магазинов не под CF. Когда появится — `browser.py` (Playwright pool) ждёт в `scrapers/`
-- **Direct affiliate** (см. [AFFILIATE_OUTREACH_TEMPLATE.md](plans/AFFILIATE_OUTREACH_TEMPLATE.md)): после 1-2 месяцев данных в БД — слать письма владельцам магазинов с реальной статистикой кликов
+- **Direct affiliate** (см. [AFFILIATE_OUTREACH_TEMPLATE.md](AFFILIATE_OUTREACH_TEMPLATE.md)): после 1-2 месяцев данных в БД — слать письма владельцам магазинов с реальной статистикой кликов
 - **Admin dashboard** «Здоровье парсеров»: success-rate, last_successful_scrape_at, CF-флаги — для оператора
 
 ---
 
 ## 12. Связанные документы
 
-- [SHOPS_PARSING.md](plans/SHOPS_PARSING.md) — план верхнего уровня (бизнес-обоснование, фазы, шопы списком)
-- [DISCOGS_DATA_DUMPS.md](plans/DISCOGS_DATA_DUMPS.md) — план для независимости от Discogs API
-- [OFFERS_UX.md](plans/OFFERS_UX.md) — как офферы отображаются в Mobile (карусель, чипы, swipe)
-- [AFFILIATE_OUTREACH_TEMPLATE.md](plans/AFFILIATE_OUTREACH_TEMPLATE.md) — письмо владельцам магазинов
+- [SHOPS_PARSING.md](SHOPS_PARSING.md) — план верхнего уровня (бизнес-обоснование, фазы, шопы списком)
+- [DISCOGS_DATA_DUMPS.md](DISCOGS_DATA_DUMPS.md) — план для независимости от Discogs API
+- [OFFERS_UX.md](OFFERS_UX.md) — как офферы отображаются в Mobile (карусель, чипы, swipe)
+- [AFFILIATE_OUTREACH_TEMPLATE.md](AFFILIATE_OUTREACH_TEMPLATE.md) — письмо владельцам магазинов
