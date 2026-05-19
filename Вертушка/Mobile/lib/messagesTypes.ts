@@ -44,6 +44,11 @@ export interface AttachedRecord {
   cover_url: string | null;
 }
 
+export interface MessageReaction {
+  user_id: string;
+  emoji: string;
+}
+
 export interface Message {
   id: string;
   conversation_id: string;
@@ -57,6 +62,7 @@ export interface Message {
   reply_to?: ReplyPreview | null;
   attached_record_id?: string | null;
   attached_record?: AttachedRecord | null;
+  reactions?: MessageReaction[];
   /** Локальный клиентский статус. На сервере не хранится. */
   _local_status?: 'sending' | 'sent' | 'failed';
 }

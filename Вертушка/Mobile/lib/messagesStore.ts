@@ -49,6 +49,7 @@ interface MessagesState {
   clearHistory: (conversationId: string) => Promise<void>;
   blockUser: (userId: string, conversationId?: string) => Promise<void>;
   togglePin: (conversationId: string) => Promise<void>;
+  toggleReaction: (conversationId: string, messageId: string, emoji: string) => Promise<void>;
   reset: () => void;
 }
 
@@ -439,6 +440,58 @@ export const useMessagesStore = create<MessagesState>((set, get) => ({
     }
   },
 
+  toggleReaction: async (conversationId, messageId, emoji) => {
+    const me = useAuthStore.getState().user;
+    if (!me) return;
+    // Optimistic: переключаем реакцию локально, ждём ответ для авторитетного списка
+    set((s) => ({
+      threads: {
+        ...s.threads,
+        [conversationId]: (s.threads[conversationId] ?? []).map((m) => {
+          if (m.id !== messageId) return m;
+          const existing = m.reactions ?? [];
+          const hit = existing.find(
+            (r) => r.user_id === me.id && r.emoji === emoji,
+          );
+          const next = hit
+            ? existing.filter((r) => !(r.user_id === me.id && r.emoji === emoji))
+            : [...existing, { user_id: me.id, emoji }];
+          return { ...m, reactions: next };
+        }),
+      },
+    }));
+    try {
+      const { reactions } = await messagesApi.toggleReaction(messageId, emoji);
+      set((s) => ({
+        threads: {
+          ...s.threads,
+          [conversationId]: (s.threads[conversationId] ?? []).map((m) =>
+            m.id === messageId ? { ...m, reactions } : m,
+          ),
+        },
+      }));
+    } catch (e: any) {
+      // Откатим optimistic
+      set((s) => ({
+        threads: {
+          ...s.threads,
+          [conversationId]: (s.threads[conversationId] ?? []).map((m) => {
+            if (m.id !== messageId) return m;
+            const existing = m.reactions ?? [];
+            const hit = existing.find(
+              (r) => r.user_id === me.id && r.emoji === emoji,
+            );
+            const next = hit
+              ? existing.filter((r) => !(r.user_id === me.id && r.emoji === emoji))
+              : [...existing, { user_id: me.id, emoji }];
+            return { ...m, reactions: next };
+          }),
+        },
+      }));
+      toast.error('Реакция не сохранилась', String(e?.response?.data?.detail || ''));
+    }
+  },
+
   reset: () =>
     set({
       conversationsPrimary: [],
@@ -526,6 +579,15 @@ export function initMessagesRealtime(): void {
             m.id === e.message_id
               ? { ...m, body: null, deleted_at: new Date().toISOString() }
               : m,
+          ),
+        },
+      }));
+    } else if (e.type === 'message.reaction') {
+      useMessagesStore.setState((s) => ({
+        threads: {
+          ...s.threads,
+          [e.conversation_id]: (s.threads[e.conversation_id] ?? []).map((m) =>
+            m.id === e.message_id ? { ...m, reactions: e.reactions } : m,
           ),
         },
       }));

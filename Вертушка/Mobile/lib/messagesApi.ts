@@ -14,6 +14,7 @@ import type {
   ConversationDetail,
   Message,
   MessageFolder,
+  MessageReaction,
   PresenceInfo,
   UnreadCount,
 } from './messagesTypes';
@@ -150,6 +151,16 @@ export const messagesApi = {
 
   async getPresence(userId: string): Promise<PresenceInfo> {
     const r = await getClient().get(`/messages/presence/${userId}/`);
+    return r.data;
+  },
+
+  async toggleReaction(
+    messageId: string,
+    emoji: string,
+  ): Promise<{ added: boolean; reactions: MessageReaction[] }> {
+    const r = await getClient().post(`/messages/messages/${messageId}/reactions/`, {
+      emoji,
+    });
     return r.data;
   },
 };

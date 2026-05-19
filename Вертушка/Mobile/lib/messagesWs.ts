@@ -7,7 +7,7 @@
  */
 import * as SecureStore from 'expo-secure-store';
 import Constants from 'expo-constants';
-import type { Message } from './messagesTypes';
+import type { Message, MessageReaction } from './messagesTypes';
 
 const TOKEN_KEY = 'auth_token';
 
@@ -36,6 +36,15 @@ export type WsEvent =
       type: 'message.deleted';
       conversation_id: string;
       message_id: string;
+    }
+  | {
+      type: 'message.reaction';
+      conversation_id: string;
+      message_id: string;
+      user_id: string;
+      emoji: string;
+      added: boolean;
+      reactions: MessageReaction[];
     }
   | {
       type: 'typing';

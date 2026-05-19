@@ -44,6 +44,14 @@ class AttachedRecord(BaseModel):
     cover_url: str | None = None
 
 
+class ReactionRead(BaseModel):
+    """Реакция (emoji + кто поставил) на сообщение."""
+    model_config = ConfigDict(from_attributes=True)
+
+    user_id: UUID
+    emoji: str
+
+
 class MessageRead(BaseModel):
     """Одно сообщение для отдачи на клиент."""
     model_config = ConfigDict(from_attributes=True)
@@ -60,6 +68,12 @@ class MessageRead(BaseModel):
     reply_to: ReplyPreview | None = None
     attached_record_id: UUID | None = None
     attached_record: AttachedRecord | None = None
+    reactions: list[ReactionRead] = Field(default_factory=list)
+
+
+class ReactionToggle(BaseModel):
+    """Toggle реакции пользователя на сообщение."""
+    emoji: str = Field(..., min_length=1, max_length=16)
 
 
 class ConversationRead(BaseModel):

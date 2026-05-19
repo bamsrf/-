@@ -43,6 +43,8 @@ from app.schemas.message import (
     MessageFolder,
     MessageRead,
     PresenceResponse,
+    ReactionRead,
+    ReactionToggle,
     ReadMarker,
     ReplyPreview,
     UnreadCount,
@@ -75,8 +77,9 @@ PAGE_LIMIT_MAX = 100
 async def _hydrate_message_previews(
     db: AsyncSession, messages: list[Message]
 ) -> list[MessageRead]:
-    """Догружает ReplyPreview и AttachedRecord для batch-отдачи."""
+    """Догружает ReplyPreview, AttachedRecord и реакции для batch-отдачи."""
     from app.models.record import Record
+    from app.models.message_reaction import MessageReaction
 
     reply_ids = {m.reply_to_message_id for m in messages if m.reply_to_message_id}
     targets: dict = {}
@@ -89,6 +92,15 @@ async def _hydrate_message_previews(
     if record_ids:
         rq = await db.execute(select(Record).where(Record.id.in_(record_ids)))
         records = {r.id: r for r in rq.scalars().all()}
+
+    msg_ids = [m.id for m in messages]
+    reactions_by_msg: dict = {}
+    if msg_ids:
+        rq = await db.execute(
+            select(MessageReaction).where(MessageReaction.message_id.in_(msg_ids))
+        )
+        for r in rq.scalars().all():
+            reactions_by_msg.setdefault(r.message_id, []).append(r)
 
     result: list[MessageRead] = []
     for m in messages:
@@ -111,6 +123,11 @@ async def _hydrate_message_previews(
                 cover_image_url=r.cover_image_url,
                 cover_url=getattr(r, "cover_url", None),
             )
+        if m.id in reactions_by_msg:
+            mr.reactions = [
+                ReactionRead(user_id=r.user_id, emoji=r.emoji)
+                for r in reactions_by_msg[m.id]
+            ]
         result.append(mr)
     return result
 
@@ -453,6 +470,84 @@ async def unread_count(
     """Счётчики непрочитанного для бейджа в табе сообщений."""
     primary, requests_n = await compute_total_unread(db, current_user.id)
     return UnreadCount(primary=primary, requests=requests_n)
+
+
+# ==================== Реакции ====================
+
+
+@router.post(
+    "/messages/{message_id}/reactions/",
+    status_code=status.HTTP_200_OK,
+)
+async def toggle_reaction(
+    message_id: UUID,
+    payload: ReactionToggle,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Поставить/снять реакцию на сообщение. Идемпотентно — если такая
+    эмоджи-реакция уже стоит от этого юзера, она снимается; иначе ставится.
+
+    Возвращает финальный список реакций сообщения + флаг added.
+    Шлёт WS-событие `message.reaction` обоим участникам.
+    """
+    from app.models.message_reaction import MessageReaction
+
+    message = await db.get(Message, message_id)
+    if not message:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Сообщение не найдено")
+
+    # Проверим, что юзер — участник этого диалога (нельзя реагировать на чужой чат)
+    await require_participant(db, message.conversation_id, current_user.id)
+
+    existing_q = await db.execute(
+        select(MessageReaction).where(
+            MessageReaction.message_id == message_id,
+            MessageReaction.user_id == current_user.id,
+            MessageReaction.emoji == payload.emoji,
+        )
+    )
+    existing = existing_q.scalar_one_or_none()
+    added = False
+    if existing:
+        await db.delete(existing)
+    else:
+        db.add(
+            MessageReaction(
+                message_id=message_id,
+                user_id=current_user.id,
+                emoji=payload.emoji,
+            )
+        )
+        added = True
+    await db.commit()
+
+    # Перечитываем все реакции сообщения для ответа
+    all_q = await db.execute(
+        select(MessageReaction).where(MessageReaction.message_id == message_id)
+    )
+    reactions = [
+        ReactionRead(user_id=r.user_id, emoji=r.emoji) for r in all_q.scalars().all()
+    ]
+
+    conv = await db.get(Conversation, message.conversation_id)
+    if conv:
+        partner_id = partner_id_of(conv, current_user.id)
+        event = {
+            "type": "message.reaction",
+            "conversation_id": str(message.conversation_id),
+            "message_id": str(message_id),
+            "user_id": str(current_user.id),
+            "emoji": payload.emoji,
+            "added": added,
+            "reactions": [
+                {"user_id": str(r.user_id), "emoji": r.emoji} for r in reactions
+            ],
+        }
+        await messages_ws_hub.push_event(current_user.id, event)
+        await messages_ws_hub.push_event(partner_id, event)
+
+    return {"added": added, "reactions": [r.model_dump(mode="json") for r in reactions]}
 
 
 # ==================== Действия над диалогом ====================

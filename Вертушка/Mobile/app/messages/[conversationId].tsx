@@ -63,6 +63,7 @@ import type {
   AttachedRecord,
   Conversation,
   Message,
+  MessageReaction,
   PresenceInfo,
 } from '../../lib/messagesTypes';
 
@@ -198,6 +199,70 @@ function ReadMark({
   return <Icon name="check" size={12} color="rgba(255,255,255,0.75)" />;
 }
 
+function aggregateReactions(
+  reactions: MessageReaction[] | undefined,
+  myId: string | null,
+): { emoji: string; count: number; mine: boolean }[] {
+  if (!reactions || reactions.length === 0) return [];
+  const byEmoji = new Map<string, { emoji: string; count: number; mine: boolean }>();
+  for (const r of reactions) {
+    const cur = byEmoji.get(r.emoji);
+    if (cur) {
+      cur.count += 1;
+      if (myId && r.user_id === myId) cur.mine = true;
+    } else {
+      byEmoji.set(r.emoji, {
+        emoji: r.emoji,
+        count: 1,
+        mine: !!myId && r.user_id === myId,
+      });
+    }
+  }
+  return Array.from(byEmoji.values());
+}
+
+function ReactionsRow({
+  reactions,
+  isMine,
+  meId,
+  onPress,
+}: {
+  reactions: MessageReaction[] | undefined;
+  isMine: boolean;
+  meId: string | null;
+  onPress: (emoji: string) => void;
+}) {
+  const items = aggregateReactions(reactions, meId);
+  if (items.length === 0) return null;
+  return (
+    <View
+      style={[
+        styles.reactionsRow,
+        isMine ? styles.reactionsRowMine : styles.reactionsRowOther,
+      ]}
+    >
+      {items.map((it) => (
+        <TouchableOpacity
+          key={it.emoji}
+          activeOpacity={0.7}
+          onPress={() => onPress(it.emoji)}
+          style={[
+            styles.reactionChip,
+            it.mine && styles.reactionChipMine,
+          ]}
+        >
+          <Text style={styles.reactionChipEmoji}>{it.emoji}</Text>
+          {it.count > 1 ? (
+            <Text style={[styles.reactionChipCount, it.mine && styles.reactionChipCountMine]}>
+              {it.count}
+            </Text>
+          ) : null}
+        </TouchableOpacity>
+      ))}
+    </View>
+  );
+}
+
 function MessageBubble({
   message,
   isMine,
@@ -207,10 +272,12 @@ function MessageBubble({
   isSelected,
   selectionMode,
   isHighlighted,
+  meId,
   onLongPress,
   onPress,
   onOpenRecord,
   onJumpToReply,
+  onToggleReaction,
 }: {
   message: Message;
   isMine: boolean;
@@ -220,10 +287,12 @@ function MessageBubble({
   isSelected: boolean;
   selectionMode: boolean;
   isHighlighted: boolean;
+  meId: string | null;
   onLongPress: () => void;
   onPress: () => void;
   onOpenRecord?: (recordId: string) => void;
   onJumpToReply?: (messageId: string) => void;
+  onToggleReaction?: (messageId: string, emoji: string) => void;
 }) {
   if (message.deleted_at) {
     return (
@@ -316,7 +385,7 @@ function MessageBubble({
       <TouchableOpacity
         activeOpacity={0.85}
         onLongPress={onLongPress}
-        onPress={selectionMode ? onPress : undefined}
+        onPress={onPress}
         delayLongPress={300}
         style={[
           styles.bubble,
@@ -369,6 +438,12 @@ function MessageBubble({
           </View>
         ) : null}
       </TouchableOpacity>
+      <ReactionsRow
+        reactions={message.reactions}
+        isMine={isMine}
+        meId={meId}
+        onPress={(emoji) => onToggleReaction?.(message.id, emoji)}
+      />
     </View>
   );
 }
@@ -961,12 +1036,45 @@ export default function ConversationScreen() {
     return list;
   }, [menuTarget, conversationId, loadThread, toggleSelection]);
 
+  const toggleReactionAction = useMessagesStore((s) => s.toggleReaction);
+
   const handleQuickReact = useCallback(
-    (_emoji: string) => {
-      // Реакции подключим в Phase 3 после деплоя бэка. Сейчас просто закрываем
-      // меню — пользователь видит, что реакции есть, но они noop.
+    (emoji: string) => {
+      if (!menuTarget || !conversationId) return;
+      toggleReactionAction(conversationId, menuTarget.message.id, emoji).catch(() => {});
     },
-    [],
+    [menuTarget, conversationId, toggleReactionAction],
+  );
+
+  const handleToggleReaction = useCallback(
+    (messageId: string, emoji: string) => {
+      if (!conversationId) return;
+      Haptics.selectionAsync().catch(() => {});
+      toggleReactionAction(conversationId, messageId, emoji).catch(() => {});
+    },
+    [conversationId, toggleReactionAction],
+  );
+
+  const lastTapRef = useRef<{ id: string; ts: number } | null>(null);
+  const handleBubbleTap = useCallback(
+    (m: Message) => {
+      if (selectionMode) {
+        toggleSelection(m.id);
+        return;
+      }
+      const now = Date.now();
+      const prev = lastTapRef.current;
+      if (prev && prev.id === m.id && now - prev.ts < 280) {
+        lastTapRef.current = null;
+        if (conversationId) {
+          Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+          toggleReactionAction(conversationId, m.id, '❤️').catch(() => {});
+        }
+        return;
+      }
+      lastTapRef.current = { id: m.id, ts: now };
+    },
+    [selectionMode, conversationId, toggleSelection, toggleReactionAction],
   );
 
   const openAttachedRecord = useCallback(
@@ -1002,10 +1110,12 @@ export default function ConversationScreen() {
           isSelected={isSelected}
           isHighlighted={isHighlighted}
           selectionMode={selectionMode}
+          meId={me?.id ?? null}
           onLongPress={longPressHandler}
-          onPress={() => toggleSelection(m.id)}
+          onPress={() => handleBubbleTap(m)}
           onOpenRecord={openAttachedRecord}
           onJumpToReply={jumpToMessage}
+          onToggleReaction={handleToggleReaction}
         />
       );
 
@@ -1033,11 +1143,13 @@ export default function ConversationScreen() {
       partnerLastReadAt,
       selected,
       selectionMode,
-      toggleSelection,
       openBubbleMenu,
       openAttachedRecord,
       jumpToMessage,
+      handleToggleReaction,
+      handleBubbleTap,
       highlightedMessageId,
+      me?.id,
     ]
   );
 
@@ -1348,10 +1460,12 @@ export default function ConversationScreen() {
               isSelected={false}
               isHighlighted={false}
               selectionMode={false}
+              meId={me?.id ?? null}
               onLongPress={() => {}}
               onPress={() => {}}
               onOpenRecord={openAttachedRecord}
               onJumpToReply={undefined}
+              onToggleReaction={undefined}
             />
           ) : null
         }
@@ -1574,6 +1688,34 @@ const styles = StyleSheet.create({
   },
   bubbleTime: { fontSize: 10, color: Colors.textMuted },
   bubbleTimeMine: { color: 'rgba(255,255,255,0.75)' },
+
+  /* Reactions row под баблом */
+  reactionsRow: {
+    flexDirection: 'row',
+    gap: 4,
+    marginTop: 4,
+    flexWrap: 'wrap',
+  },
+  reactionsRowMine: { alignSelf: 'flex-end' },
+  reactionsRowOther: { alignSelf: 'flex-start' },
+  reactionChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 12,
+    backgroundColor: Colors.surface,
+    borderWidth: 1,
+    borderColor: Colors.border,
+  },
+  reactionChipMine: {
+    backgroundColor: 'rgba(59,75,245,0.12)',
+    borderColor: 'rgba(59,75,245,0.3)',
+  },
+  reactionChipEmoji: { fontSize: 13 },
+  reactionChipCount: { fontSize: 11, fontWeight: '600', color: Colors.text },
+  reactionChipCountMine: { color: Colors.royalBlue },
 
   failedHint: {
     fontSize: 11,

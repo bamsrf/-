@@ -19,6 +19,7 @@ from app.models.store import Store
 from app.models.store_listing import StoreListing, ListingStatus, MatchMethod
 from app.models.offer_click import OfferClick
 from app.models.conversation import Conversation, ConversationParticipant, Message
+from app.models.message_reaction import MessageReaction
 from app.models.user_block import UserBlock
 from app.models.notification import Notification
 
@@ -50,6 +51,7 @@ __all__ = [
     "Conversation",
     "ConversationParticipant",
     "Message",
+    "MessageReaction",
     "UserBlock",
     "Notification",
 ]
