@@ -60,6 +60,14 @@ class Conversation(Base):
         nullable=True,
     )
 
+    # Закреплённое в треде сообщение (TG-style pinned). Один на диалог;
+    # обнуляется при удалении сообщения через ON DELETE SET NULL.
+    pinned_message_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("messages.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+
     __table_args__ = (
         UniqueConstraint("user_a_id", "user_b_id", name="uq_conversation_pair"),
         CheckConstraint("user_a_id < user_b_id", name="ck_conversation_canonical_order"),

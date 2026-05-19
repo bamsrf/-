@@ -1029,6 +1029,20 @@ export default function ConversationScreen() {
         },
       });
     }
+    const isCurrentlyPinned = conversation?.pinned_message?.id === m.id;
+    list.push({
+      key: 'pin',
+      label: isCurrentlyPinned ? 'Открепить в чате' : 'Закрепить в чате',
+      icon: 'star',
+      onPress: () => {
+        if (!conversationId) return;
+        if (isCurrentlyPinned) {
+          useMessagesStore.getState().unpinMessage(conversationId).catch(() => {});
+        } else {
+          useMessagesStore.getState().pinMessage(conversationId, m.id).catch(() => {});
+        }
+      },
+    });
     list.push({
       key: 'share',
       label: 'Поделиться',
@@ -1074,7 +1088,7 @@ export default function ConversationScreen() {
       });
     }
     return list;
-  }, [menuTarget, conversationId, loadThread, toggleSelection]);
+  }, [menuTarget, conversationId, loadThread, toggleSelection, conversation?.pinned_message?.id]);
 
   const toggleReactionAction = useMessagesStore((s) => s.toggleReaction);
 
@@ -1337,6 +1351,36 @@ export default function ConversationScreen() {
           </TouchableOpacity>
         </View>
       )}
+
+      {conversation?.pinned_message ? (
+        <TouchableOpacity
+          activeOpacity={0.7}
+          style={styles.pinnedBanner}
+          onPress={() => {
+            if (conversation.pinned_message)
+              jumpToMessage(conversation.pinned_message.id);
+          }}
+        >
+          <View style={styles.pinnedBannerLine} />
+          <View style={{ flex: 1, minWidth: 0 }}>
+            <Text style={styles.pinnedBannerTitle}>Закреплённое сообщение</Text>
+            <Text style={styles.pinnedBannerBody} numberOfLines={1}>
+              {conversation.pinned_message.deleted_at
+                ? 'Сообщение удалено'
+                : conversation.pinned_message.body || ''}
+            </Text>
+          </View>
+          <TouchableOpacity
+            onPress={() => {
+              if (conversationId)
+                useMessagesStore.getState().unpinMessage(conversationId).catch(() => {});
+            }}
+            style={styles.pinnedBannerClose}
+          >
+            <Icon name="close" size={16} color={Colors.textMuted} />
+          </TouchableOpacity>
+        </TouchableOpacity>
+      ) : null}
 
       <KeyboardAvoidingView
         style={styles.kbWrap}
@@ -1612,6 +1656,40 @@ const styles = StyleSheet.create({
   },
 
   listWrap: { flex: 1 },
+
+  /* Pinned message banner под хедером */
+  pinnedBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.sm,
+    paddingHorizontal: Spacing.md,
+    paddingVertical: 8,
+    backgroundColor: 'rgba(245,158,11,0.08)',
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(245,158,11,0.2)',
+  },
+  pinnedBannerLine: {
+    width: 3,
+    height: 28,
+    borderRadius: 2,
+    backgroundColor: '#F59E0B',
+  },
+  pinnedBannerTitle: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: '#F59E0B',
+    textTransform: 'uppercase',
+    letterSpacing: 0.3,
+  },
+  pinnedBannerBody: { fontSize: 13, color: Colors.text, marginTop: 1 },
+  pinnedBannerClose: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: Colors.surface,
+  },
   list: { paddingHorizontal: Spacing.md, paddingTop: Spacing.sm, paddingBottom: Spacing.md },
   listEmpty: { flexGrow: 1, justifyContent: 'center' },
 

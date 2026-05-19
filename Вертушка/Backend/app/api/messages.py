@@ -43,6 +43,7 @@ from app.schemas.message import (
     MessageEdit,
     MessageFolder,
     MessageRead,
+    PinnedMessagePreview,
     PresenceResponse,
     ReactionRead,
     ReactionToggle,
@@ -140,6 +141,7 @@ def _conv_to_read(
     partner_part: ConversationParticipant | None,
     unread: int,
     is_blocked: bool,
+    pinned_message: Message | None = None,
 ) -> ConversationRead:
     return ConversationRead(
         id=conv.id,
@@ -158,6 +160,14 @@ def _conv_to_read(
         is_blocked=is_blocked,
         partner_last_read_at=partner_part.last_read_at if partner_part else None,
         pinned=me_part.pinned_at is not None,
+        pinned_message=PinnedMessagePreview(
+            id=pinned_message.id,
+            sender_id=pinned_message.sender_id,
+            body=pinned_message.body,
+            deleted_at=pinned_message.deleted_at,
+        )
+        if pinned_message
+        else None,
     )
 
 
@@ -305,8 +315,16 @@ async def get_conversation_detail(
         )
     )
     partner_part = partner_part_q.scalar_one_or_none()
+
+    pinned_message: Message | None = None
+    if conv.pinned_message_id:
+        pinned_message = await db.get(Message, conv.pinned_message_id)
+        if pinned_message and pinned_message.deleted_at:
+            pinned_message = None
     return ConversationDetail(
-        conversation=_conv_to_read(conv, partner, me_part, partner_part, unread, blocked),
+        conversation=_conv_to_read(
+            conv, partner, me_part, partner_part, unread, blocked, pinned_message,
+        ),
         messages=await _hydrate_message_previews(db, messages),
     )
 
@@ -751,6 +769,83 @@ async def toggle_pin(
 
     await db.commit()
     return {"status": "ok", "pinned": pinned}
+
+
+@router.post(
+    "/conversations/{conversation_id}/pin-message/{message_id}/",
+    status_code=status.HTTP_200_OK,
+)
+async def pin_message(
+    conversation_id: UUID,
+    message_id: UUID,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Закрепить сообщение в треде (TG-style). Видно обоим участникам."""
+    await require_participant(db, conversation_id, current_user.id)
+    conv = await db.get(Conversation, conversation_id)
+    if not conv:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Диалог не найден")
+
+    message = await db.get(Message, message_id)
+    if not message or message.conversation_id != conversation_id:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Сообщение не найдено в этом диалоге",
+        )
+    if message.deleted_at:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail="Сообщение удалено"
+        )
+
+    conv.pinned_message_id = message_id
+    await db.commit()
+
+    pinned_preview = PinnedMessagePreview(
+        id=message.id,
+        sender_id=message.sender_id,
+        body=message.body,
+        deleted_at=message.deleted_at,
+    )
+    partner_id = partner_id_of(conv, current_user.id)
+    event = {
+        "type": "conversation.pinned",
+        "conversation_id": str(conversation_id),
+        "pinned_message": pinned_preview.model_dump(mode="json"),
+    }
+    await messages_ws_hub.push_event(current_user.id, event)
+    await messages_ws_hub.push_event(partner_id, event)
+
+    return {"status": "ok", "pinned_message": pinned_preview.model_dump(mode="json")}
+
+
+@router.delete(
+    "/conversations/{conversation_id}/pin-message/",
+    status_code=status.HTTP_200_OK,
+)
+async def unpin_message(
+    conversation_id: UUID,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Открепить сообщение треда. Идемпотентно."""
+    await require_participant(db, conversation_id, current_user.id)
+    conv = await db.get(Conversation, conversation_id)
+    if not conv:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Диалог не найден")
+
+    conv.pinned_message_id = None
+    await db.commit()
+
+    partner_id = partner_id_of(conv, current_user.id)
+    event = {
+        "type": "conversation.pinned",
+        "conversation_id": str(conversation_id),
+        "pinned_message": None,
+    }
+    await messages_ws_hub.push_event(current_user.id, event)
+    await messages_ws_hub.push_event(partner_id, event)
+    return {"status": "ok"}
 
 
 # ==================== Блокировки ====================

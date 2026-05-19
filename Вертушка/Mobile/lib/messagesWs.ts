@@ -7,7 +7,7 @@
  */
 import * as SecureStore from 'expo-secure-store';
 import Constants from 'expo-constants';
-import type { Message, MessageReaction } from './messagesTypes';
+import type { Message, MessageReaction, PinnedMessagePreview } from './messagesTypes';
 
 const TOKEN_KEY = 'auth_token';
 
@@ -43,6 +43,11 @@ export type WsEvent =
       message_id: string;
       body: string;
       edited_at: string | null;
+    }
+  | {
+      type: 'conversation.pinned';
+      conversation_id: string;
+      pinned_message: PinnedMessagePreview | null;
     }
   | {
       type: 'message.reaction';

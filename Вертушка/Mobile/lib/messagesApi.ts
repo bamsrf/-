@@ -168,4 +168,16 @@ export const messagesApi = {
     });
     return r.data;
   },
+
+  async pinMessage(conversationId: string, messageId: string): Promise<void> {
+    await getClient().post(
+      `/messages/conversations/${conversationId}/pin-message/${messageId}/`,
+    );
+  },
+
+  async unpinMessage(conversationId: string): Promise<void> {
+    await getClient().delete(
+      `/messages/conversations/${conversationId}/pin-message/`,
+    );
+  },
 };

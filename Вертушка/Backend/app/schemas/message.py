@@ -76,6 +76,16 @@ class ReactionToggle(BaseModel):
     emoji: str = Field(..., min_length=1, max_length=16)
 
 
+class PinnedMessagePreview(BaseModel):
+    """Превью закреплённого в треде сообщения."""
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    sender_id: UUID
+    body: str | None = None
+    deleted_at: datetime | None = None
+
+
 class ConversationRead(BaseModel):
     """Карточка диалога в инбоксе."""
     model_config = ConfigDict(from_attributes=True)
@@ -93,6 +103,8 @@ class ConversationRead(BaseModel):
     partner_last_read_at: datetime | None = None
     # Закреплено пользователем (Telegram-style pinned chat)
     pinned: bool = False
+    # Закреплённое сообщение в треде (TG pin)
+    pinned_message: PinnedMessagePreview | None = None
 
 
 class ConversationDetail(BaseModel):

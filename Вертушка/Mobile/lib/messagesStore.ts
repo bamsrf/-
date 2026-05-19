@@ -51,6 +51,8 @@ interface MessagesState {
   togglePin: (conversationId: string) => Promise<void>;
   toggleReaction: (conversationId: string, messageId: string, emoji: string) => Promise<void>;
   editMessage: (conversationId: string, messageId: string, body: string) => Promise<void>;
+  pinMessage: (conversationId: string, messageId: string) => Promise<void>;
+  unpinMessage: (conversationId: string) => Promise<void>;
   reset: () => void;
 }
 
@@ -441,6 +443,55 @@ export const useMessagesStore = create<MessagesState>((set, get) => ({
     }
   },
 
+  pinMessage: async (conversationId, messageId) => {
+    try {
+      await messagesApi.pinMessage(conversationId, messageId);
+      // WS conversation.pinned обновит превью; для уверенности ставим оптимистично:
+      const list = get().threads[conversationId] ?? [];
+      const target = list.find((m) => m.id === messageId);
+      if (target) {
+        const preview = {
+          id: target.id,
+          sender_id: target.sender_id,
+          body: target.body,
+          deleted_at: target.deleted_at,
+        };
+        set((s) => ({
+          conversationsPrimary: s.conversationsPrimary.map((c) =>
+            c.id === conversationId ? { ...c, pinned_message: preview } : c,
+          ),
+          conversationsRequests: s.conversationsRequests.map((c) =>
+            c.id === conversationId ? { ...c, pinned_message: preview } : c,
+          ),
+        }));
+      }
+    } catch (e: any) {
+      toast.error(
+        'Не удалось закрепить',
+        String(e?.response?.data?.detail || 'Попробуйте позже'),
+      );
+    }
+  },
+
+  unpinMessage: async (conversationId) => {
+    try {
+      await messagesApi.unpinMessage(conversationId);
+      set((s) => ({
+        conversationsPrimary: s.conversationsPrimary.map((c) =>
+          c.id === conversationId ? { ...c, pinned_message: null } : c,
+        ),
+        conversationsRequests: s.conversationsRequests.map((c) =>
+          c.id === conversationId ? { ...c, pinned_message: null } : c,
+        ),
+      }));
+    } catch (e: any) {
+      toast.error(
+        'Не удалось открепить',
+        String(e?.response?.data?.detail || 'Попробуйте позже'),
+      );
+    }
+  },
+
   editMessage: async (conversationId, messageId, body) => {
     try {
       const updated = await messagesApi.editMessage(messageId, body);
@@ -622,6 +673,19 @@ export function initMessagesRealtime(): void {
               : m,
           ),
         },
+      }));
+    } else if (e.type === 'conversation.pinned') {
+      useMessagesStore.setState((s) => ({
+        conversationsPrimary: s.conversationsPrimary.map((c) =>
+          c.id === e.conversation_id
+            ? { ...c, pinned_message: e.pinned_message }
+            : c,
+        ),
+        conversationsRequests: s.conversationsRequests.map((c) =>
+          c.id === e.conversation_id
+            ? { ...c, pinned_message: e.pinned_message }
+            : c,
+        ),
       }));
     }
     // 'typing' обрабатывается в экране треда через отдельный subscribe

@@ -12,6 +12,13 @@ export interface ConversationPartner {
   avatar_url: string | null;
 }
 
+export interface PinnedMessagePreview {
+  id: string;
+  sender_id: string;
+  body: string | null;
+  deleted_at: string | null;
+}
+
 export interface Conversation {
   id: string;
   partner: ConversationPartner;
@@ -26,6 +33,8 @@ export interface Conversation {
   partner_last_read_at?: string | null;
   /** Закреплено пользователем (Telegram-style). */
   pinned?: boolean;
+  /** Закреплённое сообщение в треде (TG). */
+  pinned_message?: PinnedMessagePreview | null;
 }
 
 export interface ReplyPreview {
