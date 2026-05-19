@@ -1551,7 +1551,10 @@ export default function ConversationScreen() {
               if (!conversationId) return;
               router.push({
                 pathname: '/messages/share-record' as any,
-                params: { conversationId },
+                params: {
+                  conversationId,
+                  partnerUsername: partner?.username || '',
+                },
               });
             }}
           >
