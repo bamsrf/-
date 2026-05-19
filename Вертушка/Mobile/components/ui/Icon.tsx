@@ -35,6 +35,7 @@ import {
   WarningCircleIcon,
   ArrowLeftIcon,
   ArrowRightIcon,
+  ArrowUpRightIcon,
   BellIcon,
   BellSlashIcon,
   BuildingsIcon,
@@ -186,6 +187,7 @@ const REGISTRY = {
   'caret-up':            CaretUpIcon,
   'caret-down':          CaretDownIcon,
   'arrow-up':            ArrowUpIcon,
+  'arrow-up-right':      ArrowUpRightIcon, // Hot Stock pill hero-вариант, exit-buttons
   'arrow-down':          ArrowDownIcon,
   'eye':                 EyeIcon,
   'eye-slash':           EyeSlashIcon,

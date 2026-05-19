@@ -298,12 +298,62 @@ export const BorderRadius = {
 };
 
 // Gradients — pristine Blue Gradient (royalBlue / electricBlue / lavender / softPink).
+//
+// hotStock — фирменный градиент Hot Stock pill и активного чипа «В продаже»:
+// от холодного cobaltDeep через бренд-cobalt к огненному ember. Это
+// единственное место, где ember проявляется как пятно света — он редкий по
+// замыслу, потому что заметность держится на контрасте с холодным фоном.
+// Источник: B2/Hot Stock spec (MARKET_AND_PRICE_DRAWER.md §2.2 / atoms.jsx).
+//
+// hotStockSoft — softer вариант для transition-кадров (когда glow «гаснет»
+// при mid-fade фона маркета). На 1 шаг светлее по cobaltDeep + emberSoft.
 export const Gradients = {
   blue:     ['#3B4BF5', '#5B6AF5'] as const,
   bluePink: ['#3B4BF5', '#8B9CF7', '#F0C4D8'] as const,
   blueLight:['#5B6AF5', '#8B9CF7'] as const,
   overlay:  ['transparent', 'rgba(10, 11, 59, 0.7)'] as const,
+  hotStock:     ['#0E1A52', '#2A4BD7', '#E85A2A'] as const, // cobaltDeep → cobalt → ember
+  hotStockSoft: ['#11225C', '#2A4BD7', '#FF7A4A'] as const,
+  // Outline gradient для altVersion/preorder pill — мягкий cobaltSoft → ember
+  hotStockOutline: ['#5C7AE8', '#E85A2A'] as const,
 };
+
+// ───────────────────────────────────────────────────────────────────────────
+// Market palette — отдельный «тёплый/насыщенный» мир для раздела Маркет
+// (бэкграунд с radial-смешением фиолетового/cobalt/azure/peach + grain).
+// Источник: bg-reference.png + tokens.js Design Claude (market.*).
+//
+// Используется через MarketBackground.tsx — composite из 5 LinearGradient
+// и/или radial-svg слоёв. Цвета не идут в основную T.palette, чтобы не
+// смешивать «холодную» дефолт-тему с «горячей» Маркет-айдентикой.
+// ───────────────────────────────────────────────────────────────────────────
+
+export const MarketPalette = {
+  void:    '#0E0726', // тёмный фиолетовый «пустотный» верх-лево
+  indigo:  '#241057', // глубокий индиго
+  violet:  '#5E2099', // насыщенный фиолет
+  cobalt:  '#2D4FDB', // бренд-cobalt «мост» между мирами
+  azure:   '#5780F0', // голубой акцент верх-право
+  peach:   '#F4A06A', // тёплый персик низ-право
+  blush:   '#F8C0A0', // мягкий peach edge
+  magenta: '#B53B91', // magenta низ-лево
+  plum:    '#3A124A', // приглушённый сливовый
+  darkVoid: '#0A0218', // signature тень в верхней центральной части (тёмное пятно)
+
+  // Chrome-цвета на market-фоне: белые с альфой (всё остальное даст слишком
+  // контрастный кричащий вид). Используем для borders/fills стеклянных
+  // элементов (search input, chips, exit button).
+  chrome: {
+    borderSoft:   'rgba(255,255,255,0.10)',
+    border:       'rgba(255,255,255,0.18)',
+    fill:         'rgba(255,255,255,0.06)',
+    fillStrong:   'rgba(255,255,255,0.10)',
+    textPrimary:  '#FFFFFF',
+    textSecondary:'rgba(255,255,255,0.70)',
+    textMuted:    'rgba(255,255,255,0.55)',
+    textDim:      'rgba(255,255,255,0.40)',
+  },
+} as const;
 
 // Type scale legacy. heroTitle — RubikMonoOne (был Inter Bold).
 export const Typography = {
