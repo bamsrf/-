@@ -420,7 +420,7 @@ export default function MessagesInboxScreen() {
         }
       />
 
-      {folder === 'primary' ? (
+      {folder === 'primary' && primary.length > 0 ? (
         <TouchableOpacity
           style={[styles.fab, { bottom: insets.bottom + 100 }]}
           activeOpacity={0.85}

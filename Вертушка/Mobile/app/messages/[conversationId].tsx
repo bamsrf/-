@@ -26,8 +26,24 @@ import {
   ListRenderItem,
   ActionSheetIOS,
   Alert,
+  Keyboard,
+  LayoutChangeEvent,
+  Share,
+  NativeScrollEvent,
+  NativeSyntheticEvent,
 } from 'react-native';
 import * as Clipboard from 'expo-clipboard';
+import * as Haptics from 'expo-haptics';
+import Animated, {
+  useSharedValue,
+  useAnimatedStyle,
+  withSpring,
+  withTiming,
+  runOnJS,
+  interpolate,
+  Extrapolation,
+} from 'react-native-reanimated';
+import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useLocalSearchParams, useRouter } from 'expo-router';
@@ -87,6 +103,7 @@ function formatDateLabel(d: Date): string {
 
 type FeedItem =
   | { type: 'date'; key: string; date: Date }
+  | { type: 'unread-divider'; key: string }
   | {
       type: 'message';
       key: string;
@@ -96,7 +113,11 @@ type FeedItem =
       isFirstInGroup: boolean;
     };
 
-function buildFeed(messages: Message[], meId: string | null): FeedItem[] {
+function buildFeed(
+  messages: Message[],
+  meId: string | null,
+  unreadFirstMsgId: string | null,
+): FeedItem[] {
   if (messages.length === 0) return [];
   const sorted = [...messages].sort(
     (a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
@@ -105,6 +126,7 @@ function buildFeed(messages: Message[], meId: string | null): FeedItem[] {
   const items: FeedItem[] = [];
   let prevDayKey: string | null = null;
   let prevMsg: Message | null = null;
+  let unreadInserted = false;
 
   for (let i = 0; i < sorted.length; i++) {
     const m = sorted[i];
@@ -118,6 +140,12 @@ function buildFeed(messages: Message[], meId: string | null): FeedItem[] {
     }
 
     const isMine = !!meId && m.sender_id === meId;
+
+    if (!unreadInserted && unreadFirstMsgId && m.id === unreadFirstMsgId) {
+      items.push({ type: 'unread-divider', key: 'unread-divider' });
+      unreadInserted = true;
+    }
+
     const isFirstInGroup =
       !prevMsg ||
       prevMsg.sender_id !== m.sender_id ||
@@ -170,26 +198,39 @@ function MessageBubble({
   message,
   isMine,
   isLastInGroup,
+  isFirstInGroup,
   isRead,
   isSelected,
   selectionMode,
+  isHighlighted,
   onLongPress,
   onPress,
-  onReplyHint,
+  onOpenRecord,
+  onJumpToReply,
 }: {
   message: Message;
   isMine: boolean;
   isLastInGroup: boolean;
+  isFirstInGroup: boolean;
   isRead: boolean;
   isSelected: boolean;
   selectionMode: boolean;
+  isHighlighted: boolean;
   onLongPress: () => void;
   onPress: () => void;
-  onReplyHint?: () => void;
+  onOpenRecord?: (recordId: string) => void;
+  onJumpToReply?: (messageId: string) => void;
 }) {
   if (message.deleted_at) {
     return (
-      <View style={[styles.bubbleRow, isMine ? styles.bubbleRowMine : styles.bubbleRowOther]}>
+      <View
+        style={[
+          styles.bubbleRow,
+          isFirstInGroup && styles.bubbleRowFirstInGroup,
+          isLastInGroup && styles.bubbleRowLastInGroup,
+          isMine ? styles.bubbleRowMine : styles.bubbleRowOther,
+        ]}
+      >
         <View style={[styles.bubble, styles.bubbleDeleted]}>
           <Text style={styles.bubbleDeletedTxt}>Сообщение удалено</Text>
         </View>
@@ -198,23 +239,81 @@ function MessageBubble({
   }
 
   const isFailed = message._local_status === 'failed';
-
-  return (
+  const hasBody = !!(message.body && message.body.trim().length > 0);
+  const recordCard = message.attached_record ? (
     <TouchableOpacity
-      activeOpacity={0.75}
-      onLongPress={isMine ? onLongPress : undefined}
-      onPress={
-        selectionMode && isMine
-          ? onPress
-          : onReplyHint
-      }
+      activeOpacity={0.85}
+      onPress={() => {
+        if (selectionMode) {
+          onPress();
+          return;
+        }
+        if (message.attached_record) onOpenRecord?.(message.attached_record.id);
+      }}
+      onLongPress={onLongPress}
+      delayLongPress={300}
       style={[
-        styles.bubbleRow,
-        isMine ? styles.bubbleRowMine : styles.bubbleRowOther,
-        isSelected && styles.bubbleRowSelected,
+        styles.bubbleRecord,
+        isMine ? styles.bubbleRecordMine : styles.bubbleRecordOther,
+        !hasBody && { marginBottom: 0 },
       ]}
     >
-      <View
+      {message.attached_record.cover_image_url ? (
+        <Image
+          source={resolveMediaUrl(message.attached_record.cover_image_url)}
+          style={styles.bubbleRecordCover}
+          cachePolicy="disk"
+        />
+      ) : (
+        <View
+          style={[
+            styles.bubbleRecordCover,
+            { alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(0,0,0,0.05)' },
+          ]}
+        >
+          <Icon name="disc" size={18} color={Colors.textMuted} />
+        </View>
+      )}
+      <View style={{ flex: 1, minWidth: 0 }}>
+        <Text
+          style={[
+            styles.bubbleRecordTitle,
+            { color: isMine ? '#fff' : Colors.text },
+          ]}
+          numberOfLines={1}
+        >
+          {message.attached_record.title}
+        </Text>
+        <Text
+          style={[
+            styles.bubbleRecordSub,
+            { color: isMine ? 'rgba(255,255,255,0.75)' : Colors.textMuted },
+          ]}
+          numberOfLines={1}
+        >
+          {message.attached_record.artist}
+          {message.attached_record.year ? ` · ${message.attached_record.year}` : ''}
+        </Text>
+      </View>
+    </TouchableOpacity>
+  ) : null;
+
+  return (
+    <View
+      style={[
+        styles.bubbleRow,
+        isFirstInGroup && styles.bubbleRowFirstInGroup,
+        isLastInGroup && styles.bubbleRowLastInGroup,
+        isMine ? styles.bubbleRowMine : styles.bubbleRowOther,
+        isSelected && styles.bubbleRowSelected,
+        isHighlighted && styles.bubbleRowHighlighted,
+      ]}
+    >
+      <TouchableOpacity
+        activeOpacity={0.85}
+        onLongPress={onLongPress}
+        onPress={selectionMode ? onPress : undefined}
+        delayLongPress={300}
         style={[
           styles.bubble,
           isMine ? styles.bubbleMine : styles.bubbleOther,
@@ -224,7 +323,12 @@ function MessageBubble({
         ]}
       >
         {message.reply_to ? (
-          <View
+          <TouchableOpacity
+            activeOpacity={0.7}
+            disabled={selectionMode || !onJumpToReply}
+            onPress={() => {
+              if (message.reply_to) onJumpToReply?.(message.reply_to.id);
+            }}
             style={[
               styles.bubbleReply,
               isMine ? styles.bubbleReplyMineLine : styles.bubbleReplyOtherLine,
@@ -239,57 +343,14 @@ function MessageBubble({
             >
               {message.reply_to.deleted_at ? 'Сообщение удалено' : message.reply_to.body}
             </Text>
-          </View>
+          </TouchableOpacity>
         ) : null}
-        {message.attached_record ? (
-          <View
-            style={[
-              styles.bubbleRecord,
-              isMine ? styles.bubbleRecordMine : styles.bubbleRecordOther,
-            ]}
-          >
-            {message.attached_record.cover_image_url ? (
-              <Image
-                source={resolveMediaUrl(message.attached_record.cover_image_url)}
-                style={styles.bubbleRecordCover}
-                cachePolicy="disk"
-              />
-            ) : (
-              <View
-                style={[
-                  styles.bubbleRecordCover,
-                  { alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(0,0,0,0.05)' },
-                ]}
-              >
-                <Icon name="disc" size={18} color={Colors.textMuted} />
-              </View>
-            )}
-            <View style={{ flex: 1, minWidth: 0 }}>
-              <Text
-                style={[
-                  styles.bubbleRecordTitle,
-                  { color: isMine ? '#fff' : Colors.text },
-                ]}
-                numberOfLines={1}
-              >
-                {message.attached_record.title}
-              </Text>
-              <Text
-                style={[
-                  styles.bubbleRecordSub,
-                  { color: isMine ? 'rgba(255,255,255,0.75)' : Colors.textMuted },
-                ]}
-                numberOfLines={1}
-              >
-                {message.attached_record.artist}
-                {message.attached_record.year ? ` · ${message.attached_record.year}` : ''}
-              </Text>
-            </View>
-          </View>
+        {recordCard}
+        {hasBody ? (
+          <Text style={[styles.bubbleBody, isMine && styles.bubbleBodyMine]}>
+            {message.body}
+          </Text>
         ) : null}
-        <Text style={[styles.bubbleBody, isMine && styles.bubbleBodyMine]}>
-          {message.body}
-        </Text>
         {isLastInGroup ? (
           <View style={styles.bubbleMeta}>
             <Text style={[styles.bubbleTime, isMine && styles.bubbleTimeMine]}>
@@ -299,12 +360,12 @@ function MessageBubble({
               <ReadMark status={message._local_status} isRead={isRead} />
             ) : null}
             {isMine && isFailed ? (
-              <Icon name="warning" size={12} color="#FCD2D4" />
+              <Icon name="warning-circle" size={12} color="#FCD2D4" />
             ) : null}
           </View>
         ) : null}
-      </View>
-    </TouchableOpacity>
+      </TouchableOpacity>
+    </View>
   );
 }
 
@@ -314,6 +375,95 @@ function DateDivider({ date }: { date: Date }) {
       <View style={styles.dateChip}>
         <Text style={styles.dateChipTxt}>{formatDateLabel(date)}</Text>
       </View>
+    </View>
+  );
+}
+
+function UnreadDivider() {
+  return (
+    <View style={styles.unreadDividerWrap}>
+      <View style={styles.unreadDividerLine} />
+      <Text style={styles.unreadDividerTxt}>Непрочитанные сообщения</Text>
+      <View style={styles.unreadDividerLine} />
+    </View>
+  );
+}
+
+const SWIPE_REPLY_THRESHOLD = 56;
+const SWIPE_REPLY_LIMIT = 90;
+
+/**
+ * Telegram-style swipe-to-reply: тащим бабл в сторону (свои — влево, чужие —
+ * вправо). Когда переход через threshold — haptic + onReply, бабл пружинит
+ * обратно. Активная зона жеста узкая (горизонтальные movement), вертикальный
+ * скролл FlatList не блокируется.
+ */
+function SwipeableMessage({
+  children,
+  isMine,
+  onReply,
+}: {
+  children: React.ReactNode;
+  isMine: boolean;
+  onReply: () => void;
+}) {
+  const tx = useSharedValue(0);
+  const triggered = useSharedValue(false);
+
+  const triggerReply = useCallback(() => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
+    onReply();
+  }, [onReply]);
+
+  const pan = Gesture.Pan()
+    .activeOffsetX(isMine ? [-12, 9999] : [-9999, 12])
+    .failOffsetY([-12, 12])
+    .onUpdate((e) => {
+      const dx = e.translationX;
+      if (isMine) {
+        tx.value = Math.min(0, Math.max(-SWIPE_REPLY_LIMIT, dx));
+      } else {
+        tx.value = Math.max(0, Math.min(SWIPE_REPLY_LIMIT, dx));
+      }
+      if (!triggered.value && Math.abs(tx.value) >= SWIPE_REPLY_THRESHOLD) {
+        triggered.value = true;
+        runOnJS(triggerReply)();
+      }
+    })
+    .onEnd(() => {
+      tx.value = withSpring(0, { damping: 18, stiffness: 220 });
+      triggered.value = false;
+    });
+
+  const rowStyle = useAnimatedStyle(() => ({
+    transform: [{ translateX: tx.value }],
+  }));
+
+  const iconStyle = useAnimatedStyle(() => {
+    const progress = Math.min(1, Math.abs(tx.value) / SWIPE_REPLY_THRESHOLD);
+    return {
+      opacity: progress,
+      transform: [
+        { scale: interpolate(progress, [0, 1], [0.6, 1], Extrapolation.CLAMP) },
+      ],
+    };
+  });
+
+  return (
+    <View style={styles.swipeOuter}>
+      <Animated.View
+        pointerEvents="none"
+        style={[
+          styles.swipeReplyIcon,
+          isMine ? styles.swipeReplyIconMine : styles.swipeReplyIconOther,
+          iconStyle,
+        ]}
+      >
+        <Icon name="arrow-clockwise" size={16} color={Colors.royalBlue} />
+      </Animated.View>
+      <GestureDetector gesture={pan}>
+        <Animated.View style={rowStyle}>{children}</Animated.View>
+      </GestureDetector>
     </View>
   );
 }
@@ -407,9 +557,37 @@ export default function ConversationScreen() {
   const [replyTo, setReplyTo] = useState<Message | null>(null);
   const [attachedRecord, setAttachedRecord] = useState<AttachedRecord | null>(null);
   const [partnerTyping, setPartnerTyping] = useState(false);
+  const [headerHeight, setHeaderHeight] = useState(0);
+  const [keyboardVisible, setKeyboardVisible] = useState(false);
+  const [highlightedMessageId, setHighlightedMessageId] = useState<string | null>(null);
+  const [showScrollToBottom, setShowScrollToBottom] = useState(false);
+  const [unreadAccum, setUnreadAccum] = useState(0);
   const typingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const highlightTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastTypingSentRef = useRef<number>(0);
   const listRef = useRef<FlatList<FeedItem>>(null);
+  // ID первого непрочитанного входящего сообщения, перед которым рисуем
+  // unread-divider. Фиксируется один раз при входе в тред (на момент, когда
+  // unread_count > 0 и сообщения уже подгружены).
+  const [unreadFirstMsgId, setUnreadFirstMsgId] = useState<string | null>(null);
+  const unreadCapturedRef = useRef(false);
+  const isAtBottomRef = useRef<boolean>(true);
+
+  useEffect(() => {
+    const showEvt = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
+    const hideEvt = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
+    const s = Keyboard.addListener(showEvt, () => setKeyboardVisible(true));
+    const h = Keyboard.addListener(hideEvt, () => setKeyboardVisible(false));
+    return () => {
+      s.remove();
+      h.remove();
+    };
+  }, []);
+
+  const onHeaderLayout = useCallback((e: LayoutChangeEvent) => {
+    const h = e.nativeEvent.layout.height;
+    if (h > 0 && Math.abs(h - headerHeight) > 0.5) setHeaderHeight(h);
+  }, [headerHeight]);
 
   // Когда возвращаемся со share-record экрана с params — подхватим выбор
   useEffect(() => {
@@ -583,7 +761,100 @@ export default function ConversationScreen() {
     };
   }, [partner?.id]);
 
-  const feed = useMemo(() => buildFeed(messages, me?.id ?? null), [messages, me?.id]);
+  // Захват unread-границы один раз: когда сообщения подгрузились и unread_count > 0,
+  // фиксируем ID первого непрочитанного входящего (= unread_count-й с конца среди
+  // входящих) — он становится якорем для divider'а.
+  useEffect(() => {
+    if (unreadCapturedRef.current) return;
+    if (!conversation || conversation.unread_count <= 0) return;
+    if (messages.length === 0) return;
+    const incoming = messages
+      .filter((m) => m.sender_id !== me?.id && !m.id.startsWith('local-'))
+      .sort(
+        (a, b) =>
+          new Date(a.created_at).getTime() - new Date(b.created_at).getTime(),
+      );
+    const need = Math.min(conversation.unread_count, incoming.length);
+    if (need === 0) return;
+    const first = incoming[incoming.length - need];
+    if (first) {
+      setUnreadFirstMsgId(first.id);
+      unreadCapturedRef.current = true;
+    }
+  }, [conversation, messages, me?.id]);
+
+  const feed = useMemo(
+    () => buildFeed(messages, me?.id ?? null, unreadFirstMsgId),
+    [messages, me?.id, unreadFirstMsgId],
+  );
+
+  // Sticky-индексы для date-разделителей.
+  const stickyHeaderIndices = useMemo(() => {
+    const idx: number[] = [];
+    feed.forEach((it, i) => {
+      if (it.type === 'date') idx.push(i);
+    });
+    return idx;
+  }, [feed]);
+
+  const jumpToMessage = useCallback((messageId: string) => {
+    const idx = feed.findIndex(
+      (it) => it.type === 'message' && it.message.id === messageId,
+    );
+    if (idx < 0) return;
+    try {
+      listRef.current?.scrollToIndex({ index: idx, animated: true, viewPosition: 0.3 });
+    } catch {
+      // тихо — иногда scrollToIndex кидает, если viewability ещё не готов
+    }
+    if (highlightTimerRef.current) clearTimeout(highlightTimerRef.current);
+    setHighlightedMessageId(messageId);
+    highlightTimerRef.current = setTimeout(() => {
+      setHighlightedMessageId(null);
+    }, 1500);
+  }, [feed]);
+
+  useEffect(() => {
+    return () => {
+      if (highlightTimerRef.current) clearTimeout(highlightTimerRef.current);
+    };
+  }, []);
+
+  const handleScroll = useCallback(
+    (e: NativeSyntheticEvent<NativeScrollEvent>) => {
+      const { contentOffset, contentSize, layoutMeasurement } = e.nativeEvent;
+      const distanceFromBottom =
+        contentSize.height - (contentOffset.y + layoutMeasurement.height);
+      const atBottom = distanceFromBottom < 80;
+      isAtBottomRef.current = atBottom;
+      if (atBottom) {
+        if (showScrollToBottom) setShowScrollToBottom(false);
+        if (unreadAccum > 0) setUnreadAccum(0);
+      } else if (distanceFromBottom > 240 && !showScrollToBottom) {
+        setShowScrollToBottom(true);
+      }
+    },
+    [showScrollToBottom, unreadAccum],
+  );
+
+  const scrollToBottom = useCallback(() => {
+    listRef.current?.scrollToEnd({ animated: true });
+    setShowScrollToBottom(false);
+    setUnreadAccum(0);
+  }, []);
+
+  // Накапливаем счётчик новых входящих, пока пользователь скроллит вверх.
+  useEffect(() => {
+    const last = messages[messages.length - 1];
+    if (!last || !me) return;
+    if (last.sender_id === me.id) return;
+    if (isAtBottomRef.current) return;
+    setUnreadAccum((n) => n + 1);
+    // ловим момент прихода нового — без идеала, может посчитать пере-загрузку
+    // как «новое»; для надёжности можно хранить lastSeenMessageId, но в рамках
+    // фазы 1 этого достаточно.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [messages.length]);
 
   const handleSend = useCallback(async () => {
     if (!conversationId) return;
@@ -608,17 +879,33 @@ export default function ConversationScreen() {
 
   const openBubbleMenu = useCallback(
     (m: Message, isMine: boolean) => {
-      const baseOptions = ['Ответить', 'Скопировать'];
-      const options = isMine
-        ? [...baseOptions, 'Удалить', 'Отмена']
-        : [...baseOptions, 'Отмена'];
-      const cancel = options.length - 1;
-      const destructive = isMine ? 2 : undefined;
+      const hasBody = !!(m.body && m.body.trim().length > 0);
+      const labels: string[] = ['Ответить'];
+      const handlers: Array<() => void> = [() => setReplyTo(m)];
 
-      const exec = (i: number) => {
-        if (i === 0) setReplyTo(m);
-        else if (i === 1 && m.body) Clipboard.setStringAsync(m.body);
-        else if (isMine && i === 2) {
+      if (hasBody) {
+        labels.push('Скопировать');
+        handlers.push(() => {
+          if (m.body) Clipboard.setStringAsync(m.body);
+        });
+      }
+
+      labels.push('Поделиться');
+      handlers.push(() => {
+        const text = m.body
+          ? m.body
+          : m.attached_record
+          ? `${m.attached_record.title} — ${m.attached_record.artist}`
+          : '';
+        if (text) Share.share({ message: text }).catch(() => {});
+      });
+
+      labels.push('Выделить');
+      handlers.push(() => toggleSelection(m.id));
+
+      if (isMine) {
+        labels.push('Удалить');
+        handlers.push(() => {
           Alert.alert('Удалить сообщение?', 'Удаление видно у обеих сторон.', [
             { text: 'Отмена', style: 'cancel' },
             {
@@ -634,31 +921,49 @@ export default function ConversationScreen() {
               },
             },
           ]);
-        }
-      };
+        });
+      }
+
+      const cancelIdx = labels.length;
+      const destructiveIdx = isMine ? labels.length - 1 : undefined;
 
       if (Platform.OS === 'ios') {
         ActionSheetIOS.showActionSheetWithOptions(
-          { options, cancelButtonIndex: cancel, destructiveButtonIndex: destructive },
-          exec,
+          {
+            options: [...labels, 'Отмена'],
+            cancelButtonIndex: cancelIdx,
+            destructiveButtonIndex: destructiveIdx,
+          },
+          (i) => {
+            if (i === cancelIdx) return;
+            handlers[i]?.();
+          },
         );
       } else {
-        const buttons: any[] = [
-          { text: 'Ответить', onPress: () => exec(0) },
-          { text: 'Скопировать', onPress: () => exec(1) },
-        ];
-        if (isMine)
-          buttons.push({ text: 'Удалить', style: 'destructive', onPress: () => exec(2) });
-        buttons.push({ text: 'Отмена', style: 'cancel' });
-        Alert.alert('Действия', undefined, buttons);
+        Alert.alert('Действия', undefined, [
+          ...labels.map((label, i) => ({
+            text: label,
+            style: (i === destructiveIdx ? 'destructive' : 'default') as 'destructive' | 'default',
+            onPress: handlers[i],
+          })),
+          { text: 'Отмена', style: 'cancel' as const },
+        ]);
       }
     },
-    [conversationId, loadThread],
+    [conversationId, loadThread, toggleSelection],
+  );
+
+  const openAttachedRecord = useCallback(
+    (recordId: string) => {
+      router.push(`/record/${recordId}` as any);
+    },
+    [router],
   );
 
   const renderItem: ListRenderItem<FeedItem> = useCallback(
     ({ item }) => {
       if (item.type === 'date') return <DateDivider date={item.date} />;
+      if (item.type === 'unread-divider') return <UnreadDivider />;
       const m = item.message;
       const isFailed = m._local_status === 'failed';
       const isRead =
@@ -666,39 +971,58 @@ export default function ConversationScreen() {
         partnerLastReadAt > 0 &&
         new Date(m.created_at).getTime() <= partnerLastReadAt;
       const isSelected = selected.has(m.id);
+      const isHighlighted = highlightedMessageId === m.id;
+      const longPressHandler = selectionMode
+        ? () => toggleSelection(m.id)
+        : () => openBubbleMenu(m, item.isMine);
 
-      if (isFailed && !selectionMode) {
-        return (
-          <TouchableOpacity activeOpacity={0.8} onPress={() => handleRetry(m)}>
-            <MessageBubble
-              message={m}
-              isMine={item.isMine}
-              isLastInGroup={item.isLastInGroup}
-              isRead={isRead}
-              isSelected={isSelected}
-              selectionMode={selectionMode}
-              onLongPress={() => toggleSelection(m.id)}
-              onPress={() => toggleSelection(m.id)}
-            />
-            <Text style={styles.failedHint}>Не отправлено — нажмите, чтобы повторить</Text>
-          </TouchableOpacity>
-        );
-      }
-      return (
+      const bubble = (
         <MessageBubble
           message={m}
           isMine={item.isMine}
           isLastInGroup={item.isLastInGroup}
+          isFirstInGroup={item.isFirstInGroup}
           isRead={isRead}
           isSelected={isSelected}
+          isHighlighted={isHighlighted}
           selectionMode={selectionMode}
-          onLongPress={() => toggleSelection(m.id)}
+          onLongPress={longPressHandler}
           onPress={() => toggleSelection(m.id)}
-          onReplyHint={() => openBubbleMenu(m, item.isMine)}
+          onOpenRecord={openAttachedRecord}
+          onJumpToReply={jumpToMessage}
         />
       );
+
+      const wrapped = (
+        <SwipeableMessage
+          isMine={item.isMine}
+          onReply={() => setReplyTo(m)}
+        >
+          {bubble}
+        </SwipeableMessage>
+      );
+
+      if (isFailed && !selectionMode) {
+        return (
+          <TouchableOpacity activeOpacity={0.8} onPress={() => handleRetry(m)}>
+            {wrapped}
+            <Text style={styles.failedHint}>Не отправлено — нажмите, чтобы повторить</Text>
+          </TouchableOpacity>
+        );
+      }
+      return wrapped;
     },
-    [handleRetry, partnerLastReadAt, selected, selectionMode, toggleSelection, openBubbleMenu]
+    [
+      handleRetry,
+      partnerLastReadAt,
+      selected,
+      selectionMode,
+      toggleSelection,
+      openBubbleMenu,
+      openAttachedRecord,
+      jumpToMessage,
+      highlightedMessageId,
+    ]
   );
 
   const headerName = useMemo(() => {
@@ -765,7 +1089,10 @@ export default function ConversationScreen() {
     <View style={styles.container}>
       {/* Header — обычный, или action-bar при selection */}
       {selectionMode ? (
-        <View style={[styles.topbar, styles.topbarSelection, { paddingTop: insets.top + 6 }]}>
+        <View
+          style={[styles.topbar, styles.topbarSelection, { paddingTop: insets.top + 6 }]}
+          onLayout={onHeaderLayout}
+        >
           <TouchableOpacity onPress={clearSelection} style={styles.iconBtn}>
             <Icon name="close" size={20} color={Colors.text} />
           </TouchableOpacity>
@@ -776,7 +1103,10 @@ export default function ConversationScreen() {
           </TouchableOpacity>
         </View>
       ) : (
-        <View style={[styles.topbar, { paddingTop: insets.top + 6 }]}>
+        <View
+          style={[styles.topbar, { paddingTop: insets.top + 6 }]}
+          onLayout={onHeaderLayout}
+        >
           <TouchableOpacity onPress={() => router.back()} style={styles.iconBtn}>
             <Icon name="arrow-left" size={22} color={Colors.text} />
           </TouchableOpacity>
@@ -843,21 +1173,57 @@ export default function ConversationScreen() {
       <KeyboardAvoidingView
         style={styles.kbWrap}
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-        keyboardVerticalOffset={Platform.OS === 'ios' ? insets.top + 52 : 0}
+        keyboardVerticalOffset={Platform.OS === 'ios' ? headerHeight : 0}
       >
-        <FlatList
-          ref={listRef}
-          data={feed}
-          keyExtractor={(item) => item.key}
-          renderItem={renderItem}
-          contentContainerStyle={feed.length === 0 ? styles.listEmpty : styles.list}
-          onContentSizeChange={() => listRef.current?.scrollToEnd({ animated: false })}
-          onLayout={() => listRef.current?.scrollToEnd({ animated: false })}
-          onEndReachedThreshold={0.1}
-          onStartReached={() => conversationId && loadMore(conversationId)}
-          ListEmptyComponent={isLoading ? null : <EmptyState partner={partner} />}
-          keyboardShouldPersistTaps="handled"
-        />
+        <View style={styles.listWrap}>
+          <FlatList
+            ref={listRef}
+            data={feed}
+            keyExtractor={(item) => item.key}
+            renderItem={renderItem}
+            contentContainerStyle={feed.length === 0 ? styles.listEmpty : styles.list}
+            onContentSizeChange={() => {
+              if (isAtBottomRef.current)
+                listRef.current?.scrollToEnd({ animated: false });
+            }}
+            onLayout={() => listRef.current?.scrollToEnd({ animated: false })}
+            onScroll={handleScroll}
+            scrollEventThrottle={32}
+            stickyHeaderIndices={stickyHeaderIndices}
+            onEndReachedThreshold={0.1}
+            onStartReached={() => conversationId && loadMore(conversationId)}
+            onScrollToIndexFailed={({ index }) => {
+              setTimeout(() => {
+                try {
+                  listRef.current?.scrollToIndex({ index, animated: true, viewPosition: 0.3 });
+                } catch {
+                  // тихо
+                }
+              }, 200);
+            }}
+            ListEmptyComponent={isLoading ? null : <EmptyState partner={partner} />}
+            keyboardShouldPersistTaps="handled"
+          />
+          {showScrollToBottom ? (
+            <TouchableOpacity
+              activeOpacity={0.85}
+              onPress={scrollToBottom}
+              style={[
+                styles.scrollFab,
+                { bottom: Spacing.sm + (attachedRecord || replyTo ? 70 : 0) },
+              ]}
+            >
+              <Icon name="arrow-down" size={20} color={Colors.text} />
+              {unreadAccum > 0 ? (
+                <View style={styles.scrollFabBadge}>
+                  <Text style={styles.scrollFabBadgeTxt}>
+                    {unreadAccum > 99 ? '99+' : unreadAccum}
+                  </Text>
+                </View>
+              ) : null}
+            </TouchableOpacity>
+          ) : null}
+        </View>
 
         {attachedRecord ? (
           <View style={styles.attachBar}>
@@ -909,7 +1275,12 @@ export default function ConversationScreen() {
           </View>
         ) : null}
 
-        <View style={[styles.inputBar, { paddingBottom: insets.bottom + 8 }]}>
+        <View
+          style={[
+            styles.inputBar,
+            { paddingBottom: keyboardVisible ? 8 : insets.bottom + 8 },
+          ]}
+        >
           <TouchableOpacity
             style={styles.attachBtn}
             activeOpacity={0.7}
@@ -1021,13 +1392,78 @@ const styles = StyleSheet.create({
     backgroundColor: '#30A46C',
   },
 
-  list: { paddingHorizontal: Spacing.md, paddingVertical: Spacing.md },
+  listWrap: { flex: 1 },
+  list: { paddingHorizontal: Spacing.md, paddingTop: Spacing.sm, paddingBottom: Spacing.md },
   listEmpty: { flexGrow: 1, justifyContent: 'center' },
+
+  /* Unread divider */
+  unreadDividerWrap: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginVertical: Spacing.md,
+    gap: Spacing.sm,
+  },
+  unreadDividerLine: { flex: 1, height: 1, backgroundColor: 'rgba(59,75,245,0.2)' },
+  unreadDividerTxt: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: Colors.royalBlue,
+    letterSpacing: 0.3,
+    textTransform: 'uppercase',
+  },
+
+  /* Swipe-to-reply */
+  swipeOuter: { width: '100%', justifyContent: 'center' },
+  swipeReplyIcon: {
+    position: 'absolute',
+    top: '50%',
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    marginTop: -16,
+    backgroundColor: 'rgba(59,75,245,0.12)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  swipeReplyIconMine: { right: 8 },
+  swipeReplyIconOther: { left: 8 },
+
+  /* Scroll-to-bottom FAB */
+  scrollFab: {
+    position: 'absolute',
+    right: Spacing.md,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: Colors.surface,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 4,
+  },
+  scrollFabBadge: {
+    position: 'absolute',
+    top: -6,
+    right: -6,
+    minWidth: 18,
+    height: 18,
+    paddingHorizontal: 5,
+    borderRadius: 9,
+    backgroundColor: Colors.royalBlue,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  scrollFabBadgeTxt: { color: '#fff', fontSize: 10, fontWeight: '700' },
 
   /* Date divider */
   dateDivider: {
     alignItems: 'center',
-    marginVertical: Spacing.sm,
+    marginVertical: Spacing.md,
   },
   dateChip: {
     paddingHorizontal: 10,
@@ -1044,21 +1480,27 @@ const styles = StyleSheet.create({
 
   /* Bubble */
   bubbleRow: { width: '100%', marginVertical: 1 },
+  bubbleRowFirstInGroup: { marginTop: 10 },
+  bubbleRowLastInGroup: { marginBottom: 2 },
   bubbleRowMine: { alignItems: 'flex-end' },
   bubbleRowOther: { alignItems: 'flex-start' },
   bubbleRowSelected: {
     backgroundColor: 'rgba(59,75,245,0.06)',
+  },
+  bubbleRowHighlighted: {
+    backgroundColor: 'rgba(59,75,245,0.12)',
+    borderRadius: 12,
   },
   bubbleSelected: {
     borderWidth: 2,
     borderColor: Colors.royalBlue,
   },
   bubble: {
-    maxWidth: '78%',
+    maxWidth: '76%',
     paddingHorizontal: 14,
-    paddingTop: 8,
-    paddingBottom: 6,
-    borderRadius: 18,
+    paddingTop: 9,
+    paddingBottom: 7,
+    borderRadius: 20,
   },
   bubbleMine: {
     backgroundColor: Colors.royalBlue,

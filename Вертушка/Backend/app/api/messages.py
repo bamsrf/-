@@ -707,7 +707,15 @@ async def messages_ws(websocket: WebSocket, token: str = Query(...)):
 
     Серверные события: message.new / message.read / message.deleted.
     Клиентские команды: {"type": "typing", "conversation_id": ...}
+
+    На connect/disconnect обновляем last_seen_at — это даёт честный
+    «онлайн»-индикатор без необходимости REST-полла.
     """
+    import asyncio as _asyncio
+    from app.api.auth import _touch_last_seen
+    from app.database import async_session_maker
+    from uuid import UUID as _UUID
+
     payload = verify_token_type(token, "access")
     if not payload:
         await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
@@ -717,6 +725,10 @@ async def messages_ws(websocket: WebSocket, token: str = Query(...)):
     await websocket.accept()
     await messages_ws_hub.register(user_id, websocket)
     try:
+        _asyncio.create_task(_touch_last_seen(_UUID(user_id)))
+    except Exception:
+        pass
+    try:
         while True:
             data = await websocket.receive_json()
             t = data.get("type")
@@ -725,8 +737,6 @@ async def messages_ws(websocket: WebSocket, token: str = Query(...)):
                 if not conv_id:
                     continue
                 # Ретранслируем собеседнику (вычислим его id через БД)
-                from app.database import async_session_maker
-                from uuid import UUID as _UUID
                 async with async_session_maker() as db:
                     conv = await db.get(Conversation, _UUID(conv_id))
                     if not conv:
@@ -745,6 +755,10 @@ async def messages_ws(websocket: WebSocket, token: str = Query(...)):
         pass
     finally:
         await messages_ws_hub.unregister(user_id, websocket)
+        try:
+            _asyncio.create_task(_touch_last_seen(_UUID(user_id)))
+        except Exception:
+            pass
 
 
 @router.get("/presence/{user_id}/", response_model=PresenceResponse)
@@ -753,7 +767,9 @@ async def get_presence(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """Статус пользователя: онлайн (last_seen_at < 60с) и/или последний визит."""
+    """Статус пользователя: онлайн (WS активен или last_seen_at < 60с) +
+    последний визит. WS-флаг — авторитетный источник истины: реальный
+    «он-лайн» индикатор не зависит от REST-троттлинга last_seen_at."""
     from datetime import datetime as _dt, timedelta as _td
 
     target = await db.get(User, user_id)
@@ -761,7 +777,10 @@ async def get_presence(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Пользователь не найден")
 
     last_seen = target.last_seen_at
-    online = bool(
+    ws_active = messages_ws_hub.has_active(str(user_id))
+    online = ws_active or bool(
         last_seen and last_seen >= _dt.utcnow() - _td(seconds=ONLINE_THRESHOLD_SECONDS)
     )
+    if ws_active:
+        last_seen = _dt.utcnow()
     return PresenceResponse(online=online, last_seen_at=last_seen)

@@ -55,7 +55,16 @@ class MessagesSocket {
 
   async connect() {
     this.wantConnected = true;
-    const token = await SecureStore.getItemAsync(TOKEN_KEY);
+    let token: string | null = null;
+    try {
+      // SecureStore на iOS требует разлоченный девайс ("User interaction is not
+      // allowed"). На локскрине/фоне keychain недоступен — тогда просто откладываем
+      // подключение до следующего цикла backoff.
+      token = await SecureStore.getItemAsync(TOKEN_KEY);
+    } catch {
+      this.scheduleReconnect();
+      return;
+    }
     if (!token) {
       this.scheduleReconnect();
       return;
