@@ -119,6 +119,13 @@ interface Props {
   isLoadingMore?: boolean;
   contentBottomPad?: number;
   rarityContext?: RarityContext;
+  /**
+   * Per-record HotStock summary map (discogs_id → ResolvedHotStock).
+   * Передаётся из (tabs)/collection.tsx после `api.getOffersSummary`.
+   * Прокидывается в карточку через `hotStock` prop (только в `expanded`
+   * cardVariant — в tile-режиме без overlay'я нет места для pill'а).
+   */
+  hotStockMap?: Map<string, { variant: any; price: number } | null>;
 }
 
 interface BareCellProps {
@@ -235,6 +242,7 @@ export function ZoomableRecordGrid({
   isLoadingMore,
   contentBottomPad = 120,
   rarityContext = 'collection',
+  hotStockMap,
 }: Props) {
   const [level, setLevel] = useState<ZoomLevel>(0);
 
@@ -476,6 +484,11 @@ export function ZoomableRecordGrid({
                     }
                     onLongPress={onLongPress ? () => onLongPress(item.id) : undefined}
                     isSelectionMode={isSelectionMode}
+                    hotStock={
+                      hotStockMap && item.record.discogs_id
+                        ? hotStockMap.get(item.record.discogs_id) ?? undefined
+                        : undefined
+                    }
                     isSelected={isSelected}
                     rarityContext={rarityContext}
                     noRarityAura={false}

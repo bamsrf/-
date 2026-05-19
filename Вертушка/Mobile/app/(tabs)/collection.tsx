@@ -21,8 +21,9 @@ import { SegmentedControl } from '../../components/ui';
 import { useCollectionStore, useAuthStore } from '../../lib/store';
 import { useTourTarget } from '../../lib/useTourTarget';
 import { api, resolveMediaUrl } from '../../lib/api';
-import { CollectionItem, WishlistItem, CollectionTab } from '../../lib/types';
+import { CollectionItem, WishlistItem, CollectionTab, RecordOffersSummary } from '../../lib/types';
 import { Colors, Spacing, Typography, BorderRadius, Gradients, Shadows } from '../../constants/theme';
+import { summaryToHotStock, type ResolvedHotStock } from '../../components/HotStockTag';
 
 if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
   UIManager.setLayoutAnimationEnabledExperimental(true);
@@ -125,6 +126,43 @@ export default function CollectionScreen() {
       fetchWishlistFolders();
     });
   }, []);
+
+  // ─────────────────────────────────────────────────────────────────
+  // Hot Stock pill для wishlist (OFFERS_UX.md §2 + MARKET_AND_PRICE_DRAWER.md §2.1).
+  // При активном wishlist-tab тянем batch summary для всех 50-100 wishlist
+  // items одним POST'ом. RecordGrid/ZoomableRecordGrid рендерит pill в
+  // правом нижнем углу карточки. Тап на карточку → /record/[id] где
+  // юзер видит полный OffersBlock (Phase A) + future OffersBottomSheet.
+  // ─────────────────────────────────────────────────────────────────
+  const [hotStockMap, setHotStockMap] = useState<Map<string, ResolvedHotStock | null>>(new Map());
+
+  useEffect(() => {
+    if (activeTab !== 'wishlist' || wishlistItems.length === 0) {
+      setHotStockMap(new Map());
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      // Собираем discogs_id из wishlist items (max 100 в одном запросе).
+      const discogsIds = wishlistItems
+        .map((wi) => wi.record?.discogs_id)
+        .filter((id): id is string => !!id)
+        .slice(0, 100);
+      if (discogsIds.length === 0) return;
+      try {
+        const summary: Record<string, RecordOffersSummary> = await api.getOffersSummary(discogsIds);
+        if (cancelled) return;
+        const map = new Map<string, ResolvedHotStock | null>();
+        for (const [discogsId, s] of Object.entries(summary)) {
+          map.set(discogsId, summaryToHotStock(s, { context: 'wishlist', isGrid: true }));
+        }
+        setHotStockMap(map);
+      } catch {
+        /* silent — pill просто не появится при ошибке */
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [activeTab, wishlistItems]);
 
   // Сброс режима выбора при смене вкладки
   useEffect(() => {
@@ -865,6 +903,7 @@ export default function CollectionScreen() {
           isLoadingMore={isLoadingMore}
           ListHeaderComponent={ScrollableHeader}
           rarityContext={activeTab === 'wishlist' ? 'wishlist' : 'collection'}
+          hotStockMap={activeTab === 'wishlist' ? hotStockMap : undefined}
         />
       ) : (
         <RecordGrid
@@ -873,6 +912,7 @@ export default function CollectionScreen() {
           cardVariant={viewMode === 'list' ? 'list' : 'expanded'}
           numColumns={viewMode === 'list' ? 1 : 2}
           rarityContext={activeTab === 'wishlist' ? 'wishlist' : 'collection'}
+          hotStockMap={activeTab === 'wishlist' ? hotStockMap : undefined}
           onRecordPress={isSelectionMode ? undefined : handleRecordPress}
           onArtistPress={isSelectionMode ? undefined : handleArtistPress}
           onRemove={

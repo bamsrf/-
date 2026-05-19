@@ -5,6 +5,7 @@ import { useEffect, useRef } from 'react';
 import { Stack, useRouter } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
+import { BottomSheetModalProvider } from '@gorhom/bottom-sheet';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import * as SplashScreen from 'expo-splash-screen';
 import * as Notifications from 'expo-notifications';
@@ -289,9 +290,10 @@ function RootLayout() {
 
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
-      <SafeAreaProvider>
-        <StatusBar style="dark" />
-        <OfflineBanner />
+      <BottomSheetModalProvider>
+        <SafeAreaProvider>
+          <StatusBar style="dark" />
+          <OfflineBanner />
         <Stack
           screenOptions={{
             headerShown: false,
@@ -340,7 +342,8 @@ function RootLayout() {
         <AchievementUnlockHost />
         <InAppNotificationToastHost />
         <Toast config={toastConfig} topOffset={56} bottomOffset={100} />
-      </SafeAreaProvider>
+        </SafeAreaProvider>
+      </BottomSheetModalProvider>
     </GestureHandlerRootView>
   );
 }
