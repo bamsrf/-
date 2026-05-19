@@ -338,6 +338,16 @@ async def _save_discogs_result(
 
     title = first.get("title", "")
     artist, _, album = title.partition(" - ")
+    # Discogs search возвращает `format` как массив строк типа
+    # ["Vinyl", "LP", "Album"] или ["CD", "Album", "Reissue"]. Берём первое
+    # значимое имя (LP/CD/Cassette/Box Set) — этого хватает для отображения
+    # в карусели. Без этого records.format_type был NULL у всех созданных
+    # через on-demand fetch.
+    fmt_arr = first.get("format") or []
+    format_type = next(
+        (f for f in fmt_arr if f and f.strip() not in ("Album", "Reissue", "Compilation")),
+        fmt_arr[0] if fmt_arr else None,
+    )
     rec = Record(
         discogs_id=discogs_id,
         title=album.strip() or title.strip(),
@@ -346,6 +356,7 @@ async def _save_discogs_result(
         barcode=barcode,
         catalog_number=(first.get("catno") or catalog),
         label=(first.get("label") or [None])[0],
+        format_type=format_type,
         cover_image_url=first.get("cover_image"),
         thumb_image_url=first.get("thumb"),
         country=first.get("country"),

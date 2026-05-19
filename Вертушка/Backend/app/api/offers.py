@@ -217,7 +217,12 @@ async def get_market_new_arrivals(
                 r.artist,
                 r.title,
                 r.year,
-                r.format_type,
+                -- Формат: приоритет у records.format_type (богаче, из Discogs),
+                -- fallback на sl.format_raw (что определил парсер магазина).
+                -- Без fallback почти все карточки приходили с NULL format_type
+                -- т.к. Discogs API search не возвращает формат в search-результате,
+                -- а matcher._save_discogs_result создаёт Record без format_type.
+                COALESCE(r.format_type, sl.format_raw) AS format_type,
                 r.cover_image_url
             FROM store_listings sl
             JOIN stores s ON s.id = sl.store_id
