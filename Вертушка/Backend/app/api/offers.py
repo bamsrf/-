@@ -223,7 +223,12 @@ async def get_market_new_arrivals(
                 -- т.к. Discogs API search не возвращает формат в search-результате,
                 -- а matcher._save_discogs_result создаёт Record без format_type.
                 COALESCE(r.format_type, sl.format_raw) AS format_type,
-                r.cover_image_url
+                -- Обложка: симметрично с format_type. Discogs search возвращает
+                -- cover_image не для всех релизов (особенно re-issues и нишевые
+                -- лейблы). Парсер магазина сохраняет og:image в raw_payload —
+                -- используем его как fallback, чтобы карточка не была пустой
+                -- (фиолетовый placeholder в AutoRail).
+                COALESCE(r.cover_image_url, sl.raw_payload->>'image_url') AS cover_image_url
             FROM store_listings sl
             JOIN stores s ON s.id = sl.store_id
             JOIN records r ON r.id = sl.matched_record_id
