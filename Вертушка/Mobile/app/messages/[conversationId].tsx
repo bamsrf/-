@@ -426,6 +426,16 @@ function MessageBubble({
         ) : null}
         {isLastInGroup ? (
           <View style={styles.bubbleMeta}>
+            {message.edited_at ? (
+              <Text
+                style={[
+                  styles.bubbleEdited,
+                  isMine && styles.bubbleEditedMine,
+                ]}
+              >
+                ред.
+              </Text>
+            ) : null}
             <Text style={[styles.bubbleTime, isMine && styles.bubbleTimeMine]}>
               {formatBubbleTime(message.created_at)}
             </Text>
@@ -645,6 +655,7 @@ export default function ConversationScreen() {
     message: Message;
     isMine: boolean;
   } | null>(null);
+  const [editTarget, setEditTarget] = useState<Message | null>(null);
   const typingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const highlightTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastTypingSentRef = useRef<number>(0);
@@ -939,8 +950,19 @@ export default function ConversationScreen() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [messages.length]);
 
+  const editMessageAction = useMessagesStore((s) => s.editMessage);
+
   const handleSend = useCallback(async () => {
     if (!conversationId) return;
+    if (editTarget) {
+      const text = draft.trim();
+      if (!text) return;
+      const tgt = editTarget;
+      setDraft('');
+      setEditTarget(null);
+      await editMessageAction(conversationId, tgt.id, text).catch(() => {});
+      return;
+    }
     const text = draft.trim() || (attachedRecord ? '📀 пластинка' : '');
     if (!text && !attachedRecord) return;
     const rt = replyTo?.id ?? null;
@@ -950,7 +972,7 @@ export default function ConversationScreen() {
     setAttachedRecord(null);
     await sendMessage(conversationId, text, rt, ar);
     setTimeout(() => listRef.current?.scrollToEnd({ animated: true }), 50);
-  }, [conversationId, draft, replyTo, attachedRecord, sendMessage]);
+  }, [conversationId, draft, replyTo, attachedRecord, editTarget, sendMessage, editMessageAction]);
 
   const handleRetry = useCallback(
     (msg: Message) => {
@@ -971,6 +993,11 @@ export default function ConversationScreen() {
     if (!menuTarget) return [];
     const { message: m, isMine } = menuTarget;
     const hasBody = !!(m.body && m.body.trim().length > 0);
+    const canEdit =
+      isMine &&
+      hasBody &&
+      !m.deleted_at &&
+      Date.now() - new Date(m.created_at).getTime() < 15 * 60 * 1000;
     const list: MenuAction[] = [
       {
         key: 'reply',
@@ -979,6 +1006,19 @@ export default function ConversationScreen() {
         onPress: () => setReplyTo(m),
       },
     ];
+    if (canEdit) {
+      list.push({
+        key: 'edit',
+        label: 'Редактировать',
+        icon: 'pencil',
+        onPress: () => {
+          setEditTarget(m);
+          setReplyTo(null);
+          setAttachedRecord(null);
+          setDraft(m.body || '');
+        },
+      });
+    }
     if (hasBody) {
       list.push({
         key: 'copy',
@@ -1403,6 +1443,29 @@ export default function ConversationScreen() {
           </View>
         ) : null}
 
+        {editTarget ? (
+          <View style={styles.replyBar}>
+            <View style={[styles.replyLine, { backgroundColor: '#F59E0B' }]} />
+            <View style={{ flex: 1, minWidth: 0 }}>
+              <Text style={[styles.replyTitle, { color: '#F59E0B' }]}>
+                Редактирование
+              </Text>
+              <Text style={styles.replyBody} numberOfLines={1}>
+                {editTarget.body || ''}
+              </Text>
+            </View>
+            <TouchableOpacity
+              onPress={() => {
+                setEditTarget(null);
+                setDraft('');
+              }}
+              style={styles.replyClose}
+            >
+              <Icon name="close" size={16} color={Colors.textMuted} />
+            </TouchableOpacity>
+          </View>
+        ) : null}
+
         <View
           style={[
             styles.inputBar,
@@ -1688,6 +1751,12 @@ const styles = StyleSheet.create({
   },
   bubbleTime: { fontSize: 10, color: Colors.textMuted },
   bubbleTimeMine: { color: 'rgba(255,255,255,0.75)' },
+  bubbleEdited: {
+    fontSize: 10,
+    color: Colors.textMuted,
+    fontStyle: 'italic',
+  },
+  bubbleEditedMine: { color: 'rgba(255,255,255,0.65)' },
 
   /* Reactions row под баблом */
   reactionsRow: {

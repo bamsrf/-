@@ -40,6 +40,7 @@ from app.schemas.message import (
     ConversationPartner,
     ConversationRead,
     MessageCreate,
+    MessageEdit,
     MessageFolder,
     MessageRead,
     PresenceResponse,
@@ -422,6 +423,68 @@ async def mark_conversation_read(
             },
         )
     return {"status": "ok"}
+
+
+EDIT_WINDOW_SECONDS = 15 * 60
+
+
+@router.patch(
+    "/messages/{message_id}/",
+    response_model=MessageRead,
+)
+async def edit_message(
+    message_id: UUID,
+    payload: MessageEdit,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Редактировать текст своего сообщения в 15-минутном окне."""
+    from datetime import datetime as _dt, timedelta as _td
+
+    message = await db.get(Message, message_id)
+    if not message:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Сообщение не найдено")
+    if message.sender_id != current_user.id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN, detail="Можно редактировать только свои сообщения"
+        )
+    if message.deleted_at is not None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail="Сообщение удалено"
+        )
+    if message.created_at < _dt.utcnow() - _td(seconds=EDIT_WINDOW_SECONDS):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Окно редактирования (15 минут) истекло",
+        )
+
+    message.body = payload.body
+    message.edited_at = _dt.utcnow()
+    await db.commit()
+    await db.refresh(message)
+
+    # Обновим last_message_preview если это последнее сообщение треда
+    conv = await db.get(Conversation, message.conversation_id)
+    if conv and conv.last_message_at and message.created_at >= conv.last_message_at - _td(seconds=1):
+        conv.last_message_preview = (payload.body or "")[:160]
+        await db.commit()
+
+    hydrated = await _hydrate_message_previews(db, [message])
+    result = hydrated[0]
+
+    if conv:
+        partner_id = partner_id_of(conv, current_user.id)
+        event = {
+            "type": "message.edited",
+            "conversation_id": str(message.conversation_id),
+            "message_id": str(message_id),
+            "body": payload.body,
+            "edited_at": message.edited_at.isoformat() if message.edited_at else None,
+        }
+        await messages_ws_hub.push_event(current_user.id, event)
+        await messages_ws_hub.push_event(partner_id, event)
+
+    return result
 
 
 @router.delete(

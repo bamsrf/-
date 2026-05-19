@@ -50,6 +50,7 @@ interface MessagesState {
   blockUser: (userId: string, conversationId?: string) => Promise<void>;
   togglePin: (conversationId: string) => Promise<void>;
   toggleReaction: (conversationId: string, messageId: string, emoji: string) => Promise<void>;
+  editMessage: (conversationId: string, messageId: string, body: string) => Promise<void>;
   reset: () => void;
 }
 
@@ -440,6 +441,26 @@ export const useMessagesStore = create<MessagesState>((set, get) => ({
     }
   },
 
+  editMessage: async (conversationId, messageId, body) => {
+    try {
+      const updated = await messagesApi.editMessage(messageId, body);
+      set((s) => ({
+        threads: {
+          ...s.threads,
+          [conversationId]: (s.threads[conversationId] ?? []).map((m) =>
+            m.id === messageId ? { ...m, body: updated.body, edited_at: updated.edited_at } : m,
+          ),
+        },
+      }));
+    } catch (e: any) {
+      toast.error(
+        'Не удалось отредактировать',
+        String(e?.response?.data?.detail || 'Попробуйте позже'),
+      );
+      throw e;
+    }
+  },
+
   toggleReaction: async (conversationId, messageId, emoji) => {
     const me = useAuthStore.getState().user;
     if (!me) return;
@@ -588,6 +609,17 @@ export function initMessagesRealtime(): void {
           ...s.threads,
           [e.conversation_id]: (s.threads[e.conversation_id] ?? []).map((m) =>
             m.id === e.message_id ? { ...m, reactions: e.reactions } : m,
+          ),
+        },
+      }));
+    } else if (e.type === 'message.edited') {
+      useMessagesStore.setState((s) => ({
+        threads: {
+          ...s.threads,
+          [e.conversation_id]: (s.threads[e.conversation_id] ?? []).map((m) =>
+            m.id === e.message_id
+              ? { ...m, body: e.body, edited_at: e.edited_at }
+              : m,
           ),
         },
       }));

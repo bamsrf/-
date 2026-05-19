@@ -114,6 +114,11 @@ class MessageCreate(BaseModel):
     attached_record_id: UUID | None = None
 
 
+class MessageEdit(BaseModel):
+    """Редактирование текста сообщения (15-минутное окно)."""
+    body: str = Field(..., min_length=1, max_length=4000)
+
+
 class ReadMarker(BaseModel):
     """Пометить прочитанными до этого сообщения включительно."""
     up_to_message_id: UUID

@@ -38,6 +38,13 @@ export type WsEvent =
       message_id: string;
     }
   | {
+      type: 'message.edited';
+      conversation_id: string;
+      message_id: string;
+      body: string;
+      edited_at: string | null;
+    }
+  | {
       type: 'message.reaction';
       conversation_id: string;
       message_id: string;

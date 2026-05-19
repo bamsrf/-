@@ -105,6 +105,11 @@ export const messagesApi = {
     await getClient().delete(`/messages/messages/${messageId}/`);
   },
 
+  async editMessage(messageId: string, body: string): Promise<Message> {
+    const r = await getClient().patch(`/messages/messages/${messageId}/`, { body });
+    return r.data;
+  },
+
   async getUnreadCount(): Promise<UnreadCount> {
     const r = await getClient().get('/messages/unread-count/');
     return r.data;
