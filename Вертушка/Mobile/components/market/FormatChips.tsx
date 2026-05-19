@@ -23,15 +23,13 @@ import {
   ScrollView,
   StyleSheet,
   Text,
-  View,
   type StyleProp,
   type ViewStyle,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
-import { BlurView } from 'expo-blur';
 
 import { Icon, type IconName } from '../ui/Icon';
-import { Gradients, MarketPalette, Shadows } from '../../constants/theme';
+import { Gradients, MarketPalette } from '../../constants/theme';
 
 export type MarketFormat = 'all' | 'vinyl' | 'cd' | 'cassette';
 
@@ -97,70 +95,48 @@ interface ChipButtonProps {
 }
 
 function ChipButton({ chip, active, tint, onPress }: ChipButtonProps) {
-  // ── Active + dark + hot (market) — ember gradient ──────────────────
-  if (active && tint === 'dark') {
-    return (
-      <Pressable onPress={onPress} hitSlop={6}>
+  // Унифицированная геометрия: outer Pressable с одинаковой padding/border
+  // для всех 4 состояний → нет re-layout-jitter'а при tap. Background-различия
+  // создаются ОВЕРЛЕЕМ (absoluteFill LinearGradient) или backgroundColor — но
+  // никогда не меняют размеры контейнера.
+  const isMarket = tint === 'dark';
+  const wrapStyle = [
+    styles.chip,
+    isMarket
+      ? (active ? styles.chipMarketActive : styles.chipMarketInactive)
+      : (active ? styles.chipLightActive : styles.chipLightInactive),
+  ];
+
+  const iconColor = isMarket || active ? 'onBrand' : 'secondary';
+  const iconOpacity = isMarket && !active ? 0.75 : 1;
+
+  return (
+    <Pressable onPress={onPress} hitSlop={6} style={wrapStyle}>
+      {/* Active + dark — ember gradient через absolute overlay (без layout-jitter) */}
+      {active && isMarket && (
         <LinearGradient
           colors={Gradients.hotStock}
           start={{ x: 0, y: 0 }}
           end={{ x: 1, y: 1 }}
-          style={[
-            styles.chip,
-            styles.chipActiveHot,
-            {
-              ...Shadows.glowEmber,
-              shadowOpacity: 0.25,
-              shadowRadius: 12,
-            },
-          ]}
-        >
-          <Icon name={chip.icon} size={14} color="onBrand" />
-          <Text style={[styles.label, styles.labelActiveHot]}>{chip.label}</Text>
-        </LinearGradient>
-      </Pressable>
-    );
-  }
-
-  // ── Active + light (обычный поиск) — solid dark fill ────────────────
-  if (active) {
-    return (
-      <Pressable onPress={onPress} hitSlop={6} style={[styles.chip, styles.chipActiveLight]}>
-        <Icon name={chip.icon} size={14} color="onBrand" />
-        <Text style={[styles.label, styles.labelOnDark]}>{chip.label}</Text>
-      </Pressable>
-    );
-  }
-
-  // ── Inactive + dark (market) — glass на тёмном фоне ─────────────────
-  if (tint === 'dark') {
-    return (
-      <Pressable onPress={onPress} hitSlop={6}>
-        <BlurView
-          intensity={12}
-          tint="dark"
-          style={[
-            styles.chip,
-            styles.chipInactiveDark,
-          ]}
-        >
-          <Icon
-            name={chip.icon}
-            size={14}
-            color="onBrand"
-            style={{ opacity: 0.75 }}
-          />
-          <Text style={[styles.label, styles.labelInactiveDark]}>{chip.label}</Text>
-        </BlurView>
-      </Pressable>
-    );
-  }
-
-  // ── Inactive + light — обычный outline ──────────────────────────────
-  return (
-    <Pressable onPress={onPress} hitSlop={6} style={[styles.chip, styles.chipInactiveLight]}>
-      <Icon name={chip.icon} size={14} color="secondary" />
-      <Text style={[styles.label, styles.labelInactiveLight]}>{chip.label}</Text>
+          style={StyleSheet.absoluteFill}
+        />
+      )}
+      <Icon
+        name={chip.icon}
+        size={14}
+        color={iconColor}
+        style={{ opacity: iconOpacity }}
+      />
+      <Text
+        style={[
+          styles.label,
+          active && styles.labelActive,
+          isMarket && !active && styles.labelInactiveDark,
+          !isMarket && !active && styles.labelInactiveLight,
+        ]}
+      >
+        {chip.label}
+      </Text>
     </Pressable>
   );
 }
@@ -185,36 +161,38 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
     borderRadius: 9999,
     overflow: 'hidden',
+    // Все 4 состояния используют тот же border-width (1pt) — иначе ширина
+    // прыгает на 0.5-1dp при tap и весь чип-row пересчитывается.
+    borderWidth: 1,
+    borderColor: 'transparent',
   },
-  chipActiveHot: {
-    // gradient fill через LinearGradient; padding/radius наследуются
+  chipMarketActive: {
+    // border делается прозрачным (ember-gradient fill сам себе хайлайн).
+    // НЕТ shadow.glowEmber — он outset и заставляет ScrollView пересчитать
+    // contentSize на каждый tap (это и был основной источник «дёргания»).
   },
-  chipActiveLight: {
-    backgroundColor: '#FFFFFF',
-  },
-  chipInactiveDark: {
+  chipMarketInactive: {
     backgroundColor: 'rgba(255,255,255,0.06)',
-    borderWidth: StyleSheet.hairlineWidth,
     borderColor: MarketPalette.chrome.border,
   },
-  chipInactiveLight: {
+  chipLightActive: {
     backgroundColor: '#FFFFFF',
-    borderWidth: 1,
+  },
+  chipLightInactive: {
+    backgroundColor: '#FFFFFF',
     borderColor: '#DEE2EB',
   },
   label: {
     fontFamily: 'Inter_600SemiBold',
     fontSize: 12.5,
     fontWeight: '600',
+    color: '#0E121C',
     includeFontPadding: false,
   },
-  labelActiveHot: {
-    fontWeight: '700',
+  labelActive: {
+    color: '#FFFFFF',
     fontFamily: 'Inter_700Bold',
-    color: '#FFFFFF',
-  },
-  labelOnDark: {
-    color: '#FFFFFF',
+    fontWeight: '700',
   },
   labelInactiveDark: {
     color: 'rgba(255,255,255,0.75)',

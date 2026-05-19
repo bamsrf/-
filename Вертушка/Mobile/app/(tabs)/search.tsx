@@ -771,10 +771,12 @@ export default function SearchScreen() {
 
       {/*
         МАРКЕТ — раздел «потайной двери».
-        Виден когда юзер докрутит экран до transition-zone (scrollY > 400).
-        Фон меняется на market-палитру через MarketBackground (absolute fill
-        в корне экрана, см. return ниже). MARKET_AND_PRICE_DRAWER.md §1.
+        Spacer 280dp перед секцией физически удерживает юзера в transition-zone
+        ([400, 700] scrollY). Без него Маркет начинается сразу после Discogs-
+        секций — на светлом фоне без magic-transition.
+        MARKET_AND_PRICE_DRAWER.md §1.3.
       */}
+      {marketStores.length > 0 && <View style={styles.marketSpacer} />}
       {marketStores.length > 0 && (
         <MarketSection
           stores={marketStores}
@@ -1287,12 +1289,18 @@ export default function SearchScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    // Background рисуется MarketBackground'ом (двухслойный — Discogs-light +
-    // Market-dark с интерполяцией opacity по scrollY). Сам container прозрачный.
-    backgroundColor: '#FAFBFF', // fallback на случай если MarketBackground не отрендерился
+    // Background — ТОЛЬКО MarketBackground (двухслойный absolute fill).
+    // Без явного backgroundColor на container — иначе он перекроет market-layer.
+    // Базовый разогрев цвета (#FAFBFF) уже залит внутри SearchBgStatic при alpha=1.
   },
   flex: {
     flex: 1,
+  },
+  // Spacer перед Маркет-секцией: вытягивает MarketSection в transition-zone
+  // (scrollY > 400), иначе magic-transition фона не успевает сработать —
+  // юзер сразу видит Маркет на светлом Discogs-фоне.
+  marketSpacer: {
+    height: 280,
   },
   searchContainer: {
     paddingBottom: Spacing.md,

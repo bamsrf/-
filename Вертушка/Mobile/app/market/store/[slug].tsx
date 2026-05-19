@@ -22,7 +22,8 @@ import {
   View,
 } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import { BlurView } from 'expo-blur';
 
 import { Icon } from '@/components/ui';
 import { api } from '../../../lib/api';
@@ -43,6 +44,7 @@ const PAGE_SIZE = 30;
 
 export default function StorePage() {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   const { slug: rawSlug } = useLocalSearchParams<{ slug: string }>();
   const slug = String(rawSlug ?? '');
 
@@ -213,6 +215,15 @@ export default function StorePage() {
     <View style={styles.root}>
       <MarketBackground forcedMode="market" />
 
+      {/* Top safe-area blur strip — закрывает контент под статус-баром
+          при скролле. zIndex выше FlatList. */}
+      <BlurView
+        intensity={24}
+        tint="dark"
+        style={[styles.topSafeBlur, { height: insets.top }]}
+        pointerEvents="none"
+      />
+
       <FlatList
         data={items}
         renderItem={renderItem}
@@ -317,15 +328,26 @@ const styles = StyleSheet.create({
   },
   row: {
     paddingHorizontal: 12,
+    justifyContent: 'flex-start',
     gap: 8,
   },
   card: {
-    flex: 1,
+    // НЕ flex:1 — иначе FlatList с numColumns=2 при odd count last item
+    // растягивает карточку на всю ширину. Фиксированный 48% (50% минус половина gap).
+    width: '48%',
     marginBottom: 12,
     backgroundColor: 'rgba(255,255,255,0.04)',
     borderRadius: 14,
     overflow: 'hidden',
     padding: 8,
+  },
+  // Top safe-area blur strip — закрывает scrollable контент под статус-баром
+  // когда юзер скроллит вниз. Иначе текст карточек наезжает на 9:41/wifi.
+  topSafeBlur: {
+    position: 'absolute',
+    top: 0, left: 0, right: 0,
+    zIndex: 50,
+    backgroundColor: 'rgba(14,7,38,0.55)',
   },
   coverWrap: {
     width: '100%',

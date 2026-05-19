@@ -263,6 +263,10 @@ function RecordGridComponent<T extends RecordItem = RecordItem>({
       numColumns={numColumns}
       columnWrapperStyle={numColumns > 1 ? styles.row : undefined}
       contentContainerStyle={styles.container}
+      // Transparent — чтобы absolute MarketBackground в родителе search.tsx
+      // был виден сквозь FlatList. Без этого FlatList перекрывает фон белым
+      // и magic-transition не виден визуально.
+      style={styles.transparent}
       showsVerticalScrollIndicator={false}
       keyboardShouldPersistTaps="handled"
       keyboardDismissMode="on-drag"
@@ -290,6 +294,9 @@ const styles = StyleSheet.create({
   container: {
     padding: Spacing.md,
     paddingTop: Spacing.sm,
+  },
+  transparent: {
+    backgroundColor: 'transparent',
   },
   row: {
     justifyContent: 'space-between',
