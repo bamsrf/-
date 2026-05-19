@@ -56,17 +56,18 @@ export const ActivityCard: React.FC = () => {
       ) : (
         <View style={styles.previewList}>
           {preview.map((item) => {
-            const actor =
-              (item.actor?.display_name as string | undefined) ||
-              (item.actor?.username as string | undefined) ||
-              'Кто-то';
+            const previewLine = buildPreviewLine(item);
             return (
               <View key={item.id} style={styles.previewRow}>
                 {!item.read_at ? <View style={styles.unreadDot} /> : <View style={styles.unreadDotPlaceholder} />}
                 <Text style={styles.previewText} numberOfLines={1}>
-                  <Text style={styles.previewActor}>{actor}</Text>
-                  {' '}
-                  {previewBody(item.type, item.data)}
+                  {previewLine.actorPrefix ? (
+                    <>
+                      <Text style={styles.previewActor}>{previewLine.actorPrefix}</Text>
+                      {' '}
+                    </>
+                  ) : null}
+                  {previewLine.body}
                 </Text>
                 <Text style={styles.previewTime}>{formatRelative(item.created_at)}</Text>
               </View>
@@ -78,24 +79,46 @@ export const ActivityCard: React.FC = () => {
   );
 };
 
-function previewBody(type: string, data: Record<string, unknown>): string {
-  switch (type) {
+function buildPreviewLine(item: {
+  type: string;
+  data: Record<string, unknown>;
+  actor?: { display_name?: string | null; username?: string | null } | null;
+}): { actorPrefix: string | null; body: string } {
+  const actor =
+    (item.actor?.display_name as string | undefined) ||
+    (item.actor?.username as string | undefined) ||
+    null;
+  const data = item.data || {};
+  const recordTitle = (data.record_title as string | undefined) ?? 'пластинка';
+
+  switch (item.type) {
     case 'follow_request':
-      return 'хочет подписаться';
+      return { actorPrefix: actor ?? 'Кто-то', body: 'хочет подписаться' };
     case 'new_follower':
-      return data.approved ? 'принял(а) подписку' : 'подписался(ась) на тебя';
+      return {
+        actorPrefix: actor ?? 'Кто-то',
+        body: data.approved ? 'принял(а) подписку' : 'подписался(ась) на тебя',
+      };
     case 'gift_booked':
-      return 'забронировал(а) подарок';
+      return data.anonymous
+        ? { actorPrefix: null, body: `Кто-то забронировал «${recordTitle}»` }
+        : { actorPrefix: actor ?? 'Кто-то', body: `забронировал(а) «${recordTitle}»` };
     case 'gift_confirmed':
-      return 'подтвердил(а) выдачу';
+      return { actorPrefix: actor ?? 'Кто-то', body: `получил(а) «${recordTitle}»` };
     case 'wishlist_in_stock':
-      return 'появилась в продаже';
+      return { actorPrefix: null, body: `«${recordTitle}» снова в продаже` };
     case 'wishlist_price_drop':
-      return 'подешевела';
-    case 'achievement_unlocked':
-      return '— новая ачивка';
+      return { actorPrefix: null, body: `«${recordTitle}» подешевела` };
+    case 'achievement_unlocked': {
+      const title = (data.title as string | undefined) || (data.code as string | undefined) || '';
+      return { actorPrefix: null, body: `Новая ачивка: ${title}` };
+    }
+    case 'milestone_unlocked': {
+      const title = (data.title as string | undefined) ?? 'Новая веха';
+      return { actorPrefix: null, body: title };
+    }
     default:
-      return '';
+      return { actorPrefix: actor, body: '' };
   }
 }
 

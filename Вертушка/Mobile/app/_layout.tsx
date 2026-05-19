@@ -195,14 +195,36 @@ function RootLayout() {
 
     useNotificationsStore.getState().fetchUnreadCount();
 
+    // Глобальный polling: пока приложение активно, раз в 30с подтягиваем unreadCount,
+    // чтобы красная точка на аватаре появлялась даже без push (например, события без
+    // push'а или quiet hours). При уходе в background — таймер останавливается.
+    let pollTimer: ReturnType<typeof setInterval> | null = null;
+    const startPolling = () => {
+      if (pollTimer) return;
+      pollTimer = setInterval(() => {
+        useNotificationsStore.getState().fetchUnreadCount();
+      }, 30_000);
+    };
+    const stopPolling = () => {
+      if (pollTimer) {
+        clearInterval(pollTimer);
+        pollTimer = null;
+      }
+    };
+    if (AppState.currentState === 'active') startPolling();
+
     const sub = AppState.addEventListener('change', (state) => {
       if (state === 'active') {
         useNotificationsStore.getState().fetchUnreadCount();
+        startPolling();
+      } else {
+        stopPolling();
       }
     });
 
     return () => {
       cancelled = true;
+      stopPolling();
       sub.remove();
     };
   }, [isAuthenticated]);

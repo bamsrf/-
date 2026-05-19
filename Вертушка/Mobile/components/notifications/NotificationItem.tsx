@@ -50,6 +50,7 @@ function iconForType(type: NotificationType): { name: string; tint: string } {
     case 'gift_confirmed':
       return { name: 'gift', tint: Colors.royalBlue };
     case 'wishlist_in_stock':
+      return { name: 'disc', tint: Colors.success };
     case 'wishlist_price_drop':
       return { name: 'pricetag', tint: Colors.success };
     case 'achievement_unlocked':
@@ -58,6 +59,11 @@ function iconForType(type: NotificationType): { name: string; tint: string } {
     default:
       return { name: 'notifications', tint: Colors.royalBlue };
   }
+}
+
+/** Системные уведомления без actor (триггерятся бэкендом, а не другим юзером). */
+function isSystemType(type: NotificationType): boolean {
+  return type === 'wishlist_in_stock' || type === 'wishlist_price_drop' || type === 'milestone_unlocked';
 }
 
 function buildText(item: NotificationItemType): string {
@@ -206,18 +212,17 @@ export const NotificationItem: React.FC<Props> = ({
 
       <View style={styles.avatarWrap}>
         {avatarUrl ? (
-          <Image source={avatarUrl} style={styles.avatar} cachePolicy="disk" />
+          <>
+            <Image source={avatarUrl} style={styles.avatar} cachePolicy="disk" />
+            <View style={[styles.iconBadge, { backgroundColor: meta.tint }]}>
+              <Icon name={meta.name as any} size={10} color={Colors.background} />
+            </View>
+          </>
         ) : (
-          <LinearGradient
-            colors={[Colors.royalBlue, Colors.periwinkle]}
-            style={styles.avatarPlaceholder}
-          >
-            <Icon name={meta.name as any} size={20} color={Colors.background} />
-          </LinearGradient>
+          <View style={[styles.systemIcon, { backgroundColor: meta.tint }]}>
+            <Icon name={meta.name as any} size={22} color={Colors.background} />
+          </View>
         )}
-        <View style={[styles.iconBadge, { backgroundColor: meta.tint }]}>
-          <Icon name={meta.name as any} size={10} color={Colors.background} />
-        </View>
       </View>
 
       <View style={styles.body}>
@@ -276,6 +281,13 @@ const styles = StyleSheet.create({
     borderRadius: 22,
   },
   avatarPlaceholder: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  systemIcon: {
     width: 44,
     height: 44,
     borderRadius: 22,
