@@ -265,10 +265,16 @@ async def _ensure_record_discogs_payload(record: Record, db: AsyncSession) -> No
         record.format_type = data["format"]
         changed = True
 
-    # discogs_data перезаписываем целиком — это «сырой» payload для UI
-    # (vinyl_color_raw, artist_id, artist_thumb_image_url рисуются из него).
+    # discogs_data МЕРДЖИМ, не перезаписываем — иначе теряем поля, которые
+    # уже положил _ensure_record_artist_data (artist_id, artist_thumb_image_url).
+    # data — свежий Discogs payload, может НЕ содержать artist_thumb_image_url
+    # (он вычисляется отдельным запросом /artists/{id}). При перезаписи бы
+    # обнулил аватар артиста на детальной — что я заметил в проде.
     if not record.discogs_data or "tracklist" not in (record.discogs_data or {}):
-        record.discogs_data = data
+        existing = record.discogs_data or {}
+        # Existing идёт ПОСЛЕДНИМ — приоритет у уже сохранённых ценных полей
+        # (artist_id, artist_thumb_image_url, vinyl_color_raw).
+        record.discogs_data = {**data, **existing}
         changed = True
 
     if changed:
@@ -583,11 +589,15 @@ async def get_record(
             detail="Пластинка не найдена"
         )
 
-    # Обогащаем данные артиста и цены, если отсутствуют
+    # Порядок важен: payload ПЕРЕД artist_data.
+    # _ensure_record_discogs_payload может догрузить полный Discogs release
+    # с tracklist'ом — и положить туда же artist_id, что потом сэкономит
+    # _ensure_record_artist_data один HTTP-запрос. Если payload запустить
+    # ПОСЛЕ artist_data — мердж сохранит artist_thumb_image_url, но и так
+    # лучше избежать лишнего запроса.
+    await _ensure_record_discogs_payload(record, db)
     await _ensure_record_artist_data(record, db)
     await _ensure_record_price_data(record, db)
-    # Догружаем tracklist/master_id из Discogs, если запись минтилась без них
-    await _ensure_record_discogs_payload(record, db)
 
     response = RecordResponse.model_validate(record)
     discogs_data = record.discogs_data or {}
@@ -616,15 +626,12 @@ async def get_record_by_discogs_id(
     record = result.scalar_one_or_none()
 
     if record:
-        # Обогащаем данные артиста и цены, если отсутствуют
+        # Порядок: payload ПЕРЕД artist_data — payload может положить
+        # artist_id в discogs_data, что сэкономит запрос /releases/{id}
+        # внутри _ensure_record_artist_data. См. идентичный блок в get_record().
+        await _ensure_record_discogs_payload(record, db)
         await _ensure_record_artist_data(record, db)
         await _ensure_record_price_data(record, db)
-
-        # Догружаем tracklist + artist_thumb с Discogs, если запись минтилась
-        # без них (сценарий: matcher создал Record из листинга магазина с
-        # минимальным набором полей — barcode/title/artist; tracklist пустой
-        # и юзер видит детальную без треклиста).
-        await _ensure_record_discogs_payload(record, db)
 
         discogs_data = record.discogs_data or {}
         response = RecordResponse.model_validate(record)

@@ -30,6 +30,7 @@ import Reanimated, {
   useSharedValue,
   runOnJS,
 } from 'react-native-reanimated';
+import * as Haptics from 'expo-haptics';
 import { Icon } from '@/components/ui';
 import { AnimatedGradientText } from '../../components/AnimatedGradientText';
 import { RecordGrid } from '../../components/RecordGrid';
@@ -418,6 +419,39 @@ export default function SearchScreen() {
     const shouldShowExit = scrollY.value > 1200;
     runOnJS(setExitVisible)(shouldShowExit);
   }, []);
+
+  // ──────────────────────────────────────────────────────────────────
+  // Speed-bump: реальное «сопротивление» переходу в Маркет.
+  // Когда юзер пересекает RESISTANCE_BUMP_Y (~340 px) ПЕРВЫЙ раз за сессию —
+  // делаем 1 раз: heavy haptic + scrollTo обратно на BUMP_Y - 60.
+  // Эффект: контент чуть дёрнулся вниз, юзер чувствует «следующий уровень»
+  // и должен ещё раз свайпнуть, чтобы переехать в маркет.
+  // Идея: silent messages в Instagram (надо тянуть с усилием).
+  // Без повторов: bumpedRef.current флаг ставится после первого срабатывания.
+  // ──────────────────────────────────────────────────────────────────
+  const RESISTANCE_BUMP_Y = 340;
+  const bumpedRef = useRef(false);
+  // SharedValue вместо useRef — в worklet'е ref'ы не пишутся надёжно.
+  const lastScrollY = useSharedValue(0);
+
+  const triggerSpeedBump = useCallback(() => {
+    if (bumpedRef.current) return;
+    bumpedRef.current = true;
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy).catch(() => {});
+    // Snap-back на ~70 px НИЖЕ bump_y чтобы юзер увидел «упёрся».
+    // Animated scroll даёт классическую упругую анимацию.
+    scrollToOffsetRef.current?.(Math.max(0, RESISTANCE_BUMP_Y - 70), true);
+  }, []);
+
+  useDerivedValue(() => {
+    const y = scrollY.value;
+    const prev = lastScrollY.value;
+    // Только при скролле ВНИЗ — иначе bump срабатывает при scrollToOffset из exit'а
+    if (y > prev && prev < RESISTANCE_BUMP_Y && y >= RESISTANCE_BUMP_Y) {
+      runOnJS(triggerSpeedBump)();
+    }
+    lastScrollY.value = y;
+  }, [triggerSpeedBump]);
 
   // Debounced save scrollY → Zustand persist. Запускаем через ref'ный timer.
   const savePosTimer = useRef<ReturnType<typeof setTimeout> | null>(null);

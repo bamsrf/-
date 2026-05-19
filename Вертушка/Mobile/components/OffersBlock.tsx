@@ -80,7 +80,7 @@ export function OffersBlock({ discogsId }: OffersBlockProps) {
   if (offers === null && !error) {
     return (
       <View style={styles.shell}>
-        <Text style={styles.title}>Где купить</Text>
+        <Text style={styles.title}>Купить сейчас</Text>
         <View style={styles.loadingRow}>
           <ActivityIndicator size="small" color="#FFD9C8" />
         </View>
@@ -97,7 +97,7 @@ export function OffersBlock({ discogsId }: OffersBlockProps) {
   if (error) {
     return (
       <View style={styles.shell}>
-        <Text style={styles.title}>Где купить</Text>
+        <Text style={styles.title}>Купить сейчас</Text>
         <Text style={styles.errorText}>{error}</Text>
       </View>
     );
@@ -106,7 +106,7 @@ export function OffersBlock({ discogsId }: OffersBlockProps) {
   return (
     <View style={styles.shell}>
       <View style={styles.headerRow}>
-        <Text style={styles.title}>Где купить</Text>
+        <Text style={styles.title}>Купить сейчас</Text>
         <View style={styles.headerBadge}>
           <Icon name="disc" size={10} color="onBrand" style={{ opacity: 0.85 }} />
           <Text style={styles.headerBadgeText}>{offers!.length} в наличии</Text>
@@ -139,23 +139,25 @@ export function OffersBlock({ discogsId }: OffersBlockProps) {
             end={{ x: 1, y: 1 }}
             style={styles.marketEntryGradient}
           >
-            <StoreLogo slug={storeButtons[0].slug} size={36} radius={8} />
+            <StoreLogo slug={storeButtons[0].slug} size={40} radius={9} />
             <View style={{ flex: 1, minWidth: 0 }}>
-              <Text style={styles.marketEntryTitle} numberOfLines={1}>
-                Что ещё есть у {storeButtons[0].name}
+              <Text style={styles.marketEntryEyebrow} numberOfLines={1}>
+                В МАРКЕТЕ · {storeButtons[0].name.toUpperCase()}
               </Text>
-              <Text style={styles.marketEntrySub} numberOfLines={1}>
-                Открыть витрину магазина в Маркете
+              <Text style={styles.marketEntryTitle} numberOfLines={2}>
+                Нажми и посмотри, что ещё привезли
               </Text>
             </View>
-            <Icon name="arrow-right" size={18} color="onBrand" />
+            <View style={styles.marketEntryArrowCircle}>
+              <Icon name="arrow-right" size={16} color="onBrand" />
+            </View>
           </LinearGradient>
         </Pressable>
       )}
       {storeButtons.length > 1 && (
         <View style={styles.multiBlock}>
           <Text style={styles.multiBlockTitle}>
-            Открыть в Маркете
+            Нажми, чтобы посмотреть что ещё есть
           </Text>
           {storeButtons.map((s) => (
             <Pressable
@@ -168,13 +170,13 @@ export function OffersBlock({ discogsId }: OffersBlockProps) {
               accessibilityRole="button"
               accessibilityLabel={`Открыть витрину ${s.name} в Маркете`}
             >
-              <StoreLogo slug={s.slug} size={28} radius={6} />
+              <StoreLogo slug={s.slug} size={32} radius={7} />
               <View style={{ flex: 1, minWidth: 0 }}>
                 <Text style={styles.marketEntryMultiName} numberOfLines={1}>
                   {s.name}
                 </Text>
                 <Text style={styles.marketEntryMultiSub} numberOfLines={1}>
-                  Узнать, что ещё в наличии
+                  Открыть витрину магазина →
                 </Text>
               </View>
               <Icon name="arrow-right" size={14} color="onBrand" style={{ opacity: 0.7 }} />
@@ -384,20 +386,31 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 12,
     paddingHorizontal: 14,
-    paddingVertical: 12,
+    paddingVertical: 14,
+  },
+  marketEntryEyebrow: {
+    fontFamily: 'Inter_700Bold',
+    fontSize: 9.5,
+    fontWeight: '700',
+    color: 'rgba(255,255,255,0.78)',
+    letterSpacing: 1.1,
+    marginBottom: 3,
   },
   marketEntryTitle: {
     fontFamily: 'Inter_800ExtraBold',
-    fontSize: 14,
+    fontSize: 15,
     fontWeight: '800',
     color: '#FFFFFF',
-    letterSpacing: -0.2,
+    letterSpacing: -0.3,
+    lineHeight: 19,
   },
-  marketEntrySub: {
-    fontFamily: 'Inter_500Medium',
-    fontSize: 11,
-    color: 'rgba(255,255,255,0.78)',
-    marginTop: 2,
+  marketEntryArrowCircle: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: 'rgba(255,255,255,0.18)',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
 
   // ---- Market entry: multi store ----
