@@ -176,9 +176,10 @@ async def get_store_listings(
         return [MarketCarouselItem.model_validate(item) for item in cached]
 
     cutoff = datetime.utcnow() - timedelta(days=STALE_AFTER_DAYS)
+    # Outer ORDER BY работает с колонками CTE — без `sl.` префикса.
     order_clause = (
-        "sl.first_seen_at DESC" if sort == "newest"
-        else "sl.price_rub ASC NULLS LAST"
+        "first_seen_at DESC" if sort == "newest"
+        else "price_rub ASC NULLS LAST"
     )
 
     # DISTINCT ON по matched_record_id — на одну запись отдаём только самую дешёвую
@@ -259,9 +260,10 @@ async def get_store_all(
     fmt_sql, fmt_params = _format_clause(format)
     cutoff = datetime.utcnow() - timedelta(days=STALE_AFTER_DAYS)
 
+    # Outer ORDER BY ссылается на CTE-колонки — без `sl.` префикса.
     order_clause = (
-        "sl.price_rub ASC NULLS LAST" if sort == "price_asc"
-        else "sl.first_seen_at DESC"
+        "price_rub ASC NULLS LAST" if sort == "price_asc"
+        else "first_seen_at DESC"
     )
 
     q_clause = ""
