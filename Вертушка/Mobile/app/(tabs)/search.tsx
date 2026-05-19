@@ -1,7 +1,7 @@
 /**
  * Экран поиска по Discogs
  */
-import { useState, useCallback, useEffect, useRef } from 'react';
+import { useState, useCallback, useEffect, useMemo, useRef } from 'react';
 import {
   View,
   StyleSheet,
@@ -16,6 +16,7 @@ import {
   KeyboardAvoidingView,
   Platform,
   LayoutAnimation,
+  type LayoutChangeEvent,
 } from 'react-native';
 import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -42,8 +43,11 @@ import { MasterSearchResult, ReleaseSearchResult, ArtistSearchResult, UserWithSt
 import { MiniPriceBadge } from '../../components/MiniPriceBadge';
 import MarketBackground from '../../components/market/MarketBackground';
 import MarketSection, { type MarketStoreData } from '../../components/market/MarketSection';
+import MarketSearchResults from '../../components/market/MarketSearchResults';
+import MarketResistanceHint from '../../components/market/MarketResistanceHint';
 import ExitMarketButton from '../../components/market/ExitMarketButton';
 import { useMarketStore } from '../../lib/marketStore';
+import type { MarketSearchItem } from '../../lib/types';
 import { Colors, Typography, Spacing, BorderRadius, Gradients } from '../../constants/theme';
 import { toast } from '../../lib/toast';
 import { cleanArtistName } from '../../lib/format';
@@ -297,6 +301,12 @@ export default function SearchScreen() {
   // SharedValue для magic-transition фона (см. MarketBackground)
   const scrollY = useSharedValue(persistedScrollY);
   const scrollToTopRef = useRef<(() => void) | null>(null);
+  // scrollToOffsetRef нужен для прыжка к Маркету из «Смотреть все →»
+  // в карусели «В наличии сейчас». Прокидываем в RecordGrid → FlatList.
+  const scrollToOffsetRef = useRef<((offset: number, animated?: boolean) => void) | null>(null);
+  // y-координата начала MarketSection внутри FlatList'а. Меряем через
+  // onLayout родительского View — тапa «Смотреть все» проскролл к этому y.
+  const marketSectionYRef = useRef<number>(0);
   const [marketFormatFilter, setMarketFormatFilter] = useState<MarketFormatFilter | 'all'>('all');
   const [marketSearch, setMarketSearch] = useState('');
   const [exitVisible, setExitVisible] = useState(false);
@@ -308,7 +318,9 @@ export default function SearchScreen() {
     let cancelled = false;
     (async () => {
       try {
-        const stores = await api.getMarketStores(5); // min 5 in_stock — фильтр на бэке
+        // min_in_stock=1 — даже только что подключённый магазин с одним
+        // матчем попадает в витрину. Иначе юзер думает «всего один магазин?»
+        const stores = await api.getMarketStores(1);
         // Параллельно тянем top-N карточек для каждой витрины.
         const carousels: (MarketStoreData | null)[] = await Promise.all(
           stores.map(async (store) => {
@@ -343,6 +355,53 @@ export default function SearchScreen() {
     })();
     return () => { cancelled = true; };
   }, []);
+
+  // ──────────────────────────────────────────────────────────────────
+  // Market search/filter режим. Если юзер написал что-то (>=2 chars) или
+  // выбрал ненулевой format-чип — рендерим результаты `api.searchMarket`
+  // ВМЕСТО per-store carousels. Debounce 350ms на ввод текста чтобы не
+  // долбить /api/market/search на каждую букву.
+  // MARKET_AND_PRICE_DRAWER.md §1.8.
+  // ──────────────────────────────────────────────────────────────────
+  const [marketSearchItems, setMarketSearchItems] = useState<MarketSearchItem[]>([]);
+  const [marketSearchLoading, setMarketSearchLoading] = useState(false);
+  const marketSearchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const isMarketSearchActive = useMemo(() => {
+    return marketSearch.trim().length >= 2 || marketFormatFilter !== 'all';
+  }, [marketSearch, marketFormatFilter]);
+
+  useEffect(() => {
+    if (!isMarketSearchActive) {
+      setMarketSearchItems([]);
+      setMarketSearchLoading(false);
+      return;
+    }
+    if (marketSearchTimer.current) clearTimeout(marketSearchTimer.current);
+    setMarketSearchLoading(true);
+    let cancelled = false;
+    marketSearchTimer.current = setTimeout(() => {
+      api.searchMarket({
+        q: marketSearch.trim().length >= 2 ? marketSearch.trim() : undefined,
+        format: marketFormatFilter === 'all' ? null : marketFormatFilter,
+        sort: 'price_asc',
+        limit: 50,
+      })
+        .then((res) => {
+          if (!cancelled) setMarketSearchItems(res);
+        })
+        .catch(() => {
+          if (!cancelled) setMarketSearchItems([]);
+        })
+        .finally(() => {
+          if (!cancelled) setMarketSearchLoading(false);
+        });
+    }, 350);
+    return () => {
+      cancelled = true;
+      if (marketSearchTimer.current) clearTimeout(marketSearchTimer.current);
+    };
+  }, [isMarketSearchActive, marketSearch, marketFormatFilter]);
 
   // Scroll handler: пишем в SharedValue (worklet) + throttled JS-write
   // в Zustand для sticky-state.
@@ -409,9 +468,18 @@ export default function SearchScreen() {
   }, [router]);
 
   const handleMarketShowAll = useCallback(() => {
-    // OFFERS_UX.md Фича 3 — чип-фильтр «В продаже» в поиске. До его реализации
-    // даём явный сигнал, что фильтр на подходе, чтобы кнопка не была мёртвой.
-    toast.info('Скоро', 'Фильтр «В продаже» появится в ближайшем апдейте поиска');
+    // «Смотреть все →» в карусели «В наличии сейчас» проскролливает к
+    // полноценному Маркет-разделу ниже. Используем заранее измеренную
+    // позицию MarketSection (через onLayout). Минус 80 px чтобы hero-
+    // заголовок попал в видимую область с отступом от status-bar.
+    const y = Math.max(0, marketSectionYRef.current - 80);
+    scrollToOffsetRef.current?.(y, true);
+  }, []);
+
+  const handleMarketSectionLayout = useCallback((e: LayoutChangeEvent) => {
+    // y относительно FlatList'а. ListHeaderComponent рендерится внутри
+    // FlatList → onLayout даёт корректный absolute y от начала контента.
+    marketSectionYRef.current = e.nativeEvent.layout.y;
   }, []);
 
   const handleSearch = useCallback(async () => {
@@ -778,18 +846,30 @@ export default function SearchScreen() {
       */}
       {marketStores.length > 0 && <View style={styles.marketSpacer} />}
       {marketStores.length > 0 && (
-        <MarketSection
-          stores={marketStores}
-          searchValue={marketSearch}
-          onSearchChange={setMarketSearch}
-          formatFilter={marketFormatFilter}
-          onFormatChange={setMarketFormatFilter}
-          totalStores={marketStores.length}
-          totalItems={marketStores.reduce((sum, s) => sum + s.totalCount, 0)}
-          onStorePress={(slug) => router.push(`/market/store/${slug}` as any)}
-          onItemPress={(item) => router.push(`/record/${item.id}` as any)}
-          headerPaddingTop={40}
-        />
+        <View onLayout={handleMarketSectionLayout}>
+          <MarketSection
+            stores={isMarketSearchActive ? [] : marketStores}
+            searchValue={marketSearch}
+            onSearchChange={setMarketSearch}
+            formatFilter={marketFormatFilter}
+            onFormatChange={setMarketFormatFilter}
+            totalStores={marketStores.length}
+            totalItems={marketStores.reduce((sum, s) => sum + s.totalCount, 0)}
+            onStorePress={(slug) => router.push(`/market/store/${slug}` as any)}
+            onItemPress={(item) => router.push(`/record/${item.id}` as any)}
+            headerPaddingTop={40}
+          />
+          {isMarketSearchActive && (
+            <MarketSearchResults
+              loading={marketSearchLoading}
+              query={marketSearch}
+              items={marketSearchItems}
+              onItemPress={(item) =>
+                router.push(`/record/${item.discogs_id ?? item.record_id}` as any)
+              }
+            />
+          )}
+        </View>
       )}
     </View>
   ) : null;
@@ -1271,10 +1351,19 @@ export default function SearchScreen() {
           cardVariant="compact"
           onScroll={onScroll}
           scrollToTopRef={scrollToTopRef}
+          scrollToOffsetRef={scrollToOffsetRef}
         />
 
         {FilterModal}
       </KeyboardAvoidingView>
+
+      {/* «Скролль вниз, чтобы открыть Маркет» — подсказка с haptic.
+          Появляется в zone [240, 400] scrollY (см. MarketResistanceHint).
+          Без блокировки скролла — только визуальный + тактильный сигнал.
+          MARKET_AND_PRICE_DRAWER.md §1.3.5. */}
+      {marketStores.length > 0 && (
+        <MarketResistanceHint scrollY={scrollY} disabled={isUserSearch} />
+      )}
 
       {/* Floating «↑ Выйти из Маркета» — появляется когда scrollY > 1200.
           MARKET_AND_PRICE_DRAWER.md §1.5. */}

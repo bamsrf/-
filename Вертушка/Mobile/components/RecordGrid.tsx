@@ -70,11 +70,24 @@ interface RecordGridProps<T extends RecordItem = RecordItem> {
    */
   scrollToTopRef?: React.MutableRefObject<(() => void) | null>;
   /**
+   * Тот же паттерн что scrollToTopRef, но для произвольного offset.
+   * Используется в search.tsx для «Смотреть все →» в карусели маркета:
+   * родитель измеряет y-позицию MarketSection и просит RecordGrid
+   * проскроллить туда с анимацией.
+   */
+  scrollToOffsetRef?: React.MutableRefObject<((offset: number, animated?: boolean) => void) | null>;
+  /**
    * Per-record HotStock summary map (discogs_id → {variant, price}).
    * Передаётся из родителя после `api.getOffersSummary([...discogs_ids])`.
    * RecordGrid пробрасывает каждой карточке через RecordCard.hotStock prop.
    */
   hotStockMap?: Map<string, { variant: any; price: number } | null>;
+  /**
+   * Опциональный wrapper вокруг каждой строки (например, Swipeable для wishlist).
+   * Получает item и уже отрендеренный RecordCard, возвращает обёрнутый ReactElement.
+   * Используется в collection.tsx wishlist+list для swipe-to-offers паттерна.
+   */
+  rowWrapper?: (item: T, child: React.ReactElement) => React.ReactElement;
 }
 
 function RecordGridComponent<T extends RecordItem = RecordItem>({
@@ -104,7 +117,9 @@ function RecordGridComponent<T extends RecordItem = RecordItem>({
   onScroll,
   scrollEventThrottle = 16,
   scrollToTopRef,
+  scrollToOffsetRef,
   hotStockMap,
+  rowWrapper,
 }: RecordGridProps<T>) {
   // Internal ref для scrollToOffset вызова из ExitMarketButton (search.tsx).
   // Populate переданного scrollToTopRef один раз на mount.
@@ -118,6 +133,16 @@ function RecordGridComponent<T extends RecordItem = RecordItem>({
       if (scrollToTopRef) scrollToTopRef.current = null;
     };
   }, [scrollToTopRef]);
+  // Аналогично для произвольного offset (используется search.tsx «Смотреть все»).
+  useEffect(() => {
+    if (!scrollToOffsetRef) return;
+    scrollToOffsetRef.current = (offset, animated = true) => {
+      listRef.current?.scrollToOffset({ offset, animated });
+    };
+    return () => {
+      if (scrollToOffsetRef) scrollToOffsetRef.current = null;
+    };
+  }, [scrollToOffsetRef]);
   // Извлекаем запись из разных типов
   const getRecord = (item: RecordItem): RecordSearchResult | VinylRecord | MasterSearchResult | ReleaseSearchResult => {
     if ('record' in item) {
@@ -132,42 +157,48 @@ function RecordGridComponent<T extends RecordItem = RecordItem>({
     const isSelected = isSelectionMode && selectedItems.has(itemId);
     const isBooked = 'is_booked' in item && item.is_booked === true;
 
+    const card = (
+      <RecordCard
+        record={record}
+        variant={cardVariant}
+        onPress={onRecordPress ? () => onRecordPress(item) : undefined}
+        onArtistPress={onArtistPress}
+        onAddToCollection={
+          onAddToCollection ? () => onAddToCollection(item) : undefined
+        }
+        onAddToWishlist={
+          onAddToWishlist ? () => onAddToWishlist(item) : undefined
+        }
+        onRemove={onRemove ? () => onRemove(item) : undefined}
+        showActions={showActions && !isSelectionMode}
+        isSelectionMode={isSelectionMode}
+        isSelected={isSelected}
+        onToggleSelection={
+          onToggleItemSelection && itemId
+            ? () => onToggleItemSelection(itemId)
+            : undefined
+        }
+        onLongPress={
+          onLongPressItem && itemId
+            ? () => onLongPressItem(itemId)
+            : undefined
+        }
+        isBooked={isBooked}
+        rarityContext={rarityContext}
+        noRarityAura={numColumns >= 2}
+        hotStock={
+          hotStockMap && 'discogs_id' in record && record.discogs_id
+            ? hotStockMap.get(record.discogs_id) ?? undefined
+            : undefined
+        }
+      />
+    );
+
+    const wrapped = rowWrapper ? rowWrapper(item, card) : card;
+
     return (
       <Animated.View entering={FadeInUp.delay(index * 50).duration(300)}>
-        <RecordCard
-          record={record}
-          variant={cardVariant}
-          onPress={onRecordPress ? () => onRecordPress(item) : undefined}
-          onArtistPress={onArtistPress}
-          onAddToCollection={
-            onAddToCollection ? () => onAddToCollection(item) : undefined
-          }
-          onAddToWishlist={
-            onAddToWishlist ? () => onAddToWishlist(item) : undefined
-          }
-          onRemove={onRemove ? () => onRemove(item) : undefined}
-          showActions={showActions && !isSelectionMode}
-          isSelectionMode={isSelectionMode}
-          isSelected={isSelected}
-          onToggleSelection={
-            onToggleItemSelection && itemId
-              ? () => onToggleItemSelection(itemId)
-              : undefined
-          }
-          onLongPress={
-            onLongPressItem && itemId
-              ? () => onLongPressItem(itemId)
-              : undefined
-          }
-          isBooked={isBooked}
-          rarityContext={rarityContext}
-          noRarityAura={numColumns >= 2}
-          hotStock={
-            hotStockMap && 'discogs_id' in record && record.discogs_id
-              ? hotStockMap.get(record.discogs_id) ?? undefined
-              : undefined
-          }
-        />
+        {wrapped}
       </Animated.View>
     );
   };

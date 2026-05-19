@@ -1,11 +1,18 @@
 /**
  * Блок «Где купить» на экране записи.
  *
+ * Стилизован под Маркет: тёмный фон (MarketPalette.void) с тонким ember-glow,
+ * белая типографика, gradient border. Визуально склеивает детальный экран
+ * с Маркетом — юзер видит «карман маркета» внутри детали.
+ *
  * Дёргает /api/records/{discogs_id}/offers, показывает карточки магазинов
  * с ценой и кнопкой «Купить». При тапе открывает URL магазина (Linking).
  *
- * Состояния: loading (скелет 2 карточек) / empty (тихо ничего не рендерим —
- * чтобы пустой раздел не торчал на каждой пластинке) / error (компакт).
+ * Состояния: loading (спиннер) / empty (тихо ничего не рендерим) / error (компакт).
+ *
+ * CTA: «Что ещё есть в наличии у {магазин} →» (одна большая плашка с
+ * gradient bg, ведёт в /market/store/{slug}); для нескольких магазинов —
+ * мини-плитки магазинов.
  */
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
@@ -16,14 +23,14 @@ import {
   ActivityIndicator,
   Linking,
 } from 'react-native';
-import { Image } from 'expo-image';
 import { useRouter } from 'expo-router';
+import { LinearGradient } from 'expo-linear-gradient';
 
-import { Card, Icon } from './ui';
+import { Icon } from './ui';
 import { api } from '../lib/api';
 import { analytics } from '../lib/analytics';
 import { Offer } from '../lib/types';
-import { Colors, Typography, Spacing, BorderRadius } from '../constants/theme';
+import { Typography, Spacing, BorderRadius, MarketPalette, Gradients } from '../constants/theme';
 import StoreLogo from './market/StoreLogo';
 
 interface OffersBlockProps {
@@ -35,9 +42,7 @@ export function OffersBlock({ discogsId }: OffersBlockProps) {
   const [offers, setOffers] = useState<Offer[] | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  // Уникальные магазины из текущих offers — для кнопок «Смотреть в Маркете».
-  // Если 2+ магазина — показываем одну общую кнопку (отправляем в /market глобально).
-  // Если ровно 1 — отправляем сразу в его витрину /market/store/{slug}.
+  // Уникальные магазины из текущих offers — для кнопок «Что ещё в наличии».
   const storeButtons = useMemo(() => {
     if (!offers || offers.length === 0) return [];
     const seen = new Set<string>();
@@ -71,82 +76,113 @@ export function OffersBlock({ discogsId }: OffersBlockProps) {
     };
   }, [discogsId]);
 
-  // Loading: компактный скелет, не растягиваем экран
+  // Loading: компактный скелет
   if (offers === null && !error) {
     return (
-      <Card variant="flat" style={styles.card}>
+      <View style={styles.shell}>
         <Text style={styles.title}>Где купить</Text>
         <View style={styles.loadingRow}>
-          <ActivityIndicator size="small" color={Colors.royalBlue} />
+          <ActivityIndicator size="small" color="#FFD9C8" />
         </View>
-      </Card>
+      </View>
     );
   }
 
-  // Empty: ничего не рендерим — на пластинках без offers блок не торчит
+  // Empty: тихо ничего не рендерим — детальная не должна торчать пустой плашкой
   if (!error && offers !== null && offers.length === 0) {
     return null;
   }
 
-  // Error: компактная плашка, не блокирующая
+  // Error: компактная плашка
   if (error) {
     return (
-      <Card variant="flat" style={styles.card}>
+      <View style={styles.shell}>
         <Text style={styles.title}>Где купить</Text>
         <Text style={styles.errorText}>{error}</Text>
-      </Card>
+      </View>
     );
   }
 
   return (
-    <Card variant="flat" style={styles.card}>
-      <Text style={styles.title}>Где купить</Text>
+    <View style={styles.shell}>
+      <View style={styles.headerRow}>
+        <Text style={styles.title}>Где купить</Text>
+        <View style={styles.headerBadge}>
+          <Icon name="disc" size={10} color="onBrand" style={{ opacity: 0.85 }} />
+          <Text style={styles.headerBadgeText}>{offers!.length} в наличии</Text>
+        </View>
+      </View>
+
       <View style={styles.list}>
         {offers!.map((offer) => (
           <OfferRow key={offer.listing_id} offer={offer} discogsId={discogsId} />
         ))}
       </View>
+
       <Text style={styles.disclaimer}>
         Цены и наличие — со страниц магазинов, обновляются ежедневно.
       </Text>
 
-      {/* Точка входа в Маркет — отдельная кнопка для каждого магазина с offer.
-          Если магазин один — «Все товары {name} в Маркете →».
-          Если 2+  — «Смотреть в Маркете →» (без указания slug, ведёт в search.tsx). */}
+      {/* Точка входа в Маркет.
+          1 магазин → одна большая «открой ящик» плашка с gradient.
+          ≥2     → мини-плитки магазинов в столбик. */}
       {storeButtons.length === 1 && (
         <Pressable
           onPress={() => router.push(`/market/store/${storeButtons[0].slug}` as any)}
-          style={({ pressed }) => [styles.marketEntry, pressed && { opacity: 0.7 }]}
           accessibilityRole="button"
           accessibilityLabel={`Открыть витрину ${storeButtons[0].name} в Маркете`}
+          style={({ pressed }) => [styles.marketEntryWrap, pressed && { opacity: 0.85 }]}
         >
-          <Icon name="storefront" size={18} color="brand" />
-          <Text style={styles.marketEntryText}>
-            Все товары {storeButtons[0].name} в Маркете
-          </Text>
-          <Icon name="arrow-right" size={14} color="brand" />
+          <LinearGradient
+            colors={Gradients.hotStock as [string, string, string]}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+            style={styles.marketEntryGradient}
+          >
+            <StoreLogo slug={storeButtons[0].slug} size={36} radius={8} />
+            <View style={{ flex: 1, minWidth: 0 }}>
+              <Text style={styles.marketEntryTitle} numberOfLines={1}>
+                Что ещё есть у {storeButtons[0].name}
+              </Text>
+              <Text style={styles.marketEntrySub} numberOfLines={1}>
+                Открыть витрину магазина в Маркете
+              </Text>
+            </View>
+            <Icon name="arrow-right" size={18} color="onBrand" />
+          </LinearGradient>
         </Pressable>
       )}
       {storeButtons.length > 1 && (
-        <View style={styles.marketEntryMulti}>
+        <View style={styles.multiBlock}>
+          <Text style={styles.multiBlockTitle}>
+            Открыть в Маркете
+          </Text>
           {storeButtons.map((s) => (
             <Pressable
               key={s.slug}
               onPress={() => router.push(`/market/store/${s.slug}` as any)}
-              style={({ pressed }) => [styles.marketEntryMultiBtn, pressed && { opacity: 0.7 }]}
+              style={({ pressed }) => [
+                styles.marketEntryMultiBtn,
+                pressed && { opacity: 0.75 },
+              ]}
               accessibilityRole="button"
               accessibilityLabel={`Открыть витрину ${s.name} в Маркете`}
             >
-              <StoreLogo slug={s.slug} size={20} radius={4} />
-              <Text style={styles.marketEntryMultiText} numberOfLines={1}>
-                {s.name}
-              </Text>
-              <Icon name="arrow-right" size={12} color="brand" />
+              <StoreLogo slug={s.slug} size={28} radius={6} />
+              <View style={{ flex: 1, minWidth: 0 }}>
+                <Text style={styles.marketEntryMultiName} numberOfLines={1}>
+                  {s.name}
+                </Text>
+                <Text style={styles.marketEntryMultiSub} numberOfLines={1}>
+                  Узнать, что ещё в наличии
+                </Text>
+              </View>
+              <Icon name="arrow-right" size={14} color="onBrand" style={{ opacity: 0.7 }} />
             </Pressable>
           ))}
         </View>
       )}
-    </Card>
+    </View>
   );
 }
 
@@ -193,12 +229,9 @@ function OfferRow({ offer, discogsId }: OfferRowProps) {
       onPress={handlePress}
       style={({ pressed }) => [
         styles.offerRow,
-        pressed && { opacity: 0.7 },
+        pressed && { opacity: 0.72 },
       ]}
     >
-      {/* Используем bundled StoreLogo через slug — приоритетнее `offer.store.logo_url`
-          (его бэк пока не отдаёт). Fallback внутри StoreLogo: monogram-badge
-          из первой буквы названия в круге brand.cobaltDeep. */}
       <StoreLogo slug={offer.store.slug} size={40} radius={BorderRadius.sm} fallbackName={offer.store.name} />
 
       <View style={styles.middle}>
@@ -219,7 +252,7 @@ function OfferRow({ offer, discogsId }: OfferRowProps) {
         <Text style={styles.price}>{priceFormatted} ₽</Text>
         <View style={styles.cta}>
           <Text style={styles.ctaText}>Купить</Text>
-          <Icon name="arrow-right" size={14} color={Colors.royalBlue} />
+          <Icon name="arrow-right" size={12} color="accent" />
         </View>
       </View>
     </Pressable>
@@ -227,16 +260,52 @@ function OfferRow({ offer, discogsId }: OfferRowProps) {
 }
 
 const styles = StyleSheet.create({
-  card: {
+  // ---- Shell ----
+  shell: {
     marginVertical: Spacing.sm,
+    backgroundColor: MarketPalette.void,
+    borderRadius: BorderRadius.lg,
+    padding: Spacing.md,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: MarketPalette.chrome.border,
+    // Лёгкая ember-aura — подчёркивает что это «карман маркета»
+    shadowColor: '#FF7A4A',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.15,
+    shadowRadius: 24,
+    elevation: 0,
+  },
+  headerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: Spacing.sm,
   },
   title: {
     ...Typography.h3,
-    color: Colors.text,
-    marginBottom: Spacing.sm,
+    color: '#FFFFFF',
+    letterSpacing: -0.3,
+  },
+  headerBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 9999,
+    backgroundColor: 'rgba(255,255,255,0.08)',
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: MarketPalette.chrome.border,
+  },
+  headerBadgeText: {
+    fontFamily: 'Inter_700Bold',
+    fontSize: 10,
+    color: '#FFD9C8',
+    letterSpacing: 0.6,
+    textTransform: 'uppercase',
   },
   list: {
-    gap: Spacing.sm,
+    gap: Spacing.xs + 2,
   },
   loadingRow: {
     paddingVertical: Spacing.md,
@@ -244,37 +313,24 @@ const styles = StyleSheet.create({
   },
   errorText: {
     ...Typography.bodySmall,
-    color: Colors.textSecondary,
+    color: 'rgba(255,255,255,0.7)',
   },
   disclaimer: {
     ...Typography.caption,
-    color: Colors.textMuted,
+    color: 'rgba(255,255,255,0.45)',
     marginTop: Spacing.sm,
   },
 
-  // ---- Строка предложения ----
+  // ---- Offer row ----
   offerRow: {
     flexDirection: 'row',
     alignItems: 'center',
     padding: Spacing.sm,
     borderRadius: BorderRadius.md,
-    backgroundColor: Colors.background,
+    backgroundColor: 'rgba(255,255,255,0.04)',
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: 'rgba(255,255,255,0.05)',
     gap: Spacing.sm,
-  },
-  storeBadge: {
-    width: 40,
-    height: 40,
-    borderRadius: BorderRadius.sm,
-    overflow: 'hidden',
-  },
-  logo: {
-    width: 40,
-    height: 40,
-  },
-  logoPlaceholder: {
-    backgroundColor: Colors.surface,
-    alignItems: 'center',
-    justifyContent: 'center',
   },
   middle: {
     flex: 1,
@@ -282,27 +338,28 @@ const styles = StyleSheet.create({
   },
   storeName: {
     ...Typography.body,
-    color: Colors.text,
-    fontWeight: '600',
+    color: '#FFFFFF',
+    fontWeight: '700',
   },
   meta: {
     ...Typography.caption,
-    color: Colors.textSecondary,
+    color: 'rgba(255,255,255,0.55)',
     marginTop: 2,
   },
   preorderTag: {
     ...Typography.caption,
-    color: Colors.royalBlue,
+    color: '#FFD9C8',
     marginTop: 2,
-    fontWeight: '600',
+    fontWeight: '700',
   },
   right: {
     alignItems: 'flex-end',
   },
   price: {
     ...Typography.h3,
-    color: Colors.text,
-    fontWeight: '700',
+    color: '#FFFFFF',
+    fontWeight: '800',
+    letterSpacing: -0.4,
   },
   cta: {
     flexDirection: 'row',
@@ -312,49 +369,72 @@ const styles = StyleSheet.create({
   },
   ctaText: {
     ...Typography.caption,
-    color: Colors.royalBlue,
-    fontWeight: '600',
+    color: '#FFD9C8',
+    fontWeight: '700',
   },
 
-  // ---- Точки входа в Маркет (новое) ----
-  marketEntry: {
+  // ---- Market entry: single store ----
+  marketEntryWrap: {
+    marginTop: Spacing.md,
+    borderRadius: BorderRadius.md,
+    overflow: 'hidden',
+  },
+  marketEntryGradient: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 10,
-    marginTop: Spacing.sm,
-    paddingHorizontal: Spacing.md,
-    paddingVertical: Spacing.sm + 2,
-    borderRadius: BorderRadius.md,
-    backgroundColor: Colors.surface,
-    borderWidth: 1,
-    borderColor: 'rgba(59, 75, 245, 0.15)', // royalBlue tint
+    gap: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
   },
-  marketEntryText: {
-    flex: 1,
-    ...Typography.bodySmall,
-    fontWeight: '600',
-    color: Colors.royalBlue,
+  marketEntryTitle: {
+    fontFamily: 'Inter_800ExtraBold',
+    fontSize: 14,
+    fontWeight: '800',
+    color: '#FFFFFF',
+    letterSpacing: -0.2,
   },
-  marketEntryMulti: {
-    marginTop: Spacing.sm,
+  marketEntrySub: {
+    fontFamily: 'Inter_500Medium',
+    fontSize: 11,
+    color: 'rgba(255,255,255,0.78)',
+    marginTop: 2,
+  },
+
+  // ---- Market entry: multi store ----
+  multiBlock: {
+    marginTop: Spacing.md,
     gap: 6,
+  },
+  multiBlockTitle: {
+    fontFamily: 'Inter_700Bold',
+    fontSize: 10.5,
+    color: 'rgba(255,255,255,0.55)',
+    letterSpacing: 1.2,
+    textTransform: 'uppercase',
+    marginBottom: 4,
   },
   marketEntryMultiBtn: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 10,
-    paddingHorizontal: Spacing.md,
-    paddingVertical: Spacing.sm,
-    borderRadius: BorderRadius.sm,
-    backgroundColor: Colors.surface,
-    borderWidth: 1,
-    borderColor: 'rgba(59, 75, 245, 0.12)',
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderRadius: BorderRadius.md,
+    backgroundColor: 'rgba(255,255,255,0.06)',
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: MarketPalette.chrome.border,
   },
-  marketEntryMultiText: {
-    flex: 1,
-    ...Typography.bodySmall,
-    fontWeight: '600',
-    color: Colors.text,
+  marketEntryMultiName: {
+    fontFamily: 'Inter_700Bold',
+    fontSize: 13,
+    color: '#FFFFFF',
+    fontWeight: '700',
+  },
+  marketEntryMultiSub: {
+    fontFamily: 'Inter_400Regular',
+    fontSize: 10.5,
+    color: 'rgba(255,255,255,0.55)',
+    marginTop: 1,
   },
 });
 

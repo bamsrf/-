@@ -24,6 +24,7 @@ import { api, resolveMediaUrl } from '../../lib/api';
 import { CollectionItem, WishlistItem, CollectionTab, RecordOffersSummary } from '../../lib/types';
 import { Colors, Spacing, Typography, BorderRadius, Gradients, Shadows } from '../../constants/theme';
 import { summaryToHotStock, type ResolvedHotStock } from '../../components/HotStockTag';
+import WishlistListSwipe from '../../components/market/WishlistListSwipe';
 
 if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
   UIManager.setLayoutAnimationEnabledExperimental(true);
@@ -135,10 +136,13 @@ export default function CollectionScreen() {
   // юзер видит полный OffersBlock (Phase A) + future OffersBottomSheet.
   // ─────────────────────────────────────────────────────────────────
   const [hotStockMap, setHotStockMap] = useState<Map<string, ResolvedHotStock | null>>(new Map());
+  // Raw summary map нужен для list-swipe (показать min_price + stores_count)
+  const [summaryMap, setSummaryMap] = useState<Map<string, RecordOffersSummary>>(new Map());
 
   useEffect(() => {
     if (activeTab !== 'wishlist' || wishlistItems.length === 0) {
       setHotStockMap(new Map());
+      setSummaryMap(new Map());
       return;
     }
     let cancelled = false;
@@ -153,10 +157,13 @@ export default function CollectionScreen() {
         const summary: Record<string, RecordOffersSummary> = await api.getOffersSummary(discogsIds);
         if (cancelled) return;
         const map = new Map<string, ResolvedHotStock | null>();
+        const rawMap = new Map<string, RecordOffersSummary>();
         for (const [discogsId, s] of Object.entries(summary)) {
           map.set(discogsId, summaryToHotStock(s, { context: 'wishlist', isGrid: true }));
+          rawMap.set(discogsId, s);
         }
         setHotStockMap(map);
+        setSummaryMap(rawMap);
       } catch {
         /* silent — pill просто не появится при ошибке */
       }
@@ -913,6 +920,31 @@ export default function CollectionScreen() {
           numColumns={viewMode === 'list' ? 1 : 2}
           rarityContext={activeTab === 'wishlist' ? 'wishlist' : 'collection'}
           hotStockMap={activeTab === 'wishlist' ? hotStockMap : undefined}
+          // Swipe-to-offers только в list-mode вишлиста: в grid-mode карточки
+          // компактные и swipe конфликтовал бы с горизонтальным скроллом
+          // ZoomableRecordGrid'а.
+          rowWrapper={
+            activeTab === 'wishlist' && viewMode === 'list' && !isSelectionMode
+              ? (item, child) => {
+                  const wi = item as WishlistItem;
+                  const discogsId = wi.record?.discogs_id;
+                  const summary = discogsId ? summaryMap.get(discogsId) : null;
+                  const hasOffers = !!summary && summary.in_stock_count > 0;
+                  return (
+                    <WishlistListSwipe
+                      hasOffers={hasOffers}
+                      minPriceRub={summary?.min_price_rub != null ? Number(summary.min_price_rub) : null}
+                      storesCount={summary?.stores_with_stock ?? 0}
+                      onCTAPress={() =>
+                        router.push(`/record/${discogsId ?? wi.record.id}`)
+                      }
+                    >
+                      {child}
+                    </WishlistListSwipe>
+                  );
+                }
+              : undefined
+          }
           onRecordPress={isSelectionMode ? undefined : handleRecordPress}
           onArtistPress={isSelectionMode ? undefined : handleArtistPress}
           onRemove={
