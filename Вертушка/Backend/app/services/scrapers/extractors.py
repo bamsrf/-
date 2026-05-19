@@ -139,8 +139,11 @@ def parse_year(value: str | None) -> int | None:
 
 _FORMAT_MAP: list[tuple[re.Pattern, str]] = [
     # Box Set: «box set» / «box-set» / «boxset» / «бокс-сет» / «коробочное издание»
-    # Порядок важен — Box Set должен выиграть у «vinyl box set» где есть и LP-сигнал
-    (re.compile(r"\bbox[\-\s_]*set\b|\bboxset\b|\bбокс[\-\s_]?сет\b|\bкоробочн", re.I), "Box Set"),
+    # / просто «box» как самостоятельный токен (Bitrix-категория `/format/box/`).
+    # Порядок важен — Box Set должен выиграть у «vinyl box set» где есть и LP-сигнал.
+    # \bbox\b ловит ТОЛЬКО изолированное «Box» (не «Boxer», «Boxset» — для них
+    # отдельные ветки выше). Это нужно для коротких маркеров типа «формат Box».
+    (re.compile(r"\bbox[\-\s_]*set\b|\bboxset\b|\bбокс[\-\s_]?сет\b|\bкоробочн|\bbox\b", re.I), "Box Set"),
     # NxLP / NxVinyl: «2xLP», «3 LP», «4xVinyl», «double LP», «дабл-LP» — мультидисковые
     # пресс-сеты не-Box. Захватываем число → нормализуем в «2xLP» (количество в format_raw
     # сохраняем сырое, для матчинга достаточно знать что это набор LP)

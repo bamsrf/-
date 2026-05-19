@@ -53,6 +53,19 @@ STORES: list[dict] = [
         "avg_shipping_rub": Decimal("450.00"),
         "affiliate_program": None,
     },
+    {
+        "slug": "vinyl_ru",
+        "name": "Vinyl.ru",
+        "domain": "vinyl.ru",
+        "base_url": "https://vinyl.ru",
+        "parser_class": "vinyl_ru",
+        "logo_url": None,
+        "rating": Decimal("4.4"),  # большой Bitrix-каталог 64k+ товаров, все форматы
+        "is_active": True,
+        "requires_browser": False,
+        "avg_shipping_rub": Decimal("400.00"),
+        "affiliate_program": None,
+    },
 ]
 
 
