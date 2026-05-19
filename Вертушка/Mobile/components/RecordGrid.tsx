@@ -1,7 +1,7 @@
 /**
  * Сетка пластинок
  */
-import React, { memo } from 'react';
+import React, { memo, useEffect, useRef } from 'react';
 import {
   FlatList,
   StyleSheet,
@@ -12,6 +12,10 @@ import {
   TouchableOpacity,
 } from 'react-native';
 import Animated, { FadeInUp } from 'react-native-reanimated';
+
+// Animated.FlatList — нужно для useAnimatedScrollHandler из родителя
+// (Маркет в (tabs)/search.tsx, см. MARKET_AND_PRICE_DRAWER.md §1.3).
+const AnimatedFlatList = Animated.createAnimatedComponent(FlatList);
 import { Icon } from '@/components/ui';
 import { LinearGradient } from 'expo-linear-gradient';
 import { RecordCard } from './RecordCard';
@@ -52,6 +56,25 @@ interface RecordGridProps<T extends RecordItem = RecordItem> {
   numColumns?: number;
   /** Drives rarity tier selection — `collection` hides "Популярно". */
   rarityContext?: RarityContext;
+  /**
+   * Optional onScroll — нужен для magic-transition фона в search.tsx.
+   * Передаётся результат useAnimatedScrollHandler из родителя.
+   * Тип `any` чтобы не таскать сюда AnimatedScrollHandler-тайпинги Reanimated.
+   */
+  onScroll?: any;
+  scrollEventThrottle?: number;
+  /**
+   * Контейнер для функции scrollToTop. Родитель кладёт сюда ref и потом
+   * вызывает `scrollToTopRef.current?.()` — например, из ExitMarketButton.
+   * Не используем forwardRef из-за TS-сложностей с дженериками.
+   */
+  scrollToTopRef?: React.MutableRefObject<(() => void) | null>;
+  /**
+   * Per-record HotStock summary map (discogs_id → {variant, price}).
+   * Передаётся из родителя после `api.getOffersSummary([...discogs_ids])`.
+   * RecordGrid пробрасывает каждой карточке через RecordCard.hotStock prop.
+   */
+  hotStockMap?: Map<string, { variant: any; price: number } | null>;
 }
 
 function RecordGridComponent<T extends RecordItem = RecordItem>({
@@ -78,7 +101,23 @@ function RecordGridComponent<T extends RecordItem = RecordItem>({
   cardVariant = 'expanded',
   numColumns = 2,
   rarityContext = 'search',
+  onScroll,
+  scrollEventThrottle = 16,
+  scrollToTopRef,
+  hotStockMap,
 }: RecordGridProps<T>) {
+  // Internal ref для scrollToOffset вызова из ExitMarketButton (search.tsx).
+  // Populate переданного scrollToTopRef один раз на mount.
+  const listRef = useRef<FlatList<T>>(null);
+  useEffect(() => {
+    if (!scrollToTopRef) return;
+    scrollToTopRef.current = () => {
+      listRef.current?.scrollToOffset({ offset: 0, animated: true });
+    };
+    return () => {
+      if (scrollToTopRef) scrollToTopRef.current = null;
+    };
+  }, [scrollToTopRef]);
   // Извлекаем запись из разных типов
   const getRecord = (item: RecordItem): RecordSearchResult | VinylRecord | MasterSearchResult | ReleaseSearchResult => {
     if ('record' in item) {
@@ -123,6 +162,11 @@ function RecordGridComponent<T extends RecordItem = RecordItem>({
           isBooked={isBooked}
           rarityContext={rarityContext}
           noRarityAura={numColumns >= 2}
+          hotStock={
+            hotStockMap && 'discogs_id' in record && record.discogs_id
+              ? hotStockMap.get(record.discogs_id) ?? undefined
+              : undefined
+          }
         />
       </Animated.View>
     );
@@ -211,10 +255,11 @@ function RecordGridComponent<T extends RecordItem = RecordItem>({
   };
 
   return (
-    <FlatList
+    <AnimatedFlatList
+      ref={listRef as any}
       data={data}
-      renderItem={renderItem}
-      keyExtractor={keyExtractor}
+      renderItem={renderItem as any}
+      keyExtractor={keyExtractor as any}
       numColumns={numColumns}
       columnWrapperStyle={numColumns > 1 ? styles.row : undefined}
       contentContainerStyle={styles.container}
@@ -226,6 +271,8 @@ function RecordGridComponent<T extends RecordItem = RecordItem>({
       ListFooterComponent={renderFooter}
       onEndReached={onEndReached}
       onEndReachedThreshold={0.5}
+      onScroll={onScroll}
+      scrollEventThrottle={scrollEventThrottle}
       refreshControl={
         onRefresh ? (
           <RefreshControl
