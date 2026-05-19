@@ -7,7 +7,7 @@
  * Состояния: loading (скелет 2 карточек) / empty (тихо ничего не рендерим —
  * чтобы пустой раздел не торчал на каждой пластинке) / error (компакт).
  */
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   View,
   Text,
@@ -17,20 +17,39 @@ import {
   Linking,
 } from 'react-native';
 import { Image } from 'expo-image';
+import { useRouter } from 'expo-router';
 
 import { Card, Icon } from './ui';
 import { api } from '../lib/api';
 import { analytics } from '../lib/analytics';
 import { Offer } from '../lib/types';
 import { Colors, Typography, Spacing, BorderRadius } from '../constants/theme';
+import StoreLogo from './market/StoreLogo';
 
 interface OffersBlockProps {
   discogsId: string;
 }
 
 export function OffersBlock({ discogsId }: OffersBlockProps) {
+  const router = useRouter();
   const [offers, setOffers] = useState<Offer[] | null>(null);
   const [error, setError] = useState<string | null>(null);
+
+  // Уникальные магазины из текущих offers — для кнопок «Смотреть в Маркете».
+  // Если 2+ магазина — показываем одну общую кнопку (отправляем в /market глобально).
+  // Если ровно 1 — отправляем сразу в его витрину /market/store/{slug}.
+  const storeButtons = useMemo(() => {
+    if (!offers || offers.length === 0) return [];
+    const seen = new Set<string>();
+    const result: { slug: string; name: string }[] = [];
+    for (const o of offers) {
+      if (!seen.has(o.store.slug)) {
+        seen.add(o.store.slug);
+        result.push({ slug: o.store.slug, name: o.store.name });
+      }
+    }
+    return result;
+  }, [offers]);
 
   useEffect(() => {
     let alive = true;
@@ -90,6 +109,43 @@ export function OffersBlock({ discogsId }: OffersBlockProps) {
       <Text style={styles.disclaimer}>
         Цены и наличие — со страниц магазинов, обновляются ежедневно.
       </Text>
+
+      {/* Точка входа в Маркет — отдельная кнопка для каждого магазина с offer.
+          Если магазин один — «Все товары {name} в Маркете →».
+          Если 2+  — «Смотреть в Маркете →» (без указания slug, ведёт в search.tsx). */}
+      {storeButtons.length === 1 && (
+        <Pressable
+          onPress={() => router.push(`/market/store/${storeButtons[0].slug}` as any)}
+          style={({ pressed }) => [styles.marketEntry, pressed && { opacity: 0.7 }]}
+          accessibilityRole="button"
+          accessibilityLabel={`Открыть витрину ${storeButtons[0].name} в Маркете`}
+        >
+          <Icon name="storefront" size={18} color="brand" />
+          <Text style={styles.marketEntryText}>
+            Все товары {storeButtons[0].name} в Маркете
+          </Text>
+          <Icon name="arrow-right" size={14} color="brand" />
+        </Pressable>
+      )}
+      {storeButtons.length > 1 && (
+        <View style={styles.marketEntryMulti}>
+          {storeButtons.map((s) => (
+            <Pressable
+              key={s.slug}
+              onPress={() => router.push(`/market/store/${s.slug}` as any)}
+              style={({ pressed }) => [styles.marketEntryMultiBtn, pressed && { opacity: 0.7 }]}
+              accessibilityRole="button"
+              accessibilityLabel={`Открыть витрину ${s.name} в Маркете`}
+            >
+              <StoreLogo slug={s.slug} size={20} radius={4} />
+              <Text style={styles.marketEntryMultiText} numberOfLines={1}>
+                {s.name}
+              </Text>
+              <Icon name="arrow-right" size={12} color="brand" />
+            </Pressable>
+          ))}
+        </View>
+      )}
     </Card>
   );
 }
@@ -140,20 +196,10 @@ function OfferRow({ offer, discogsId }: OfferRowProps) {
         pressed && { opacity: 0.7 },
       ]}
     >
-      <View style={styles.storeBadge}>
-        {offer.store.logo_url ? (
-          <Image
-            source={offer.store.logo_url}
-            style={styles.logo}
-            contentFit="cover"
-            cachePolicy="disk"
-          />
-        ) : (
-          <View style={[styles.logo, styles.logoPlaceholder]}>
-            <Icon name="buildings" size={20} color={Colors.textSecondary} />
-          </View>
-        )}
-      </View>
+      {/* Используем bundled StoreLogo через slug — приоритетнее `offer.store.logo_url`
+          (его бэк пока не отдаёт). Fallback внутри StoreLogo: monogram-badge
+          из первой буквы названия в круге brand.cobaltDeep. */}
+      <StoreLogo slug={offer.store.slug} size={40} radius={BorderRadius.sm} fallbackName={offer.store.name} />
 
       <View style={styles.middle}>
         <Text style={styles.storeName} numberOfLines={1}>
@@ -268,6 +314,47 @@ const styles = StyleSheet.create({
     ...Typography.caption,
     color: Colors.royalBlue,
     fontWeight: '600',
+  },
+
+  // ---- Точки входа в Маркет (новое) ----
+  marketEntry: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    marginTop: Spacing.sm,
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.sm + 2,
+    borderRadius: BorderRadius.md,
+    backgroundColor: Colors.surface,
+    borderWidth: 1,
+    borderColor: 'rgba(59, 75, 245, 0.15)', // royalBlue tint
+  },
+  marketEntryText: {
+    flex: 1,
+    ...Typography.bodySmall,
+    fontWeight: '600',
+    color: Colors.royalBlue,
+  },
+  marketEntryMulti: {
+    marginTop: Spacing.sm,
+    gap: 6,
+  },
+  marketEntryMultiBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.sm,
+    borderRadius: BorderRadius.sm,
+    backgroundColor: Colors.surface,
+    borderWidth: 1,
+    borderColor: 'rgba(59, 75, 245, 0.12)',
+  },
+  marketEntryMultiText: {
+    flex: 1,
+    ...Typography.bodySmall,
+    fontWeight: '600',
+    color: Colors.text,
   },
 });
 
