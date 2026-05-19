@@ -78,9 +78,13 @@ class Conversation(Base):
         back_populates="conversation",
         cascade="all, delete-orphan",
     )
+    # foreign_keys нужен явно: у Conversation есть pinned_message_id → messages.id,
+    # из-за чего SQLAlchemy не может однозначно выбрать join path для
+    # one-to-many «все сообщения треда» (vs many-to-one «закреплённое сообщение»).
     messages = relationship(
         "Message",
         back_populates="conversation",
+        foreign_keys="Message.conversation_id",
         cascade="all, delete-orphan",
         order_by="Message.created_at",
     )
@@ -186,4 +190,8 @@ class Message(Base):
         UniqueConstraint("sender_id", "client_nonce", name="uq_message_idempotency"),
     )
 
-    conversation = relationship("Conversation", back_populates="messages")
+    conversation = relationship(
+        "Conversation",
+        back_populates="messages",
+        foreign_keys=[conversation_id],
+    )
