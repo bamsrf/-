@@ -43,6 +43,7 @@ from app.schemas.message import (
     MessageEdit,
     MessageFolder,
     MessageRead,
+    MuteRequest,
     PinnedMessagePreview,
     PresenceResponse,
     ReactionRead,
@@ -134,6 +135,19 @@ async def _hydrate_message_previews(
     return result
 
 
+def _effective_muted(me_part: ConversationParticipant) -> tuple[bool, datetime | None]:
+    """Возвращает (is_muted_now, muted_until). Учитывает истекший timed mute."""
+    from datetime import datetime as _dt
+
+    if not me_part.muted:
+        return False, None
+    if me_part.muted_until is None:
+        return True, None  # forever
+    if me_part.muted_until > _dt.utcnow():
+        return True, me_part.muted_until
+    return False, None  # expired
+
+
 def _conv_to_read(
     conv: Conversation,
     partner: User,
@@ -143,6 +157,7 @@ def _conv_to_read(
     is_blocked: bool,
     pinned_message: Message | None = None,
 ) -> ConversationRead:
+    is_muted, muted_until = _effective_muted(me_part)
     return ConversationRead(
         id=conv.id,
         partner=ConversationPartner(
@@ -155,7 +170,8 @@ def _conv_to_read(
         last_message_at=conv.last_message_at,
         last_message_sender_id=conv.last_message_sender_id,
         unread_count=unread,
-        muted=me_part.muted,
+        muted=is_muted,
+        muted_until=muted_until,
         request_status=me_part.request_status,  # type: ignore[arg-type]
         is_blocked=is_blocked,
         partner_last_read_at=partner_part.last_read_at if partner_part else None,
@@ -291,10 +307,16 @@ async def get_conversation_detail(
     if not partner:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Собеседник не найден")
 
+    from app.models.message_hidden import MessageHiddenFor
+
+    hidden_sub = select(MessageHiddenFor.message_id).where(
+        MessageHiddenFor.user_id == current_user.id
+    )
     msgs_stmt = (
         select(Message)
         .where(
             Message.conversation_id == conv.id,
+            ~Message.id.in_(hidden_sub),
         )
         .order_by(Message.created_at.desc())
         .limit(PAGE_LIMIT_DEFAULT)
@@ -341,11 +363,18 @@ async def list_messages(
     db: AsyncSession = Depends(get_db),
 ):
     """Пагинация сообщений: страницами по `limit`, до сообщения с id=before."""
+    from app.models.message_hidden import MessageHiddenFor
+
     me_part = await require_participant(db, conversation_id, current_user.id)
 
     stmt = select(Message).where(Message.conversation_id == conversation_id)
     if me_part.cleared_at is not None:
         stmt = stmt.where(Message.created_at > me_part.cleared_at)
+    # Скрытые «для себя» сообщения
+    hidden_sub = select(MessageHiddenFor.message_id).where(
+        MessageHiddenFor.user_id == current_user.id
+    )
+    stmt = stmt.where(~Message.id.in_(hidden_sub))
     if before is not None:
         before_msg = await db.get(Message, before)
         if not before_msg or before_msg.conversation_id != conversation_id:
@@ -686,11 +715,76 @@ async def toggle_mute(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """Переключить mute диалога у текущего пользователя."""
+    """Переключить mute диалога у текущего пользователя (legacy on/off).
+    Для длительности используется /mute-duration/."""
     me_part = await require_participant(db, conversation_id, current_user.id)
     me_part.muted = not me_part.muted
+    me_part.muted_until = None
     await db.commit()
-    return {"status": "ok", "muted": me_part.muted}
+    return {"status": "ok", "muted": me_part.muted, "muted_until": None}
+
+
+@router.post(
+    "/conversations/{conversation_id}/mute-duration/",
+    status_code=status.HTTP_200_OK,
+)
+async def set_mute_duration(
+    conversation_id: UUID,
+    payload: MuteRequest,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Включить mute на заданный промежуток или снять. duration:
+    off | hour | 8hours | day | forever."""
+    from datetime import datetime as _dt, timedelta as _td
+
+    me_part = await require_participant(db, conversation_id, current_user.id)
+    if payload.duration == "off":
+        me_part.muted = False
+        me_part.muted_until = None
+    elif payload.duration == "forever":
+        me_part.muted = True
+        me_part.muted_until = None
+    else:
+        seconds = {"hour": 3600, "8hours": 28_800, "day": 86_400}[payload.duration]
+        me_part.muted = True
+        me_part.muted_until = _dt.utcnow() + _td(seconds=seconds)
+
+    await db.commit()
+    return {
+        "status": "ok",
+        "muted": me_part.muted,
+        "muted_until": me_part.muted_until.isoformat() if me_part.muted_until else None,
+    }
+
+
+@router.post(
+    "/messages/{message_id}/hide/",
+    status_code=status.HTTP_200_OK,
+)
+async def hide_message_for_me(
+    message_id: UUID,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Скрыть сообщение только у себя (delete-for-me). Собеседник видит."""
+    from app.models.message_hidden import MessageHiddenFor
+
+    message = await db.get(Message, message_id)
+    if not message:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Сообщение не найдено")
+    await require_participant(db, message.conversation_id, current_user.id)
+
+    existing_q = await db.execute(
+        select(MessageHiddenFor).where(
+            MessageHiddenFor.message_id == message_id,
+            MessageHiddenFor.user_id == current_user.id,
+        )
+    )
+    if existing_q.scalar_one_or_none() is None:
+        db.add(MessageHiddenFor(message_id=message_id, user_id=current_user.id))
+        await db.commit()
+    return {"status": "ok"}
 
 
 @router.post(

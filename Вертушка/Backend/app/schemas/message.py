@@ -10,6 +10,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 RequestStatus = Literal["accepted", "pending"]
 MessageFolder = Literal["primary", "requests"]
+MuteDuration = Literal["off", "hour", "8hours", "day", "forever"]
 
 
 class ConversationPartner(BaseModel):
@@ -105,6 +106,8 @@ class ConversationRead(BaseModel):
     pinned: bool = False
     # Закреплённое сообщение в треде (TG pin)
     pinned_message: PinnedMessagePreview | None = None
+    # Когда заканчивается mute — null если mute навсегда (при muted=true) или нет
+    muted_until: datetime | None = None
 
 
 class ConversationDetail(BaseModel):
@@ -129,6 +132,11 @@ class MessageCreate(BaseModel):
 class MessageEdit(BaseModel):
     """Редактирование текста сообщения (15-минутное окно)."""
     body: str = Field(..., min_length=1, max_length=4000)
+
+
+class MuteRequest(BaseModel):
+    """Установить mute на диалог с длительностью."""
+    duration: MuteDuration
 
 
 class ReadMarker(BaseModel):

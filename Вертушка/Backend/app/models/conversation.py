@@ -114,6 +114,9 @@ class ConversationParticipant(Base):
     muted: Mapped[bool] = mapped_column(
         Boolean, default=False, nullable=False, server_default="false"
     )
+    # Если установлено — mute активен до этого момента; null значит «навсегда» при
+    # muted=True, либо нет mute при muted=False. Effective-mute считаем в API.
+    muted_until: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     archived_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     cleared_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     pinned_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)

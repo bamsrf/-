@@ -17,6 +17,7 @@ import type {
   Conversation,
   Message,
   MessageFolder,
+  MuteDuration,
   UnreadCount,
 } from './messagesTypes';
 
@@ -53,6 +54,8 @@ interface MessagesState {
   editMessage: (conversationId: string, messageId: string, body: string) => Promise<void>;
   pinMessage: (conversationId: string, messageId: string) => Promise<void>;
   unpinMessage: (conversationId: string) => Promise<void>;
+  setMuteDuration: (conversationId: string, duration: MuteDuration) => Promise<void>;
+  hideMessageForMe: (conversationId: string, messageId: string) => Promise<void>;
   reset: () => void;
 }
 
@@ -438,6 +441,47 @@ export const useMessagesStore = create<MessagesState>((set, get) => ({
     } catch (e: any) {
       toast.error(
         'Не удалось закрепить',
+        String(e?.response?.data?.detail || 'Попробуйте позже'),
+      );
+    }
+  },
+
+  setMuteDuration: async (conversationId, duration) => {
+    try {
+      const { muted, muted_until } = await messagesApi.setMuteDuration(
+        conversationId,
+        duration,
+      );
+      set((s) => ({
+        conversationsPrimary: s.conversationsPrimary.map((c) =>
+          c.id === conversationId ? { ...c, muted, muted_until } : c,
+        ),
+        conversationsRequests: s.conversationsRequests.map((c) =>
+          c.id === conversationId ? { ...c, muted, muted_until } : c,
+        ),
+      }));
+    } catch (e: any) {
+      toast.error(
+        'Не удалось',
+        String(e?.response?.data?.detail || 'Попробуйте позже'),
+      );
+    }
+  },
+
+  hideMessageForMe: async (conversationId, messageId) => {
+    try {
+      await messagesApi.hideMessageForMe(messageId);
+      set((s) => ({
+        threads: {
+          ...s.threads,
+          [conversationId]: (s.threads[conversationId] ?? []).filter(
+            (m) => m.id !== messageId,
+          ),
+        },
+      }));
+    } catch (e: any) {
+      toast.error(
+        'Не удалось скрыть',
         String(e?.response?.data?.detail || 'Попробуйте позже'),
       );
     }

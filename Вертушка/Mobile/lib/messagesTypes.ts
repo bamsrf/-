@@ -35,7 +35,11 @@ export interface Conversation {
   pinned?: boolean;
   /** Закреплённое сообщение в треде (TG). */
   pinned_message?: PinnedMessagePreview | null;
+  /** Если задано — mute активен до этого момента; иначе при muted=true — навсегда. */
+  muted_until?: string | null;
 }
+
+export type MuteDuration = 'off' | 'hour' | '8hours' | 'day' | 'forever';
 
 export interface ReplyPreview {
   id: string;

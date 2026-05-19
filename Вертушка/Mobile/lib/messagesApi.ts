@@ -128,6 +128,21 @@ export const messagesApi = {
     return r.data;
   },
 
+  async setMuteDuration(
+    conversationId: string,
+    duration: 'off' | 'hour' | '8hours' | 'day' | 'forever',
+  ): Promise<{ muted: boolean; muted_until: string | null }> {
+    const r = await getClient().post(
+      `/messages/conversations/${conversationId}/mute-duration/`,
+      { duration },
+    );
+    return r.data;
+  },
+
+  async hideMessageForMe(messageId: string): Promise<void> {
+    await getClient().post(`/messages/messages/${messageId}/hide/`);
+  },
+
   async clearHistory(conversationId: string): Promise<void> {
     await getClient().post(`/messages/conversations/${conversationId}/clear/`);
   },

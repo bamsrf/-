@@ -1081,14 +1081,27 @@ export default function ConversationScreen() {
       icon: 'check-circle',
       onPress: () => toggleSelection(m.id),
     });
+    list.push({
+      key: 'hide',
+      label: 'Удалить у себя',
+      icon: 'eye-slash',
+      destructive: true,
+      onPress: () => {
+        if (!conversationId) return;
+        useMessagesStore
+          .getState()
+          .hideMessageForMe(conversationId, m.id)
+          .catch(() => {});
+      },
+    });
     if (isMine) {
       list.push({
         key: 'delete',
-        label: 'Удалить',
+        label: 'Удалить у всех',
         icon: 'trash',
         destructive: true,
         onPress: () => {
-          Alert.alert('Удалить сообщение?', 'Удаление видно у обеих сторон.', [
+          Alert.alert('Удалить сообщение у всех?', 'Удаление будет видно собеседнику.', [
             { text: 'Отмена', style: 'cancel' },
             {
               text: 'Удалить',
@@ -1244,6 +1257,36 @@ export default function ConversationScreen() {
   const canSend = !!draft.trim();
   const isMuted = !!conversation?.muted;
 
+  const setMuteDurationAction = useMessagesStore((s) => s.setMuteDuration);
+
+  const openMuteDurationSheet = useCallback(() => {
+    if (!conversationId) return;
+    const options = ['1 час', '8 часов', '1 день', 'Навсегда', 'Отмена'];
+    const map: Array<'hour' | '8hours' | 'day' | 'forever'> = [
+      'hour',
+      '8hours',
+      'day',
+      'forever',
+    ];
+    if (Platform.OS === 'ios') {
+      ActionSheetIOS.showActionSheetWithOptions(
+        { options, cancelButtonIndex: 4, title: 'Отключить уведомления' },
+        (i) => {
+          if (i < 4) setMuteDurationAction(conversationId, map[i]);
+        },
+      );
+    } else {
+      Alert.alert(
+        'Отключить уведомления',
+        undefined,
+        options.slice(0, 4).map((label, i) => ({
+          text: label,
+          onPress: () => setMuteDurationAction(conversationId, map[i]),
+        })),
+      );
+    }
+  }, [conversationId, setMuteDurationAction]);
+
   const handleMenu = useCallback(() => {
     if (!conversationId || !partner) return;
     const muteLabel = isMuted ? 'Включить уведомления' : 'Отключить уведомления';
@@ -1252,8 +1295,13 @@ export default function ConversationScreen() {
     const destructive = [2, 3];
 
     const exec = (i: number) => {
-      if (i === 0) toggleMute(conversationId);
-      else if (i === 1) {
+      if (i === 0) {
+        if (isMuted) {
+          setMuteDurationAction(conversationId, 'off');
+        } else {
+          openMuteDurationSheet();
+        }
+      } else if (i === 1) {
         Alert.alert('Очистить историю?', 'Сообщения будут скрыты у вас, у собеседника останутся.', [
           { text: 'Отмена', style: 'cancel' },
           { text: 'Очистить', style: 'destructive', onPress: () => clearHistory(conversationId) },
@@ -1293,7 +1341,17 @@ export default function ConversationScreen() {
         { text: 'Отмена', style: 'cancel' },
       ]);
     }
-  }, [conversationId, partner, isMuted, toggleMute, clearHistory, archive, blockUser, router]);
+  }, [
+    conversationId,
+    partner,
+    isMuted,
+    openMuteDurationSheet,
+    setMuteDurationAction,
+    clearHistory,
+    archive,
+    blockUser,
+    router,
+  ]);
 
   return (
     <View style={styles.container}>
