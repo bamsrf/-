@@ -313,6 +313,7 @@ function RootLayout() {
             }}
           />
           <Stack.Screen name="record/[id]" />
+          <Stack.Screen name="market/store/[slug]" />
           <Stack.Screen name="folder/[id]" />
           <Stack.Screen name="wishlist-folder/[id]" />
           <Stack.Screen name="settings/edit-profile" />
