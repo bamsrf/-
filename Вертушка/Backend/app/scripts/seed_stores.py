@@ -66,6 +66,19 @@ STORES: list[dict] = [
         "avg_shipping_rub": Decimal("400.00"),
         "affiliate_program": None,
     },
+    {
+        "slug": "stoprobotvinyl",
+        "name": "Stoprobot Vinyl",
+        "domain": "stoprobotvinyl.ru",
+        "base_url": "https://stoprobotvinyl.ru",
+        "parser_class": "stoprobotvinyl",
+        "logo_url": None,
+        "rating": Decimal("4.6"),  # ~8.9k товаров, только винил, нишевые лейблы/raras
+        "is_active": True,
+        "requires_browser": False,
+        "avg_shipping_rub": Decimal("400.00"),
+        "affiliate_program": None,
+    },
 ]
 
 
