@@ -86,11 +86,13 @@ def _format_clause(fmt: Optional[str]) -> tuple[str, dict]:
 )
 async def list_market_stores(
     min_in_stock: int = Query(
-        5,
+        1,
         ge=0,
         description=(
-            "Минимум in_stock листингов чтобы магазин показывался. "
-            "По умолчанию 5 — иначе карусели будут «пустые» с одной карточкой."
+            "Минимум in_stock МАТЧЕННЫХ листингов с обложкой чтобы магазин "
+            "показывался. По умолчанию 1 — даже только что подключённый магазин "
+            "с парой матчей попадает в витрину. Карусель сама обрежется до "
+            "доступных карточек."
         ),
     ),
     db: AsyncSession = Depends(get_db),
@@ -103,27 +105,40 @@ async def list_market_stores(
     cutoff = datetime.utcnow() - timedelta(days=STALE_AFTER_DAYS)
     new_cutoff = datetime.utcnow() - timedelta(hours=NEW_TODAY_HOURS)
 
+    # in_stock_count считаем ТОЛЬКО матченные с обложкой — это и есть «реально
+    # доступные в карусели» товары. Иначе шапка магазина обещает 996 пластинок,
+    # а карусель отдаёт 0 (не матчены) → юзер злится.
     sql = text(
         """
         SELECT
             s.slug, s.name, s.logo_url, s.rating,
             COUNT(sl.id) FILTER (
-                WHERE sl.status = 'in_stock' AND sl.last_seen_at >= :cutoff
+                WHERE sl.status = 'in_stock'
+                  AND sl.last_seen_at >= :cutoff
+                  AND sl.matched_record_id IS NOT NULL
+                  AND COALESCE(r.cover_image_url, sl.raw_payload->>'image_url') IS NOT NULL
             ) AS in_stock_count,
             AVG(sl.price_rub) FILTER (
-                WHERE sl.status = 'in_stock' AND sl.last_seen_at >= :cutoff
+                WHERE sl.status = 'in_stock'
+                  AND sl.last_seen_at >= :cutoff
                   AND sl.price_rub IS NOT NULL
+                  AND sl.matched_record_id IS NOT NULL
             ) AS avg_price_rub,
             COUNT(sl.id) FILTER (
                 WHERE sl.status = 'in_stock'
                   AND sl.first_seen_at >= :new_cutoff
+                  AND sl.matched_record_id IS NOT NULL
             ) AS new_today_count
         FROM stores s
         LEFT JOIN store_listings sl ON sl.store_id = s.id
+        LEFT JOIN records r ON r.id = sl.matched_record_id
         WHERE s.is_active = true
         GROUP BY s.id
         HAVING COUNT(sl.id) FILTER (
-            WHERE sl.status = 'in_stock' AND sl.last_seen_at >= :cutoff
+            WHERE sl.status = 'in_stock'
+              AND sl.last_seen_at >= :cutoff
+              AND sl.matched_record_id IS NOT NULL
+              AND COALESCE(r.cover_image_url, sl.raw_payload->>'image_url') IS NOT NULL
         ) >= :min_in_stock
         ORDER BY s.rating DESC NULLS LAST, s.name ASC
         """
@@ -184,6 +199,8 @@ async def get_store_listings(
 
     # DISTINCT ON по matched_record_id — на одну запись отдаём только самую дешёвую
     # из этого магазина (на случай если в магазине несколько листингов одного release).
+    # Карусель карточек = МАТЧЕННЫЕ листинги С обложкой. Без обложки в гриде
+    # дырки, юзер думает «магазин криво подключили».
     sql = text(
         f"""
         WITH ranked AS (
@@ -204,6 +221,7 @@ async def get_store_listings(
               AND sl.matched_record_id IS NOT NULL
               AND sl.price_rub IS NOT NULL
               AND sl.last_seen_at >= :cutoff
+              AND COALESCE(r.cover_image_url, sl.raw_payload->>'image_url') IS NOT NULL
             ORDER BY sl.matched_record_id, sl.price_rub ASC NULLS LAST
         )
         SELECT * FROM ranked
@@ -272,6 +290,8 @@ async def get_store_all(
         q_clause = " AND (r.artist ILIKE :q OR r.title ILIKE :q)"
         q_params["q"] = f"%{q}%"
 
+    # /all — пагинированная витрина. Тот же filter on NULL cover что в /listings:
+    # дырки портят сетку 2-колонок.
     sql = text(
         f"""
         WITH ranked AS (
@@ -292,6 +312,7 @@ async def get_store_all(
               AND sl.matched_record_id IS NOT NULL
               AND sl.price_rub IS NOT NULL
               AND sl.last_seen_at >= :cutoff
+              AND COALESCE(r.cover_image_url, sl.raw_payload->>'image_url') IS NOT NULL
               {fmt_sql}
               {q_clause}
             ORDER BY sl.matched_record_id, sl.price_rub ASC NULLS LAST
@@ -385,6 +406,7 @@ async def search_market(
               AND sl.matched_record_id IS NOT NULL
               AND sl.price_rub IS NOT NULL
               AND sl.last_seen_at >= :cutoff
+              AND COALESCE(r.cover_image_url, sl.raw_payload->>'image_url') IS NOT NULL
               {fmt_sql}
               {q_clause}
             GROUP BY sl.matched_record_id

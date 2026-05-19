@@ -205,6 +205,81 @@ async def _ensure_record_artist_data(record: Record, db: AsyncSession) -> None:
         logger.exception("Failed to get artist thumb for artist %s", artist_id)
 
 
+async def _ensure_record_discogs_payload(record: Record, db: AsyncSession) -> None:
+    """
+    Подтягивает полный Discogs-release payload, если запись минтилась без него.
+
+    Сценарий: market-matcher создал Record из листинга магазина с минимальным
+    набором полей (artist/title/barcode/cover) — без tracklist, label,
+    catalog_number, master_id. Юзер открывает детальную → видит обложку,
+    но нет треклиста и других версий релиза.
+
+    Эта функция один раз тянет полный release из Discogs и обновляет запись.
+    Дальше всё в БД, повторных Discogs-вызовов не будет.
+
+    Условие срабатывания: tracklist пустой/null И есть discogs_id.
+    """
+    if not record.discogs_id:
+        return
+    if record.tracklist:  # уже есть — пропускаем
+        return
+
+    try:
+        discogs = DiscogsService()
+        data = await discogs.get_release(record.discogs_id, priority=Priority.DETAIL)
+    except Exception:
+        logger.exception("Failed to enrich record %s with Discogs payload", record.discogs_id)
+        return
+
+    if not data:
+        return
+
+    # Заполняем поля только если они пустые — не затираем уже существующие
+    # (например, label из листинга магазина может быть точнее чем Discogs).
+    changed = False
+    if not record.tracklist and data.get("tracklist"):
+        record.tracklist = data["tracklist"]
+        changed = True
+    if not record.discogs_master_id and data.get("master_id"):
+        record.discogs_master_id = data["master_id"]
+        changed = True
+    if not record.label and data.get("label"):
+        record.label = data["label"]
+        changed = True
+    if not record.catalog_number and data.get("catalog_number"):
+        record.catalog_number = data["catalog_number"]
+        changed = True
+    if not record.year and data.get("year"):
+        record.year = data["year"]
+        changed = True
+    if not record.country and data.get("country"):
+        record.country = data["country"]
+        changed = True
+    if not record.genre and data.get("genre"):
+        record.genre = data["genre"]
+        changed = True
+    if not record.style and data.get("style"):
+        record.style = data["style"]
+        changed = True
+    if not record.format_type and data.get("format"):
+        record.format_type = data["format"]
+        changed = True
+
+    # discogs_data перезаписываем целиком — это «сырой» payload для UI
+    # (vinyl_color_raw, artist_id, artist_thumb_image_url рисуются из него).
+    if not record.discogs_data or "tracklist" not in (record.discogs_data or {}):
+        record.discogs_data = data
+        changed = True
+
+    if changed:
+        try:
+            await db.commit()
+            await db.refresh(record)
+        except Exception:
+            logger.exception("Failed to persist Discogs payload for record %s", record.discogs_id)
+            await db.rollback()
+
+
 async def get_or_create_record_by_discogs_id(
     discogs_id: str,
     db: AsyncSession
@@ -511,6 +586,8 @@ async def get_record(
     # Обогащаем данные артиста и цены, если отсутствуют
     await _ensure_record_artist_data(record, db)
     await _ensure_record_price_data(record, db)
+    # Догружаем tracklist/master_id из Discogs, если запись минтилась без них
+    await _ensure_record_discogs_payload(record, db)
 
     response = RecordResponse.model_validate(record)
     discogs_data = record.discogs_data or {}
@@ -542,6 +619,12 @@ async def get_record_by_discogs_id(
         # Обогащаем данные артиста и цены, если отсутствуют
         await _ensure_record_artist_data(record, db)
         await _ensure_record_price_data(record, db)
+
+        # Догружаем tracklist + artist_thumb с Discogs, если запись минтилась
+        # без них (сценарий: matcher создал Record из листинга магазина с
+        # минимальным набором полей — barcode/title/artist; tracklist пустой
+        # и юзер видит детальную без треклиста).
+        await _ensure_record_discogs_payload(record, db)
 
         discogs_data = record.discogs_data or {}
         response = RecordResponse.model_validate(record)
