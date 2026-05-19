@@ -49,6 +49,10 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Icon } from '@/components/ui';
+import {
+  MessageContextMenu,
+  type MenuAction,
+} from '../../components/messages/MessageContextMenu';
 import { Colors, Spacing, BorderRadius } from '../../constants/theme';
 import { useAuthStore } from '../../lib/store';
 import { useMessagesStore } from '../../lib/messagesStore';
@@ -562,6 +566,10 @@ export default function ConversationScreen() {
   const [highlightedMessageId, setHighlightedMessageId] = useState<string | null>(null);
   const [showScrollToBottom, setShowScrollToBottom] = useState(false);
   const [unreadAccum, setUnreadAccum] = useState(0);
+  const [menuTarget, setMenuTarget] = useState<{
+    message: Message;
+    isMine: boolean;
+  } | null>(null);
   const typingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const highlightTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastTypingSentRef = useRef<number>(0);
@@ -879,33 +887,59 @@ export default function ConversationScreen() {
 
   const openBubbleMenu = useCallback(
     (m: Message, isMine: boolean) => {
-      const hasBody = !!(m.body && m.body.trim().length > 0);
-      const labels: string[] = ['Ответить'];
-      const handlers: Array<() => void> = [() => setReplyTo(m)];
+      setMenuTarget({ message: m, isMine });
+    },
+    [],
+  );
 
-      if (hasBody) {
-        labels.push('Скопировать');
-        handlers.push(() => {
+  const menuActions = useMemo<MenuAction[]>(() => {
+    if (!menuTarget) return [];
+    const { message: m, isMine } = menuTarget;
+    const hasBody = !!(m.body && m.body.trim().length > 0);
+    const list: MenuAction[] = [
+      {
+        key: 'reply',
+        label: 'Ответить',
+        icon: 'arrow-clockwise',
+        onPress: () => setReplyTo(m),
+      },
+    ];
+    if (hasBody) {
+      list.push({
+        key: 'copy',
+        label: 'Скопировать',
+        icon: 'copy',
+        onPress: () => {
           if (m.body) Clipboard.setStringAsync(m.body);
-        });
-      }
-
-      labels.push('Поделиться');
-      handlers.push(() => {
+        },
+      });
+    }
+    list.push({
+      key: 'share',
+      label: 'Поделиться',
+      icon: 'share',
+      onPress: () => {
         const text = m.body
           ? m.body
           : m.attached_record
           ? `${m.attached_record.title} — ${m.attached_record.artist}`
           : '';
         if (text) Share.share({ message: text }).catch(() => {});
-      });
-
-      labels.push('Выделить');
-      handlers.push(() => toggleSelection(m.id));
-
-      if (isMine) {
-        labels.push('Удалить');
-        handlers.push(() => {
+      },
+    });
+    list.push({
+      key: 'select',
+      label: 'Выделить',
+      icon: 'check-circle',
+      onPress: () => toggleSelection(m.id),
+    });
+    if (isMine) {
+      list.push({
+        key: 'delete',
+        label: 'Удалить',
+        icon: 'trash',
+        destructive: true,
+        onPress: () => {
           Alert.alert('Удалить сообщение?', 'Удаление видно у обеих сторон.', [
             { text: 'Отмена', style: 'cancel' },
             {
@@ -921,36 +955,18 @@ export default function ConversationScreen() {
               },
             },
           ]);
-        });
-      }
+        },
+      });
+    }
+    return list;
+  }, [menuTarget, conversationId, loadThread, toggleSelection]);
 
-      const cancelIdx = labels.length;
-      const destructiveIdx = isMine ? labels.length - 1 : undefined;
-
-      if (Platform.OS === 'ios') {
-        ActionSheetIOS.showActionSheetWithOptions(
-          {
-            options: [...labels, 'Отмена'],
-            cancelButtonIndex: cancelIdx,
-            destructiveButtonIndex: destructiveIdx,
-          },
-          (i) => {
-            if (i === cancelIdx) return;
-            handlers[i]?.();
-          },
-        );
-      } else {
-        Alert.alert('Действия', undefined, [
-          ...labels.map((label, i) => ({
-            text: label,
-            style: (i === destructiveIdx ? 'destructive' : 'default') as 'destructive' | 'default',
-            onPress: handlers[i],
-          })),
-          { text: 'Отмена', style: 'cancel' as const },
-        ]);
-      }
+  const handleQuickReact = useCallback(
+    (_emoji: string) => {
+      // Реакции подключим в Phase 3 после деплоя бэка. Сейчас просто закрываем
+      // меню — пользователь видит, что реакции есть, но они noop.
     },
-    [conversationId, loadThread, toggleSelection],
+    [],
   );
 
   const openAttachedRecord = useCallback(
@@ -1317,6 +1333,32 @@ export default function ConversationScreen() {
           </TouchableOpacity>
         </View>
       </KeyboardAvoidingView>
+
+      <MessageContextMenu
+        visible={!!menuTarget}
+        isMine={menuTarget?.isMine ?? false}
+        bubbleSnapshot={
+          menuTarget ? (
+            <MessageBubble
+              message={menuTarget.message}
+              isMine={menuTarget.isMine}
+              isLastInGroup
+              isFirstInGroup
+              isRead={false}
+              isSelected={false}
+              isHighlighted={false}
+              selectionMode={false}
+              onLongPress={() => {}}
+              onPress={() => {}}
+              onOpenRecord={openAttachedRecord}
+              onJumpToReply={undefined}
+            />
+          ) : null
+        }
+        actions={menuActions}
+        onClose={() => setMenuTarget(null)}
+        onReact={handleQuickReact}
+      />
     </View>
   );
 }
