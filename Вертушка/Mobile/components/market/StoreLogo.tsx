@@ -39,25 +39,25 @@ const STORE_REGISTRY: Record<string, {
     name: 'Коробка Винила',
     monogram: 'К',
     bgColor: '#E85A2A',
-    // logoSource: require('../../assets/store-logos/korobkavinyla.png'),
+    logoSource: require('../../assets/store-logos/korobkavinyla.png'),
   },
   plastinka_com: {
     name: 'Plastinka.com',
     monogram: 'P',
     bgColor: '#FFFFFF',
-    // logoSource: require('../../assets/store-logos/plastinka_com.png'),
+    logoSource: require('../../assets/store-logos/plastinka_com.png'),
   },
   vinyl_ru: {
     name: 'Vinyl.ru',
     monogram: 'V',
     bgColor: '#000000',
-    // logoSource: require('../../assets/store-logos/vinyl_ru.png'),
+    logoSource: require('../../assets/store-logos/vinyl_ru.png'),
   },
   stoprobotvinyl: {
     name: 'Stoprobot Vinyl',
     monogram: 'S',
     bgColor: '#1B1B1B',
-    // logoSource: require('../../assets/store-logos/stoprobotvinyl.png'),
+    logoSource: require('../../assets/store-logos/stoprobotvinyl.png'),
   },
 };
 
