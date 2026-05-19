@@ -114,7 +114,68 @@ export interface Offer {
   url: string;            // уже завёрнут в affiliate если применимо
   status: 'in_stock' | 'preorder';
   last_seen_at: string;   // ISO
+  // Phase 5 fields — для OfferDetailCard в bottom-sheet (Backend Phase 6):
+  catalog_number?: string | null;
+  is_alt_version?: boolean;
+  image_url?: string | null;
 }
+
+// ==================== Market (Phase 1-6 backend wiring) ====================
+//
+// Соответствует Backend/app/schemas/offer.py.
+// Используется в Mobile/components/market/* для HotStockTag, MarketSection,
+// OffersBottomSheet и т.д.
+
+/**
+ * Аггрегат офферов на одну запись. Mobile вычисляет HotStockVariant правилами:
+ *   - in_stock_count == 1 → 'inStock'
+ *   - in_stock_count >= 2 → 'inStockMulti'
+ *   - has_last_one → префикс 'lastOne'
+ *   - in_stock_count == 0 && alt_version_count > 0 → 'altVersion'
+ *   - in_stock_count == 0 && preorder_count > 0 → 'preorder'
+ *   - всё ноль → 'none' (HotStockTag вернёт null)
+ */
+export interface RecordOffersSummary {
+  in_stock_count: number;
+  preorder_count: number;
+  alt_version_count: number;
+  min_price_rub: string | null;
+  min_price_alt_rub: string | null;
+  has_last_one: boolean;
+  stores_with_stock: number;
+}
+
+export interface RecordOffersFullResponse {
+  summary: RecordOffersSummary;
+  offers: Offer[];
+}
+
+export interface MarketStoreInfo {
+  slug: string;
+  name: string;
+  logo_url?: string | null;
+  rating: number;
+  in_stock_count: number;
+  avg_price_rub?: string | null;
+  new_today_count: number;
+}
+
+export interface MarketSearchItem {
+  record_id: string;
+  discogs_id?: string | null;
+  artist: string;
+  title: string;
+  year?: number | null;
+  format_type?: string | null;
+  cover_image_url?: string | null;
+  min_price_rub: string;
+  stores_with_stock: number;
+  cheapest_store_slug: string;
+  first_seen_at: string;
+}
+
+export type MarketFormatFilter = 'vinyl' | 'cd' | 'cassette';
+export type MarketSortMode = 'price_asc' | 'newest';
 
 export type OfferSort = 'price' | 'rating';
 

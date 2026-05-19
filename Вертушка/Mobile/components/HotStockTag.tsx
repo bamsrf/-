@@ -368,4 +368,92 @@ const styles = StyleSheet.create({
   },
 });
 
+// ────────────────────────────────────────────────────────────────────────
+// summaryToHotStock — компьютер variant'а из RecordOffersSummary.
+//
+// Правила взяты из MARKET_AND_PRICE_DRAWER.md §1.15 (комментарий к
+// RecordOffersSummary в Backend/app/schemas/offer.py). Один SQL Mobile
+// делает на сетку карточек, потом мапит результат в карточки.
+//
+// Также применяет правила «когда НЕ показывать» (OFFERS_UX.md §2.8):
+//   - `rarityContext === 'collection'` → не показываем 'inStock'/'inStockMulti'
+//     (у юзера уже эта пластинка) — только альтернативная версия как апселл.
+//   - `compact` карточка в сетке → не показываем 'preorder' и 'altVersion'
+//     (defer в hero-моменты на детальном экране).
+// ────────────────────────────────────────────────────────────────────────
+
+interface HotStockSummaryLike {
+  in_stock_count: number;
+  preorder_count: number;
+  alt_version_count: number;
+  min_price_rub: string | number | null;
+  min_price_alt_rub: string | number | null;
+  has_last_one: boolean;
+}
+
+export interface ResolvedHotStock {
+  variant: HotStockVariant;
+  price: number;
+}
+
+export interface HotStockContextHints {
+  /** Где рендерится карточка. Влияет на «когда НЕ показывать» (OFFERS_UX.md §2.8). */
+  context?: 'search' | 'wishlist' | 'collection' | 'market' | 'detail';
+  /** Карточка в сетке (compact). Не показываем preorder/altVersion. */
+  isGrid?: boolean;
+}
+
+export function summaryToHotStock(
+  summary: HotStockSummaryLike | null | undefined,
+  hints: HotStockContextHints = {},
+): ResolvedHotStock | null {
+  if (!summary) return null;
+
+  const { context = 'search', isGrid = false } = hints;
+  const minPrice = toNumber(summary.min_price_rub);
+  const minPriceAlt = toNumber(summary.min_price_alt_rub);
+
+  // ── Защита от инфляции токена ────────────────────────────────────────
+  const inCollection = context === 'collection';
+
+  // 1. inStock / inStockMulti (главный «огонь»)
+  if (summary.in_stock_count > 0 && minPrice !== null) {
+    // В коллекции «купить то, что уже есть» — не показываем
+    if (inCollection) {
+      // Fallthrough на altVersion если она есть, иначе ничего
+      if (summary.alt_version_count > 0 && minPriceAlt !== null) {
+        return { variant: 'altVersion', price: minPriceAlt };
+      }
+      return null;
+    }
+    if (summary.has_last_one) {
+      return { variant: 'lastOne', price: minPrice };
+    }
+    return {
+      variant: summary.in_stock_count === 1 ? 'inStock' : 'inStockMulti',
+      price: minPrice,
+    };
+  }
+
+  // 2. altVersion (другой пресс мастера) — не на главной/сетке поиска
+  if (summary.alt_version_count > 0 && minPriceAlt !== null) {
+    if (isGrid && context !== 'wishlist' && context !== 'market') return null;
+    return { variant: 'altVersion', price: minPriceAlt };
+  }
+
+  // 3. preorder — только на детальном экране, не в сетках
+  if (summary.preorder_count > 0 && minPrice !== null) {
+    if (isGrid) return null;
+    return { variant: 'preorder', price: minPrice };
+  }
+
+  return null;
+}
+
+function toNumber(value: string | number | null | undefined): number | null {
+  if (value === null || value === undefined) return null;
+  const n = typeof value === 'number' ? value : parseFloat(value);
+  return Number.isFinite(n) ? n : null;
+}
+
 export default HotStockTag;

@@ -23,6 +23,7 @@ import { RecordSearchResult, VinylRecord, MasterSearchResult, ReleaseSearchResul
 import { getCoverUrl } from '../lib/api';
 import { cleanArtistName } from '../lib/format';
 import { RarityAura, TierCoverEffects, TierLabel, pickRarityTier, RarityContext, RarityFlags, RARITY_TIERS } from './RarityAura';
+import HotStockTag, { type ResolvedHotStock } from './HotStockTag';
 
 const { width } = Dimensions.get('window');
 const CARD_WIDTH = (width - Spacing.md * 3) / 2;
@@ -46,6 +47,14 @@ interface RecordCardProps {
   rarityContext?: RarityContext;
   /** Disable the rarity aura/animation wrapper — show only the inline text label. Used in grid/tile mode. */
   noRarityAura?: boolean;
+  /**
+   * Hot Stock indicator — рендерится в правом нижнем углу (compact),
+   * в text-block (expanded) или справа (list). Передаётся уже-вычисленный
+   * {variant, price} — используй summaryToHotStock(summary, hints) на родителе.
+   * Если undefined/null — карточка как обычно, без pill'а.
+   * См. docs/plans/MARKET_AND_PRICE_DRAWER.md §2.4 + OFFERS_UX.md §2.8.
+   */
+  hotStock?: ResolvedHotStock | null;
 }
 
 const FORMAT_TRANSLATIONS: Record<string, string> = {
@@ -113,6 +122,7 @@ function RecordCardComponent({
   isBooked = false,
   rarityContext = 'search',
   noRarityAura = false,
+  hotStock,
 }: RecordCardProps) {
   const imageUrl = getCoverUrl(record);
   const artistDisplay = cleanArtistName(record.artist);
@@ -214,6 +224,29 @@ function RecordCardComponent({
             <Icon name="gift-outline" size={12} color={Colors.background} />
             <Text style={styles.bookedBadgeText}>Забронировано</Text>
           </LinearGradient>
+        )}
+
+        {/* Hot Stock pill — bottom-right overlay (top-right для altVersion).
+            MARKET_AND_PRICE_DRAWER.md §2.4.1 — pill живёт ВНУТРИ gradient overlay,
+            прижат к правому углу с offset 8dp. altVersion смещается вверх, чтобы
+            не перекрывать имя/название в нижнем блоке. */}
+        {hotStock && (
+          <View
+            pointerEvents="none"
+            style={
+              hotStock.variant === 'altVersion'
+                ? styles.hotStockTopRight
+                : styles.hotStockBottomRight
+            }
+          >
+            <HotStockTag
+              variant={hotStock.variant}
+              price={hotStock.price}
+              size="sm"
+              showArrow={false}
+              showShadow={hotStock.variant !== 'altVersion'}
+            />
+          </View>
         )}
 
         {/* Gradient overlay с текстом */}
@@ -321,6 +354,20 @@ function RecordCardComponent({
           </View>
         </View>
 
+        {/* Hot Stock pill — справа вместо chevron'а. List-row компактный,
+            используем size='sm' без стрелки. MARKET_AND_PRICE_DRAWER.md §2.4.3. */}
+        {hotStock && (
+          <View style={styles.listHotStock} pointerEvents="none">
+            <HotStockTag
+              variant={hotStock.variant}
+              price={hotStock.price}
+              size="sm"
+              showArrow={false}
+              showShadow={hotStock.variant !== 'altVersion'}
+            />
+          </View>
+        )}
+
       </AnimatedPressable>
     );
 
@@ -422,6 +469,20 @@ function RecordCardComponent({
             </>
           )}
         </View>
+        {/* Hot Stock pill — отдельная строка под метой. MARKET_AND_PRICE_DRAWER.md §2.4.2:
+            высота карточки не растёт критично, pill добавляет ~24dp. Если место
+            не находится — fallback на compact-стиль решает родитель через variant. */}
+        {hotStock && (
+          <View style={styles.expandedHotStock} pointerEvents="none">
+            <HotStockTag
+              variant={hotStock.variant}
+              price={hotStock.price}
+              size="sm"
+              showArrow={false}
+              showShadow={hotStock.variant !== 'altVersion'}
+            />
+          </View>
+        )}
       </View>
 
       {showActions && (
@@ -738,6 +799,32 @@ const styles = StyleSheet.create({
   rarityWrapExpanded: {},
   cardNoMargin: {
     marginBottom: 0,
+  },
+  // ── Hot Stock pill placements ───────────────────────────────────────
+  // Compact variant: pill ВНУТРИ overlay в правом нижнем углу с offset 8dp.
+  // pointerEvents=none на родителе — тап проваливается на саму карточку.
+  hotStockBottomRight: {
+    position: 'absolute',
+    right: 8,
+    bottom: 8,
+    zIndex: 2, // выше gradient overlay
+  },
+  hotStockTopRight: {
+    position: 'absolute',
+    right: 8,
+    top: 8,
+    zIndex: 2,
+  },
+  // List variant: pill справа от текстового блока, прижата к правому краю
+  // карточки. Margin-right даёт «дышание».
+  listHotStock: {
+    marginRight: Spacing.sm,
+    alignSelf: 'center',
+  },
+  // Expanded variant: pill отдельной строкой под метой, выравнен по левому
+  // краю (alignSelf:'flex-start' через style на pill'е).
+  expandedHotStock: {
+    marginTop: 6,
   },
 });
 

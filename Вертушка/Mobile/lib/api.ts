@@ -53,6 +53,12 @@ import {
   Offer,
   OfferSort,
   MarketCarouselItem,
+  MarketStoreInfo,
+  MarketSearchItem,
+  MarketFormatFilter,
+  MarketSortMode,
+  RecordOffersSummary,
+  RecordOffersFullResponse,
 } from './types';
 
 // API сервер
@@ -494,6 +500,117 @@ class ApiClient {
     return this.deduplicatedGet<MarketCarouselItem[]>('/market/new-arrivals', {
       params: { limit },
     });
+  }
+
+  // ==================== Маркет — раздел в search.tsx ====================
+  //
+  // Соответствуют Backend/app/api/market.py. Используются в
+  // Mobile/components/market/* и (tabs)/search.tsx / market/store/[slug].
+
+  /**
+   * Витрина магазинов с метриками (in_stock_count / avg_price / new_today).
+   * Backend дефолтно скрывает магазины с <5 in_stock — чтобы не было пустых
+   * каруселей. См. MARKET_AND_PRICE_DRAWER.md §1.9.
+   */
+  async getMarketStores(minInStock = 5): Promise<MarketStoreInfo[]> {
+    return this.deduplicatedGet<MarketStoreInfo[]>('/market/stores', {
+      params: { min_in_stock: minInStock },
+    });
+  }
+
+  /**
+   * Карусель листингов одного магазина. До 50 на запрос. Дедупликация
+   * на бэке — на одну запись отдаётся только самый дешёвый листинг этого
+   * магазина (DISTINCT ON по matched_record_id).
+   */
+  async getStoreListings(
+    slug: string,
+    opts: { limit?: number; sort?: MarketSortMode } = {},
+  ): Promise<MarketCarouselItem[]> {
+    const { limit = 20, sort = 'newest' } = opts;
+    return this.deduplicatedGet<MarketCarouselItem[]>(
+      `/market/stores/${encodeURIComponent(slug)}/listings`,
+      { params: { limit, sort } },
+    );
+  }
+
+  /**
+   * Полная витрина магазина (пагинация) — для экрана `/market/store/[slug]`.
+   * q + format + sort + offset работают как ожидается. limit max 100.
+   */
+  async getStoreAll(
+    slug: string,
+    opts: {
+      q?: string;
+      format?: MarketFormatFilter | null;
+      sort?: MarketSortMode;
+      limit?: number;
+      offset?: number;
+    } = {},
+  ): Promise<MarketSearchItem[]> {
+    const { q, format, sort = 'price_asc', limit = 50, offset = 0 } = opts;
+    const params: Record<string, string | number> = { sort, limit, offset };
+    if (q && q.trim().length >= 2) params.q = q.trim();
+    if (format) params.format = format;
+    return this.deduplicatedGet<MarketSearchItem[]>(
+      `/market/stores/${encodeURIComponent(slug)}/all`,
+      { params },
+    );
+  }
+
+  /**
+   * Глобальный поиск по in_stock-листингам всех магазинов. Дедупликация
+   * по record_id (на одну запись — одна карточка с min_price + N магазинов).
+   * Пустой `q` → возвращает new arrivals (зависит от sort).
+   */
+  async searchMarket(
+    opts: {
+      q?: string;
+      format?: MarketFormatFilter | null;
+      sort?: MarketSortMode;
+      limit?: number;
+    } = {},
+  ): Promise<MarketSearchItem[]> {
+    const { q, format, sort = 'price_asc', limit = 50 } = opts;
+    const params: Record<string, string | number> = { sort, limit };
+    if (q && q.trim().length >= 2) params.q = q.trim();
+    if (format) params.format = format;
+    return this.deduplicatedGet<MarketSearchItem[]>('/market/search', { params });
+  }
+
+  /**
+   * Batch-аггрегат offers для сетки карточек (HotStockTag).
+   * Mobile вызывает один раз на видимый набор discogs_ids (до 100), мапит
+   * результат к карточкам и рендерит HotStockTag вариант.
+   *
+   * Возвращает map { discogs_id: RecordOffersSummary }. Записи без offers
+   * могут отсутствовать в map'е (HotStockTag для них вернёт null).
+   */
+  async getOffersSummary(
+    discogsIds: string[],
+  ): Promise<Record<string, RecordOffersSummary>> {
+    if (discogsIds.length === 0) return {};
+    // Срезаем до 100 (бэк-валидация: max_length=100)
+    const slice = discogsIds.slice(0, 100);
+    const response = await this.client.post<Record<string, RecordOffersSummary>>(
+      '/records/offers/summary',
+      { discogs_ids: slice },
+    );
+    return response.data;
+  }
+
+  /**
+   * Полные офферы (exact-match + alt-version) + summary одним response.
+   * Для OffersBottomSheet «Все варианты» (Phase 5 OFFERS_UX.md §2.3).
+   */
+  async getOfferDetailsFull(
+    discogsId: string,
+    includeMasterVersions = true,
+  ): Promise<RecordOffersFullResponse> {
+    return this.deduplicatedGet<RecordOffersFullResponse>(
+      `/records/${encodeURIComponent(discogsId)}/offers/full`,
+      { params: { include_master_versions: includeMasterVersions } },
+    );
   }
 
   /**
