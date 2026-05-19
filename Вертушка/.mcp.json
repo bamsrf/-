@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "vertushka-docs": {
+      "command": ".claude/mcp/.venv/bin/python",
+      "args": [".claude/mcp/server.py"]
+    }
+  }
+}

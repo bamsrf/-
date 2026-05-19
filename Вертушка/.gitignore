@@ -1,0 +1,12 @@
+# Claude Code context layer (V1) — local artifacts
+.claude/mcp/.venv/
+.claude/mcp/index.db
+.claude/mcp/index.db-journal
+.claude/mcp/__pycache__/
+.claude/mcp/*.pyc
+.claude/settings.local.json
+.claude/scheduled_tasks.lock
+.claude/worktrees/
+
+# OS / editor
+.DS_Store
