@@ -27,7 +27,6 @@ import {
   ActionSheetIOS,
   Alert,
   Keyboard,
-  LayoutChangeEvent,
   Share,
   NativeScrollEvent,
   NativeSyntheticEvent,
@@ -646,7 +645,6 @@ export default function ConversationScreen() {
   const [replyTo, setReplyTo] = useState<Message | null>(null);
   const [attachedRecord, setAttachedRecord] = useState<AttachedRecord | null>(null);
   const [partnerTyping, setPartnerTyping] = useState(false);
-  const [headerHeight, setHeaderHeight] = useState(0);
   const [keyboardVisible, setKeyboardVisible] = useState(false);
   const [highlightedMessageId, setHighlightedMessageId] = useState<string | null>(null);
   const [showScrollToBottom, setShowScrollToBottom] = useState(false);
@@ -677,11 +675,6 @@ export default function ConversationScreen() {
       h.remove();
     };
   }, []);
-
-  const onHeaderLayout = useCallback((e: LayoutChangeEvent) => {
-    const h = e.nativeEvent.layout.height;
-    if (h > 0 && Math.abs(h - headerHeight) > 0.5) setHeaderHeight(h);
-  }, [headerHeight]);
 
   // Когда возвращаемся со share-record экрана с params — подхватим выбор
   useEffect(() => {
@@ -1359,7 +1352,6 @@ export default function ConversationScreen() {
       {selectionMode ? (
         <View
           style={[styles.topbar, styles.topbarSelection, { paddingTop: insets.top + 6 }]}
-          onLayout={onHeaderLayout}
         >
           <TouchableOpacity onPress={clearSelection} style={styles.iconBtn}>
             <Icon name="close" size={20} color={Colors.text} />
@@ -1373,7 +1365,6 @@ export default function ConversationScreen() {
       ) : (
         <View
           style={[styles.topbar, { paddingTop: insets.top + 6 }]}
-          onLayout={onHeaderLayout}
         >
           <TouchableOpacity onPress={() => router.back()} style={styles.iconBtn}>
             <Icon name="arrow-left" size={22} color={Colors.text} />
@@ -1471,7 +1462,10 @@ export default function ConversationScreen() {
       <KeyboardAvoidingView
         style={styles.kbWrap}
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-        keyboardVerticalOffset={Platform.OS === 'ios' ? headerHeight : 0}
+        // Header находится СНАРУЖИ KAV, и KAV доходит до низа экрана —
+        // никакого дополнительного оффсета не нужно. Указание headerHeight
+        // давало лишний зазор размером с хедер.
+        keyboardVerticalOffset={0}
       >
         <View style={styles.listWrap}>
           <FlatList
