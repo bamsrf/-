@@ -35,7 +35,7 @@ export function Header({
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const { user } = useAuthStore();
-  const unreadCount = useNotificationsStore((s) => s.unreadCount);
+  const hasUnread = useNotificationsStore((s) => s.unreadCount > 0 || s.pendingNew > 0);
 
   const handleProfilePress = () => {
     router.push('/profile');
@@ -74,7 +74,7 @@ export function Header({
                     <Icon name="disc" size={20} color={Colors.background} />
                   </LinearGradient>
                 )}
-                {unreadCount > 0 ? <View style={styles.unreadDot} /> : null}
+                {hasUnread ? <View style={styles.unreadDot} /> : null}
               </TouchableOpacity>
             )
           )}
