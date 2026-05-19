@@ -138,13 +138,26 @@ def parse_year(value: str | None) -> int | None:
 
 
 _FORMAT_MAP: list[tuple[re.Pattern, str]] = [
-    (re.compile(r"\bbox\s*set\b|\bбокс[\-\s]?сет\b|\bкоробочн", re.I), "Box Set"),
-    (re.compile(r"\b2[\s\-]?lp\b|\bdouble\s*lp\b|\bдабл[\s\-]?lp\b", re.I), "2xLP"),
-    (re.compile(r"\blp\b|\bвинил\b|\bvinyl\b|12''|12\"", re.I), "LP"),
-    (re.compile(r"\bep\b|\b10''|10\"", re.I), "EP"),
-    (re.compile(r"\bsingle\b|\bсингл\b|7''|7\"", re.I), "Single"),
+    # Box Set: «box set» / «box-set» / «boxset» / «бокс-сет» / «коробочное издание»
+    # Порядок важен — Box Set должен выиграть у «vinyl box set» где есть и LP-сигнал
+    (re.compile(r"\bbox[\-\s_]*set\b|\bboxset\b|\bбокс[\-\s_]?сет\b|\bкоробочн", re.I), "Box Set"),
+    # NxLP / NxVinyl: «2xLP», «3 LP», «4xVinyl», «double LP», «дабл-LP» — мультидисковые
+    # пресс-сеты не-Box. Захватываем число → нормализуем в «2xLP» (количество в format_raw
+    # сохраняем сырое, для матчинга достаточно знать что это набор LP)
+    (re.compile(r"\b\d+\s*x?\s*[\-]?\s*(?:lp|vinyl)\b|\bdouble\s*lp\b|\bдабл[\s\-]?lp\b", re.I), "2xLP"),
+    # Single LP / 12" — основной винил
+    (re.compile(r"\blp\b|\bвинил\b|\bvinyl\b|12['']{1,2}|12\"", re.I), "LP"),
+    # EP — extended play / 10"
+    (re.compile(r"\bep\b|\b10['']{1,2}|10\"", re.I), "EP"),
+    # 7" сингл
+    (re.compile(r"\bsingle\b|\bсингл\b|7['']{1,2}|7\"", re.I), "Single"),
+    # CD — compact disc. \bcd\b — границы слов чтобы не сматчить acdc-band
     (re.compile(r"\bcd\b", re.I), "CD"),
-    (re.compile(r"\bкассет|cassette|tape\b", re.I), "Cassette"),
+    # Кассета. «tape» убран — слишком много false positives (sticky tape в описании
+    # клеящихся стрипов, например). Если нужно — «cassette tape» как пара слов.
+    (re.compile(r"\bкассет(?:а|ы)?\b|\bcassette\b", re.I), "Cassette"),
+    # Hybrid / SACD — реже но встречается в premium-изданиях
+    (re.compile(r"\bsacd\b|\bhybrid\s*sacd\b", re.I), "SACD"),
 ]
 
 

@@ -67,7 +67,12 @@ class KorobkaVinylaParser(BaseStoreParser):
         descr_html = (product.get("descr") if product else "") or ""
         descr_text = BeautifulSoup(descr_html, "lxml").get_text(" ", strip=True) if descr_html else ""
         meta_descr = _meta_content(soup, "og:description", attr="property") or ""
-        full_text = f"{title}\n{descr_text}\n{meta_descr}"
+        # URL slug добавляем для format detection: URL формата
+        # /tproduct/{rootpartid}-{barcode}-{slug}, где slug часто содержит формат
+        # («-cd», «-box-set», «-cassette»). Если у товара пустой descr — slug
+        # спасёт infer_format. Дефис → пробел чтобы \b в regex сработали.
+        url_slug = url.rsplit("/", 1)[-1].replace("-", " ")
+        full_text = f"{title}\n{descr_text}\n{meta_descr}\n{url_slug}"
 
         artist, album = _split_artist_album(title)
 
