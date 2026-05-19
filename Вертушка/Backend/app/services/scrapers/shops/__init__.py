@@ -13,3 +13,4 @@ Per-shop парсеры.
 """
 
 from app.services.scrapers.shops import korobkavinyla  # noqa: F401
+from app.services.scrapers.shops import plastinka_com  # noqa: F401

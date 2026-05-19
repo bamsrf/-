@@ -40,15 +40,19 @@ STORES: list[dict] = [
         "avg_shipping_rub": Decimal("400.00"),
         "affiliate_program": None,  # пока без партнёрки
     },
-    # Добавляй сюда другие магазины:
-    # {
-    #     "slug": "plastinka_com",
-    #     "name": "Plastinka.com",
-    #     "domain": "plastinka.com",
-    #     "base_url": "https://plastinka.com",
-    #     "parser_class": "plastinka_com",
-    #     ...
-    # },
+    {
+        "slug": "plastinka_com",
+        "name": "Plastinka.com",
+        "domain": "plastinka.com",
+        "base_url": "https://plastinka.com",
+        "parser_class": "plastinka_com",
+        "logo_url": None,
+        "rating": Decimal("4.7"),  # крупный СПб-магазин, много отзывов
+        "is_active": True,
+        "requires_browser": False,
+        "avg_shipping_rub": Decimal("450.00"),
+        "affiliate_program": None,
+    },
 ]
 
 

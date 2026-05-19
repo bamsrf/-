@@ -173,6 +173,23 @@ async def match_listing(listing: StoreListing, db: AsyncSession) -> bool:
             _apply_match(listing, rec, Decimal("0.950"), MatchMethod.DISCOGS_FETCH)
             return True
 
+    # 5b) Fallback on-demand fetch by artist+title — для магазинов без barcode
+    # (например, Plastinka.com публикует только название/артиста, без EAN).
+    # Точность ниже чем barcode (Discogs search может вернуть похожий, но не
+    # точно тот pressing), поэтому confidence 0.85 — на грани автоматического
+    # acceptance. Если хочется строже — поднять FUZZY_THRESHOLD или вручную
+    # модерировать через /admin/unmatched.
+    if listing.artist_raw and listing.title_raw:
+        rec = await _try_discogs_fetch_by_text(
+            db,
+            artist=listing.artist_raw,
+            title=listing.title_raw,
+            year=listing.year_raw,
+        )
+        if rec:
+            _apply_match(listing, rec, Decimal("0.850"), MatchMethod.DISCOGS_FETCH)
+            return True
+
     return False
 
 
@@ -231,34 +248,106 @@ async def _try_discogs_fetch(
         if not items:
             return None
 
-        first = items[0]
-        discogs_id = str(first.get("id"))
-        # Если Record уже существует — вернём
-        existing = await _find_by_discogs_id(db, discogs_id)
-        if existing:
-            return existing
-
-        # Создаём минимальную запись (полное обогащение прилетит из api/records.py)
-        title = first.get("title", "")
-        artist, _, album = title.partition(" - ")
-        rec = Record(
-            discogs_id=discogs_id,
-            title=album.strip() or title.strip(),
-            artist=artist.strip() or "Unknown",
-            year=int(first["year"]) if first.get("year") and str(first["year"]).isdigit() else None,
-            barcode=barcode,
-            catalog_number=(first.get("catno") or catalog),
-            label=(first.get("label") or [None])[0],
-            cover_image_url=first.get("cover_image"),
-            thumb_image_url=first.get("thumb"),
-            country=first.get("country"),
-        )
-        db.add(rec)
-        await db.flush()
-        return rec
+        return await _save_discogs_result(db, items[0], barcode=barcode, catalog=catalog)
     except Exception:
         logger.exception("on-demand discogs fetch failed (barcode=%s catalog=%s)", barcode, catalog)
         return None
+
+
+async def _try_discogs_fetch_by_text(
+    db: AsyncSession, *, artist: str, title: str, year: int | None,
+) -> Record | None:
+    """
+    Поиск Record через Discogs API по artist+title (для магазинов без barcode,
+    например Plastinka.com). Соблюдает тот же hourly-counter что и barcode-fetch.
+    Возвращает первый результат если matches достаточно близко по году.
+    """
+    from app.services.cache import cache
+    counter_key = "discogs_ondemand_hits"
+    counter_ns = "scraper:counters"
+
+    if cache.available:
+        try:
+            assert cache._pool is not None
+            redis_key = cache._key(counter_ns, counter_key)
+            count = await cache._pool.incr(redis_key)
+            if count == 1:
+                await cache._pool.expire(redis_key, 3600)
+            if count > DISCOGS_FETCH_HOURLY_LIMIT:
+                return None
+        except Exception:
+            logger.debug("on-demand counter failed", exc_info=True)
+
+    try:
+        from app.services.discogs import DiscogsService
+        from app.services.rate_limiter import Priority
+
+        discogs = DiscogsService()
+        params: dict = {
+            "format": "Vinyl",
+            "type": "release",
+            "per_page": 5,
+            "artist": artist,
+            "release_title": title,
+        }
+        if year:
+            params["year"] = year
+
+        results = await discogs._get(
+            f"{discogs.BASE_URL}/database/search",
+            params=params,
+            priority=Priority.ENRICHMENT,
+        )
+        items = results.get("results", [])
+        if not items:
+            return None
+
+        # Берём первый — Discogs обычно выдаёт самый релевантный сверху.
+        # Если есть год, дополнительно проверяем что найденный совпадает ±1 год
+        # (Discogs иногда показывает re-issues с другим годом, нам важна суть).
+        first = items[0]
+        if year:
+            found_year = first.get("year")
+            try:
+                if found_year and abs(int(found_year) - year) > 1:
+                    return None
+            except (ValueError, TypeError):
+                pass
+
+        return await _save_discogs_result(db, first, barcode=None, catalog=None)
+    except Exception:
+        logger.exception(
+            "on-demand discogs fetch-by-text failed (artist=%s title=%s)", artist, title,
+        )
+        return None
+
+
+async def _save_discogs_result(
+    db: AsyncSession, first: dict, *, barcode: str | None, catalog: str | None,
+) -> Record | None:
+    """Общий хелпер: из Discogs search-результата создаёт Record (если ещё нет)."""
+    discogs_id = str(first.get("id"))
+    existing = await _find_by_discogs_id(db, discogs_id)
+    if existing:
+        return existing
+
+    title = first.get("title", "")
+    artist, _, album = title.partition(" - ")
+    rec = Record(
+        discogs_id=discogs_id,
+        title=album.strip() or title.strip(),
+        artist=artist.strip() or "Unknown",
+        year=int(first["year"]) if first.get("year") and str(first["year"]).isdigit() else None,
+        barcode=barcode,
+        catalog_number=(first.get("catno") or catalog),
+        label=(first.get("label") or [None])[0],
+        cover_image_url=first.get("cover_image"),
+        thumb_image_url=first.get("thumb"),
+        country=first.get("country"),
+    )
+    db.add(rec)
+    await db.flush()
+    return rec
 
 
 # ---- Batch-матчер для cron --------------------------------------------- #
