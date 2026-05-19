@@ -25,7 +25,15 @@ from app.models.record import Record
 from app.models.store import Store
 from app.models.store_listing import StoreListing, ListingStatus
 from app.models.user import User
-from app.schemas.offer import MarketCarouselItem, OfferClickResponse, OfferResponse, StoreInfo
+from app.schemas.offer import (
+    MarketCarouselItem,
+    OfferClickResponse,
+    OfferResponse,
+    RecordOffersFullResponse,
+    RecordOffersSummary,
+    RecordOffersSummaryRequest,
+    StoreInfo,
+)
 from app.services.affiliate import wrap_url
 from app.services.cache import cache
 
@@ -91,8 +99,13 @@ async def get_record_offers(
     return offers
 
 
-def _to_response(listing: StoreListing) -> OfferResponse:
-    """Preview-URL для GET /offers — без subid (он создаётся при клике)."""
+def _to_response(listing: StoreListing, *, is_alt_version: bool = False) -> OfferResponse:
+    """Preview-URL для GET /offers — без subid (он создаётся при клике).
+
+    `is_alt_version` — пробрасывается в response для бейджа «АЛТ» в
+    Mobile OfferDetailCard (Phase 5). True если у listing'а тот же
+    discogs_master_id, что у запрошенной записи, но другой discogs_id.
+    """
     store = listing.store
     return OfferResponse(
         listing_id=listing.id,
@@ -111,7 +124,21 @@ def _to_response(listing: StoreListing) -> OfferResponse:
         url=wrap_url(store, listing.url),
         status=listing.status,
         last_seen_at=listing.last_seen_at,
+        # catalog_number / image_url не хранятся отдельными колонками в БД —
+        # парсеры кладут их в raw_payload JSONB. Достаём оттуда safe-fallback'ом.
+        catalog_number=_get_payload_str(listing, 'catalog_number'),
+        is_alt_version=is_alt_version,
+        image_url=_get_payload_str(listing, 'image_url'),
     )
+
+
+def _get_payload_str(listing: StoreListing, key: str) -> str | None:
+    """Safe-getter из raw_payload JSONB. None если ключа нет / payload не dict."""
+    payload = listing.raw_payload
+    if not isinstance(payload, dict):
+        return None
+    value = payload.get(key)
+    return str(value) if value else None
 
 
 # ============================================================================
@@ -308,3 +335,201 @@ async def invalidate_record_offers(discogs_id: str) -> None:
             await cache._pool.delete(key)
     except Exception:
         logger.debug("invalidate offers cache failed for %s", discogs_id, exc_info=True)
+
+
+# ============================================================================
+# Hot Stock pill — batch summary endpoint (Mobile Phase 1)
+# MARKET_AND_PRICE_DRAWER.md §1.15
+# ============================================================================
+
+
+OFFERS_SUMMARY_CACHE_NS = "offers_summary"
+OFFERS_SUMMARY_CACHE_TTL = 600  # 10 мин — summary держится дольше чем offers (короче TTL)
+
+
+@router.post(
+    "/records/offers/summary",
+    response_model=dict[str, RecordOffersSummary],
+    summary="Batch-аггрегат офферов для сетки карточек (Hot Stock pill)",
+)
+async def get_records_offers_summary(
+    body: RecordOffersSummaryRequest,
+    db: AsyncSession = Depends(get_db),
+) -> dict[str, RecordOffersSummary]:
+    """
+    Mobile делает один запрос на всю видимую сетку (20 карточек поиска /
+    60 карточек коллекции), мапит summary к карточкам и рисует HotStockTag.
+
+    Возвращает dict {discogs_id: RecordOffersSummary} — discogs_id'ы которые
+    не нашлись или у которых нет offers будут отсутствовать в map'е (Mobile
+    рендерит для них variant='none' = null).
+    """
+    if not body.discogs_ids:
+        return {}
+
+    cutoff = datetime.utcnow() - timedelta(days=STALE_AFTER_DAYS)
+
+    # Один SQL — JOIN records → store_listings, agg по discogs_id, GROUP BY.
+    # Параллельно considering alt-versions через master_id self-join.
+    sql = text(
+        """
+        WITH target_records AS (
+            SELECT id, discogs_id, discogs_master_id
+            FROM records
+            WHERE discogs_id = ANY(:discogs_ids)
+        ),
+        exact_stats AS (
+            SELECT
+                tr.discogs_id,
+                COUNT(*) FILTER (
+                    WHERE sl.status = 'in_stock' AND sl.last_seen_at >= :cutoff
+                ) AS in_stock_count,
+                COUNT(*) FILTER (
+                    WHERE sl.status = 'preorder' AND sl.last_seen_at >= :cutoff
+                ) AS preorder_count,
+                MIN(sl.price_rub) FILTER (
+                    WHERE sl.status = 'in_stock' AND sl.last_seen_at >= :cutoff
+                      AND sl.price_rub IS NOT NULL
+                ) AS min_price_rub,
+                COUNT(DISTINCT sl.store_id) FILTER (
+                    WHERE sl.status = 'in_stock' AND sl.last_seen_at >= :cutoff
+                ) AS stores_with_stock
+            FROM target_records tr
+            LEFT JOIN store_listings sl ON sl.matched_record_id = tr.id
+            GROUP BY tr.discogs_id
+        ),
+        alt_stats AS (
+            -- Другой pressing того же master_id: r2.discogs_id != tr.discogs_id
+            -- но r2.discogs_master_id = tr.discogs_master_id (если есть master_id)
+            SELECT
+                tr.discogs_id,
+                COUNT(*) FILTER (
+                    WHERE sl.status = 'in_stock' AND sl.last_seen_at >= :cutoff
+                ) AS alt_version_count,
+                MIN(sl.price_rub) FILTER (
+                    WHERE sl.status = 'in_stock' AND sl.last_seen_at >= :cutoff
+                      AND sl.price_rub IS NOT NULL
+                ) AS min_price_alt_rub
+            FROM target_records tr
+            LEFT JOIN records r2
+                ON r2.discogs_master_id = tr.discogs_master_id
+               AND r2.discogs_master_id IS NOT NULL
+               AND r2.discogs_id != tr.discogs_id
+            LEFT JOIN store_listings sl ON sl.matched_record_id = r2.id
+            GROUP BY tr.discogs_id
+        )
+        SELECT
+            es.discogs_id,
+            COALESCE(es.in_stock_count, 0)      AS in_stock_count,
+            COALESCE(es.preorder_count, 0)      AS preorder_count,
+            COALESCE(als.alt_version_count, 0)  AS alt_version_count,
+            es.min_price_rub,
+            als.min_price_alt_rub,
+            FALSE AS has_last_one,
+            COALESCE(es.stores_with_stock, 0)   AS stores_with_stock
+        FROM exact_stats es
+        LEFT JOIN alt_stats als ON als.discogs_id = es.discogs_id
+        """
+    )
+    rows = (await db.execute(sql, {"discogs_ids": body.discogs_ids, "cutoff": cutoff})).mappings().all()
+
+    return {
+        row["discogs_id"]: RecordOffersSummary(
+            in_stock_count=row["in_stock_count"],
+            preorder_count=row["preorder_count"],
+            alt_version_count=row["alt_version_count"],
+            min_price_rub=row["min_price_rub"],
+            min_price_alt_rub=row["min_price_alt_rub"],
+            has_last_one=row["has_last_one"],
+            stores_with_stock=row["stores_with_stock"],
+        )
+        for row in rows
+    }
+
+
+# ============================================================================
+# Full offers (с alt-version) для детального экрана + bottom-sheet (Mobile Phase 5)
+# MARKET_AND_PRICE_DRAWER.md §2.3
+# ============================================================================
+
+
+@router.get(
+    "/records/{discogs_id}/offers/full",
+    response_model=RecordOffersFullResponse,
+    summary="Полные офферы (exact + alt) + summary одним запросом",
+)
+async def get_record_offers_full(
+    discogs_id: str,
+    include_master_versions: bool = Query(
+        True,
+        description=(
+            "Если true (default) — добавляем offers других pressing'ов того же "
+            "master_id с пометкой is_alt_version=true. Используется в Mobile "
+            "OffersBottomSheet для секции «Другая версия мастера»."
+        ),
+    ),
+    db: AsyncSession = Depends(get_db),
+) -> RecordOffersFullResponse:
+    cutoff = datetime.utcnow() - timedelta(days=STALE_AFTER_DAYS)
+
+    rec_res = await db.execute(
+        select(Record.id, Record.discogs_master_id).where(Record.discogs_id == discogs_id)
+    )
+    rec_row = rec_res.first()
+    if rec_row is None:
+        return RecordOffersFullResponse(
+            summary=RecordOffersSummary(),
+            offers=[],
+        )
+    record_id, master_id = rec_row
+
+    # Exact offers
+    exact_stmt = (
+        select(StoreListing)
+        .options(joinedload(StoreListing.store))
+        .where(StoreListing.matched_record_id == record_id)
+        .where(StoreListing.status.in_((ListingStatus.IN_STOCK, ListingStatus.PREORDER)))
+        .where(StoreListing.last_seen_at >= cutoff)
+        .order_by(StoreListing.price_rub.asc().nulls_last())
+    )
+    exact_listings = list((await db.execute(exact_stmt)).unique().scalars().all())
+
+    # Alt-version offers (другой pressing того же мастера)
+    alt_listings: list[StoreListing] = []
+    if include_master_versions and master_id:
+        alt_stmt = (
+            select(StoreListing)
+            .options(joinedload(StoreListing.store))
+            .join(Record, Record.id == StoreListing.matched_record_id)
+            .where(Record.discogs_master_id == master_id)
+            .where(Record.id != record_id)
+            .where(StoreListing.status == ListingStatus.IN_STOCK)
+            .where(StoreListing.last_seen_at >= cutoff)
+            .order_by(StoreListing.price_rub.asc().nulls_last())
+        )
+        alt_listings = list((await db.execute(alt_stmt)).unique().scalars().all())
+
+    offers = [
+        _to_response(li) for li in exact_listings if li.store and li.store.is_active
+    ] + [
+        _to_response(li, is_alt_version=True)
+        for li in alt_listings
+        if li.store and li.store.is_active
+    ]
+
+    # Summary
+    in_stock = [li for li in exact_listings if li.status == ListingStatus.IN_STOCK]
+    preorder = [li for li in exact_listings if li.status == ListingStatus.PREORDER]
+    alt_in_stock = [li for li in alt_listings if li.status == ListingStatus.IN_STOCK]
+
+    summary = RecordOffersSummary(
+        in_stock_count=len(in_stock),
+        preorder_count=len(preorder),
+        alt_version_count=len(alt_in_stock),
+        min_price_rub=min((li.price_rub for li in in_stock if li.price_rub is not None), default=None),
+        min_price_alt_rub=min((li.price_rub for li in alt_in_stock if li.price_rub is not None), default=None),
+        has_last_one=False,
+        stores_with_stock=len({li.store_id for li in in_stock}),
+    )
+
+    return RecordOffersFullResponse(summary=summary, offers=offers)
