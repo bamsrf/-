@@ -3,7 +3,7 @@
  *
  * Re-используем существующий /users/search и openOrCreate из messages store.
  */
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   View,
   Text,
@@ -14,7 +14,7 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import { Image } from 'expo-image';
-import { useRouter } from 'expo-router';
+import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Icon } from '@/components/ui';
 import { Colors, Spacing, BorderRadius } from '../../constants/theme';
@@ -28,12 +28,30 @@ const DEBOUNCE_MS = 300;
 export default function NewMessageScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
+  const params = useLocalSearchParams<{
+    forward_body?: string;
+    forward_record_id?: string;
+    forward_from?: string;
+  }>();
+  const isForward = !!(params.forward_body || params.forward_record_id);
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<UserWithStats[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [isCreating, setIsCreating] = useState(false);
   const openOrCreate = useMessagesStore((s) => s.openOrCreate);
+  const sendMessage = useMessagesStore((s) => s.send);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const forwardPreview = useMemo(() => {
+    if (!isForward) return null;
+    const fromTxt = params.forward_from ? `↗ От @${params.forward_from}` : '↗ Пересылка';
+    const bodyTxt = params.forward_body
+      ? params.forward_body
+      : params.forward_record_id
+      ? 'Прикреплённая пластинка'
+      : '';
+    return { from: fromTxt, body: bodyTxt };
+  }, [isForward, params.forward_from, params.forward_body, params.forward_record_id]);
 
   useEffect(() => {
     if (debounceRef.current) clearTimeout(debounceRef.current);
@@ -63,7 +81,36 @@ export default function NewMessageScreen() {
       setIsCreating(true);
       try {
         const conv = await openOrCreate(user.id);
-        // Закрываем модалку «Новое сообщение» и открываем тред поверх инбокса
+        if (isForward) {
+          const body = params.forward_body
+            ? `↗ Переслано${params.forward_from ? ` от @${params.forward_from}` : ''}\n${params.forward_body}`
+            : params.forward_record_id
+            ? `↗ Переслано${params.forward_from ? ` от @${params.forward_from}` : ''}`
+            : '';
+          let attached: any = null;
+          if (params.forward_record_id) {
+            try {
+              const rec = await api.getRecord(params.forward_record_id);
+              if (rec) {
+                attached = {
+                  id: rec.id,
+                  title: rec.title,
+                  artist: rec.artist,
+                  year: rec.year ?? null,
+                  cover_image_url: rec.cover_image_url ?? null,
+                  cover_url: null,
+                };
+              }
+            } catch {
+              // если не загрузилось — отправим без вложения
+            }
+          }
+          await sendMessage(conv.id, body, null, attached);
+          toast.success('Переслано', `@${user.username}`);
+          router.back();
+          setTimeout(() => router.push(`/messages/${conv.id}` as any), 50);
+          return;
+        }
         router.back();
         setTimeout(() => router.push(`/messages/${conv.id}` as any), 50);
       } catch (error: any) {
@@ -75,7 +122,7 @@ export default function NewMessageScreen() {
         setIsCreating(false);
       }
     },
-    [isCreating, openOrCreate, router]
+    [isCreating, openOrCreate, router, isForward, params, sendMessage]
   );
 
   const renderItem = useCallback(
@@ -119,9 +166,21 @@ export default function NewMessageScreen() {
         <TouchableOpacity onPress={() => router.back()} style={styles.iconBtn}>
           <Icon name="arrow-left" size={22} color={Colors.text} />
         </TouchableOpacity>
-        <Text style={styles.title}>Новое сообщение</Text>
+        <Text style={styles.title}>{isForward ? 'Переслать' : 'Новое сообщение'}</Text>
         <View style={{ width: 36 }} />
       </View>
+
+      {forwardPreview ? (
+        <View style={styles.forwardPreview}>
+          <View style={styles.forwardLine} />
+          <View style={{ flex: 1, minWidth: 0 }}>
+            <Text style={styles.forwardFrom}>{forwardPreview.from}</Text>
+            <Text style={styles.forwardBody} numberOfLines={2}>
+              {forwardPreview.body}
+            </Text>
+          </View>
+        </View>
+      ) : null}
 
       <View style={styles.searchWrap}>
         <Icon name="magnifying-glass" size={18} color={Colors.textMuted} />
@@ -214,4 +273,32 @@ const styles = StyleSheet.create({
   rowName: { fontSize: 14, fontWeight: '600', color: Colors.text },
   rowSub: { fontSize: 12, color: Colors.textMuted, marginTop: 2 },
   empty: { fontSize: 13, color: Colors.textMuted, textAlign: 'center', marginTop: Spacing.lg },
+
+  forwardPreview: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.sm,
+    marginHorizontal: Spacing.md,
+    marginTop: 4,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderRadius: BorderRadius.md,
+    backgroundColor: 'rgba(59,75,245,0.06)',
+    borderWidth: 1,
+    borderColor: 'rgba(59,75,245,0.2)',
+  },
+  forwardLine: {
+    width: 3,
+    height: 36,
+    borderRadius: 2,
+    backgroundColor: Colors.royalBlue,
+  },
+  forwardFrom: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: Colors.royalBlue,
+    textTransform: 'uppercase',
+    letterSpacing: 0.3,
+  },
+  forwardBody: { fontSize: 13, color: Colors.text, marginTop: 2 },
 });

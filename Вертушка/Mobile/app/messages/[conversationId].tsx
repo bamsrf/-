@@ -1044,6 +1044,25 @@ export default function ConversationScreen() {
       },
     });
     list.push({
+      key: 'forward',
+      label: 'Переслать',
+      icon: 'arrow-right',
+      onPress: () => {
+        const senderUsername =
+          isMine
+            ? me?.username
+            : partner?.username;
+        router.push({
+          pathname: '/messages/new' as any,
+          params: {
+            forward_body: m.body || '',
+            forward_record_id: m.attached_record?.id || '',
+            forward_from: senderUsername || '',
+          },
+        });
+      },
+    });
+    list.push({
       key: 'share',
       label: 'Поделиться',
       icon: 'share',
@@ -1088,7 +1107,16 @@ export default function ConversationScreen() {
       });
     }
     return list;
-  }, [menuTarget, conversationId, loadThread, toggleSelection, conversation?.pinned_message?.id]);
+  }, [
+    menuTarget,
+    conversationId,
+    loadThread,
+    toggleSelection,
+    conversation?.pinned_message?.id,
+    router,
+    me?.username,
+    partner?.username,
+  ]);
 
   const toggleReactionAction = useMessagesStore((s) => s.toggleReaction);
 
