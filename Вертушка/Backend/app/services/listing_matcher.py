@@ -36,8 +36,13 @@ logger = logging.getLogger(__name__)
 FUZZY_THRESHOLD = 0.85
 FUZZY_CANDIDATES_LIMIT = 50
 
-# Discogs on-demand: жёсткий лимит, чтобы не задудосить Discogs API
-DISCOGS_FETCH_HOURLY_LIMIT = 50
+# Discogs on-demand: верхняя крышка против burst-нагрузки. Per-minute rate-limit
+# (60 req/min) уже выровнен через discogs_limiter (TokenBucketRateLimiter capacity=55,
+# refill_rate=0.95 = ~57 req/min). Hourly limit — это анти-DDOS для batch matcher'а:
+# защищает от ситуации когда matcher разом хочет догнать 10к unmatched и за час
+# вычерпает всю квоту, мешая live-запросам пользовательского поиска (Priority.SEARCH).
+# При 500/час среднее ~8 req/min — спокойно вписывается в 60/min лимит.
+DISCOGS_FETCH_HOURLY_LIMIT = 500
 
 
 # ---- Поиск Record по идентификаторам ----------------------------------- #
