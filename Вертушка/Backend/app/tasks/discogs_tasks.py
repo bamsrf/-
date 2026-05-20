@@ -124,7 +124,7 @@ async def update_prices_batch():
                     (Record.updated_at < stale_cutoff)
                 )
                 .distinct()
-                .order_by(Record.estimated_price_min.is_(None).desc())  # без цен первыми
+                .order_by(Record.estimated_price_min.asc().nullsfirst())  # без цен первыми
                 .limit(BATCH_SIZE)
             )
             records = result.scalars().all()
