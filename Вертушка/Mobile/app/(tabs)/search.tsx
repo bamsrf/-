@@ -46,7 +46,6 @@ import { MiniPriceBadge } from '../../components/MiniPriceBadge';
 import MarketBackground from '../../components/market/MarketBackground';
 import MarketSection, { type MarketStoreData } from '../../components/market/MarketSection';
 import MarketSearchResults from '../../components/market/MarketSearchResults';
-import MarketResistanceHint from '../../components/market/MarketResistanceHint';
 import MarketEntryHint from '../../components/market/MarketEntryHint';
 import StickyMarketHeader from '../../components/market/StickyMarketHeader';
 import ExitMarketButton from '../../components/market/ExitMarketButton';
@@ -309,10 +308,12 @@ export default function SearchScreen() {
   const scrollY = useSharedValue(0);
   // Динамический threshold transition фона. parent обновляет эти SharedValue'и
   // когда меняется layout (история раскрылась → MarketSection сдвинулся).
-  // Без этого: длинная история → user скроллит её → scrollY входит в [400,700]
-  // → market-bg зажигается раньше времени.
-  const transitionStartY = useSharedValue(400);
-  const transitionEndY = useSharedValue(700);
+  // НАЧАЛЬНОЕ значение 99999 (off-screen) — если MarketSection не отрендерен
+  // (юзер в режиме поиска, marketStores пуст), onLayout НИКОГДА не сработает
+  // и thresholds останутся «выключенными». Без этого: market-bg может
+  // зажечься в обычных поисковых результатах при scrollY > 400.
+  const transitionStartY = useSharedValue(99999);
+  const transitionEndY = useSharedValue(99999);
   // Sticky-header overlay opacity — driven by scrollY и dynamic threshold.
   const stickyMarketHeaderOpacity = useSharedValue(0);
   const scrollToTopRef = useRef<(() => void) | null>(null);
@@ -502,6 +503,17 @@ export default function SearchScreen() {
     const y = scrollY.value;
     const prev = lastScrollY.value;
     const marketY = transitionEndY.value; // = marketSectionY - 20
+    lastScrollY.value = y;
+
+    // GUARD: если MarketSection не отмерян (marketY ≈ 99999 — initial off),
+    // вся transition-логика выключена. Иначе bump срабатывает в режиме
+    // обычного поиска, а sticky МАРКЕТ overlay частично виден на нулевом
+    // scrollY.
+    if (marketY > 50000) {
+      stickyMarketHeaderOpacity.value = 0;
+      return;
+    }
+
     const downThreshold = Math.max(60, marketY - 80);
     const upThreshold = marketY + 60;
 
@@ -518,19 +530,17 @@ export default function SearchScreen() {
       if (bumpDownCountRef.current === 0) {
         runOnJS(triggerBumpDown1)();
       } else {
-        // 2-е пересечение — auto-scroll в Маркет
         runOnJS(enterMarket)();
       }
     }
-    // Скролл ВВЕРХ через upThreshold (когда юзер уже в маркете)
-    if (y < prev && prev > upThreshold && y <= upThreshold && marketY > 100) {
+    // Скролл ВВЕРХ через upThreshold
+    if (y < prev && prev > upThreshold && y <= upThreshold) {
       if (bumpUpCountRef.current === 0) {
         runOnJS(triggerBumpUp1)();
       } else {
         runOnJS(exitMarket)();
       }
     }
-    lastScrollY.value = y;
   }, [triggerBumpDown1, triggerBumpUp1, enterMarket, exitMarket]);
 
   // Debounced save scrollY → Zustand persist. Запускаем через ref'ный timer.
