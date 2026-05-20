@@ -1,18 +1,20 @@
 /**
- * WishlistListSwipe — swipe-wrapper для строк вишлиста (list mode).
+ * WishlistListSwipe — bookmark-style swipe affordance для строк вишлиста.
  *
- * Концепция: палец тянет строку влево → CTA «К ценам» плавно ВЫЕЗЖАЕТ из-за
- * правого края экрана, следуя за пальцем. При полном свайпе → автоматически
- * открывается BottomSheet с топ-3 ценами + ссылкой «Все варианты».
+ * Концепция (по запросу юзера, по примеру Telegram bookmark): постоянно
+ * виден узкий ember-«язычок» на правом краю строки с:
+ *   - стрелки-индикатор «← ←» (свайп влево)
+ *   - вертикальная надпись «СРАВНИТЬ»
+ *   - badge с количеством магазинов
  *
- * Анимация slide-in реализована через `renderRightActions(progress, dragX)` —
- * мы интерполируем translateX от width до 0 по `progress` (0..1 при свайпе).
- * Это и есть «плавно сбоку подтягивается» как просил юзер.
+ * Это **persistent affordance**: юзер всегда видит что строку можно
+ * свайпнуть → откроет полный CTA с ценами. Тап на язычок = свайп.
  *
- * Pulse-подсказка играет ОДИН РАЗ за сессию на первой строке с офферами
- * (через useMarketStore.hasSeenSwipeHint).
+ * При свайпе/тапе → onOpen() (родитель открывает OffersBottomSheet
+ * с топ-3 ценами + альтернативами).
  *
- * Источник: WishlistRowWithOffers + MARKET_AND_PRICE_DRAWER.md §2.1.
+ * Pulse-подсказка играет ОДИН раз за сессию (через
+ * useMarketStore.hasSeenSwipeHint) — лёгкое полу-открытие свайпа.
  */
 import React, { useEffect, useRef, useState } from 'react';
 import {
@@ -41,27 +43,22 @@ import { formatPrice } from '../HotStockTag';
 
 interface WishlistListSwipeProps {
   children: React.ReactNode;
-  /** Есть ли офферы в наличии. false → рендерим children без swipe. */
   hasOffers: boolean;
   minPriceRub?: number | null;
   storesCount?: number;
-  /**
-   * Колбэк при полном открытии swipe (right-side reveal завершён).
-   * Здесь родитель должен открыть BottomSheet с ценами.
-   * НЕ navigation — сам swipe = действие.
-   */
   onOpen: () => void;
   style?: StyleProp<ViewStyle>;
 }
 
-const CTA_WIDTH = 132;
-const PULSE_DURATION_MS = 1400;
+const PEEK_WIDTH = 32;        // ширина видимого язычка справа
+const FULL_REVEAL = 132;      // ширина полного CTA при свайпе
+const PULSE_DURATION_MS = 1100;
 
 export function WishlistListSwipe({
   children,
   hasOffers,
   minPriceRub,
-  storesCount,
+  storesCount = 0,
   onOpen,
   style,
 }: WishlistListSwipeProps) {
@@ -70,7 +67,7 @@ export function WishlistListSwipe({
   const markHintSeen = useMarketStore((s) => s.markSwipeHintSeen);
   const [didPulse, setDidPulse] = useState(false);
 
-  // Анимация-подсказка: один раз за сессию открываем на ~60% → закрываем
+  // One-shot teaser-анимация: при первом mount делаем мини-открытие
   useEffect(() => {
     if (!hasOffers || hasSeenHint || didPulse) return;
     const t = setTimeout(() => {
@@ -80,7 +77,7 @@ export function WishlistListSwipe({
         markHintSeen();
         setDidPulse(true);
       }, PULSE_DURATION_MS);
-    }, 1000);
+    }, 900);
     return () => clearTimeout(t);
   }, [hasOffers, hasSeenHint, didPulse, markHintSeen]);
 
@@ -92,7 +89,7 @@ export function WishlistListSwipe({
     <ReanimatedSwipeable
       ref={swipeableRef}
       renderRightActions={(progress) => (
-        <CTAReveal
+        <FullCTAReveal
           progress={progress}
           minPriceRub={minPriceRub}
           storesCount={storesCount}
@@ -103,7 +100,7 @@ export function WishlistListSwipe({
         />
       )}
       friction={1.6}
-      rightThreshold={CTA_WIDTH * 0.55}
+      rightThreshold={FULL_REVEAL * 0.55}
       overshootRight={false}
       containerStyle={style}
       onSwipeableOpen={(direction) => {
@@ -115,40 +112,49 @@ export function WishlistListSwipe({
         }
       }}
     >
-      <View style={styles.contentWrap}>
-        {children}
-        {/* Постоянная подсказка-чип на правом краю строки. Юзер должен
-            видеть «зацепку» — что свайп влево что-то откроет. Без неё
-            никто не догадается, что строка кликабельна вбок.
-            pointerEvents=none — тап проваливается на строку (опен detail).
-            При свайпе строка уезжает, и чип уезжает вместе с ней;
-            под низом проявляется CTAReveal (тот же gradient). */}
+      <View style={styles.rowWrap}>
+        {/* Карточка с правым padding'ом чтобы text/price не наезжал на язычок */}
+        <View style={{ paddingRight: PEEK_WIDTH }}>
+          {children}
+        </View>
+
+        {/* Bookmark-язычок справа. Тап = открыть bottom-sheet (то же что свайп). */}
         <Pressable
-          onPress={(e) => {
-            e.stopPropagation();
-            onOpen();
-          }}
-          style={styles.affordancePill}
-          hitSlop={6}
+          style={styles.peekTab}
+          onPress={onOpen}
+          hitSlop={4}
           accessibilityRole="button"
           accessibilityLabel={
             minPriceRub
-              ? `Открыть цены: от ${minPriceRub} рублей`
-              : 'Открыть цены'
+              ? `Сравнить цены: от ${minPriceRub} рублей в ${storesCount} магазинах`
+              : 'Сравнить цены'
           }
         >
           <LinearGradient
             colors={Gradients.hotStock as [string, string, string]}
             start={{ x: 0, y: 0 }}
             end={{ x: 1, y: 1 }}
-            style={styles.affordancePillGradient}
+            style={styles.peekGradient}
           >
-            <Icon name="disc" size={11} color="onBrand" weight="duotone" />
-            {minPriceRub != null ? (
-              <Text style={styles.affordancePrice}>
-                {formatPrice(Number(minPriceRub))}
+            {/* Top: chevron-left × 2 (визуальный hint «свайпай влево») */}
+            <View style={styles.peekArrows}>
+              <Icon name="chevron-left" size={9} color="onBrand" />
+              <Icon name="chevron-left" size={9} color="onBrand" style={{ marginLeft: -3 }} />
+            </View>
+
+            {/* Middle: вертикальная надпись «СРАВНИТЬ» (rotated -90deg) */}
+            <View style={styles.peekLabelWrap}>
+              <Text style={styles.peekLabel} numberOfLines={1}>
+                СРАВНИТЬ
               </Text>
-            ) : null}
+            </View>
+
+            {/* Bottom: badge с количеством магазинов */}
+            {storesCount > 0 && (
+              <View style={styles.peekBadge}>
+                <Text style={styles.peekBadgeText}>{storesCount}</Text>
+              </View>
+            )}
           </LinearGradient>
         </Pressable>
       </View>
@@ -157,34 +163,26 @@ export function WishlistListSwipe({
 }
 
 // ────────────────────────────────────────────────────────────────────────
+// Full CTA — viewable когда юзер реально свайпнул влево
 
-interface CTARevealProps {
+interface FullCTARevealProps {
   progress: SharedValue<number>;
   minPriceRub?: number | null;
   storesCount?: number;
   onPress: () => void;
 }
 
-/**
- * Reveal-карточка: translateX driven by progress (0 = off-screen-right, 1 = на месте).
- * Так CTA визуально «вытягивается» из-под правой строки. Без этого
- * ReanimatedSwipeable показывает renderRightActions через flex-reveal, что
- * выглядит как «появилась на месте» — что и не понравилось юзеру.
- */
-function CTAReveal({ progress, minPriceRub, storesCount, onPress }: CTARevealProps) {
+function FullCTAReveal({ progress, minPriceRub, storesCount, onPress }: FullCTARevealProps) {
   const animStyle = useAnimatedStyle(() => {
-    // 0 → +CTA_WIDTH (за экраном), 1 → 0 (на месте)
     const translateX = interpolate(
       progress.value,
       [0, 1],
-      [CTA_WIDTH, 0],
+      [FULL_REVEAL, 0],
       Extrapolation.CLAMP,
     );
-    // Лёгкое замыкание opacity и scale — добавляет «массы» движению
     const opacity = interpolate(progress.value, [0, 0.3, 1], [0, 0.8, 1], Extrapolation.CLAMP);
-    const scale = interpolate(progress.value, [0, 1], [0.92, 1], Extrapolation.CLAMP);
     return {
-      transform: [{ translateX }, { scale }],
+      transform: [{ translateX }],
       opacity,
     };
   });
@@ -193,12 +191,6 @@ function CTAReveal({ progress, minPriceRub, storesCount, onPress }: CTARevealPro
     <Animated.View style={[styles.ctaOuter, animStyle]}>
       <Pressable
         onPress={onPress}
-        accessibilityRole="button"
-        accessibilityLabel={
-          minPriceRub
-            ? `Открыть цены: от ${minPriceRub} рублей`
-            : 'Открыть цены'
-        }
         style={({ pressed }) => [styles.ctaInner, pressed && { opacity: 0.85 }]}
       >
         <LinearGradient
@@ -207,17 +199,13 @@ function CTAReveal({ progress, minPriceRub, storesCount, onPress }: CTARevealPro
           end={{ x: 1, y: 1 }}
           style={styles.ctaGradient}
         >
-          <Icon name="storefront" size={20} color="onBrand" />
+          <Icon name="storefront" size={18} color="onBrand" />
           <View style={styles.ctaTextBlock}>
-            <Text style={styles.ctaTitle}>К ценам</Text>
+            <Text style={styles.ctaTitle}>Сравнить</Text>
             {minPriceRub != null ? (
               <Text style={styles.ctaSub} numberOfLines={1}>
-                от {Math.round(minPriceRub).toLocaleString('ru-RU')} ₽
+                от {formatPrice(Number(minPriceRub))}
                 {storesCount && storesCount > 1 ? ` · ${storesCount} маг.` : ''}
-              </Text>
-            ) : storesCount && storesCount >= 1 ? (
-              <Text style={styles.ctaSub} numberOfLines={1}>
-                {storesCount} маг.
               </Text>
             ) : null}
           </View>
@@ -228,47 +216,82 @@ function CTAReveal({ progress, minPriceRub, storesCount, onPress }: CTARevealPro
 }
 
 const styles = StyleSheet.create({
-  contentWrap: {
+  rowWrap: {
     position: 'relative',
   },
-  // Affordance pill: всегда виден на правом краю строки. Юзер видит
-  // disc + price → понимает что свайп влево откроет полный sheet с ценами.
-  affordancePill: {
+
+  // ── PEEK TAB (persistent bookmark) ─────────────────────────────────
+  peekTab: {
     position: 'absolute',
-    right: 8,
-    top: '50%',
-    marginTop: -14, // half height
-    height: 28,
-    borderRadius: 9999,
+    right: 0,
+    top: 0,
+    bottom: 0,
+    width: PEEK_WIDTH,
     overflow: 'hidden',
-    // glow ember чтобы pill выделялся даже на жёстком фоне
+    // Тень-glow ember чтобы выделялся на любой обложке
     shadowColor: '#FF7A4A',
-    shadowOffset: { width: 0, height: 0 },
+    shadowOffset: { width: -2, height: 0 },
     shadowOpacity: 0.45,
-    shadowRadius: 12,
+    shadowRadius: 8,
     elevation: 4,
   },
-  affordancePillGradient: {
+  peekGradient: {
+    flex: 1,
+    paddingVertical: 8,
+    paddingHorizontal: 4,
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    // Левый край скруглён чтобы стыковаться с карточкой
+    borderTopLeftRadius: 14,
+    borderBottomLeftRadius: 14,
+  },
+  peekArrows: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 5,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
+    height: 12,
   },
-  affordancePrice: {
+  peekLabelWrap: {
+    // Контейнер для повёрнутого текста. Width/height swapped — после
+    // rotate -90deg текст «лёжа» становится «стоя».
+    width: 60,
+    height: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+    transform: [{ rotate: '-90deg' }],
+  },
+  peekLabel: {
     fontFamily: 'Inter_800ExtraBold',
-    fontSize: 11,
+    fontSize: 10,
     fontWeight: '800',
     color: '#FFFFFF',
-    letterSpacing: -0.2,
+    letterSpacing: 1.4,
+    includeFontPadding: false,
+  },
+  peekBadge: {
+    minWidth: 18,
+    height: 18,
+    borderRadius: 9,
+    paddingHorizontal: 5,
+    backgroundColor: 'rgba(0,0,0,0.32)',
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: 'rgba(255,255,255,0.32)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  peekBadgeText: {
+    fontFamily: 'Inter_800ExtraBold',
+    fontSize: 10,
+    fontWeight: '800',
+    color: '#FFFFFF',
     includeFontPadding: false,
     fontVariant: ['tabular-nums'],
   },
+
+  // ── FULL CTA при свайпе ────────────────────────────────────────────
   ctaOuter: {
-    width: CTA_WIDTH,
+    width: FULL_REVEAL,
     paddingLeft: 8,
     paddingVertical: 4,
-    // overflow hidden внутри inner-Pressable
   },
   ctaInner: {
     flex: 1,
