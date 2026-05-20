@@ -30,7 +30,6 @@
  */
 import React, { useCallback, useEffect, useState } from 'react';
 import {
-  type LayoutChangeEvent,
   Pressable,
   StyleSheet,
   Text,
@@ -85,13 +84,6 @@ export function WishlistListSwipe({
   const hasSeenHint = useMarketStore((s) => s.hasSeenSwipeHint);
   const markHintSeen = useMarketStore((s) => s.markSwipeHintSeen);
   const [didTease, setDidTease] = useState(false);
-  // Замеряем реальную высоту КАРТОЧКИ (без её marginBottom) — банер
-  // получает точно ту же высоту, идеальное выравнивание без magic-numbers.
-  const [cardHeight, setCardHeight] = useState<number | null>(null);
-  const handleCardLayout = useCallback((e: LayoutChangeEvent) => {
-    const h = e.nativeEvent.layout.height;
-    setCardHeight((prev) => (prev === h ? prev : h));
-  }, []);
 
   // dragX: 0 (rest) → -DELTA (full open). Двигает И карточку И баннер.
   const dragX = useSharedValue(0);
@@ -177,34 +169,20 @@ export function WishlistListSwipe({
     // только над карточкой).
     <GestureDetector gesture={panGesture}>
       <View style={[styles.rowWrap, style]}>
-        {/* КАРТОЧКА — двигается влево с пальцем. paddingRight под peek.
-            onLayout на ВНУТРЕННЕМ View — measures children's actual size
-            БЕЗ их marginBottom (margin вне layout box ребёнка). */}
+        {/* КАРТОЧКА — двигается влево с пальцем. paddingRight под peek. */}
         <Animated.View style={[{ paddingRight: PEEK_WIDTH }, cardStyle]}>
-          <View onLayout={handleCardLayout} collapsable={false}>
-            {children}
-          </View>
+          {children}
         </Animated.View>
 
         {/* ОДИН gradient-баннер. Прибит к right:0. Width растёт leftward.
-            ВЫЧЕТЫ из measured cardHeight (= card layout box):
-              - 8  = listContainer.marginBottom (Spacing.sm)
-              - 4  = listContainer.borderWidth × 2 (2dp top + 2dp bottom).
-                    Border transparent (невидим) НО занимает layout space →
-                    banner visually extends past visible white card на 2dp
-                    в каждую сторону если не вычесть.
-            top: 2 — banner начинается с верха visible white card (skip
-            top transparent border).
+            Геометрия через top/bottom — banner резинится по высоте rowWrap'а:
+            - top: 2  — skip 2dp invisible top border у listContainer'а
+            - bottom: 10 — 8 (marginBottom Spacing.sm) + 2 (invisible bottom border)
+            Pixel-perfect alignment с visible white card.
             pointerEvents=box-none — тапы на Pressable, drag bubble'ит. */}
         <Animated.View
           pointerEvents="box-none"
-          style={[
-            styles.bannerWrap,
-            bannerStyle,
-            cardHeight != null
-              ? { top: 2, height: cardHeight - 12 }
-              : null,
-          ]}
+          style={[styles.bannerWrap, bannerStyle]}
         >
           <Pressable
             onPress={triggerOpen}
@@ -273,10 +251,14 @@ const styles = StyleSheet.create({
   bannerWrap: {
     position: 'absolute',
     right: 0,
-    top: 0,
-    // height задаётся динамически в inline style = measured card height - 8.
-    // Заменяет старый bottom:8 — теперь точный pixel-match даже если
-    // RecordCard list-variant изменит padding/margin в будущем.
+    // top:2 / bottom:10 — banner aligned с VISIBLE white card.
+    // listContainer структура:
+    //   borderWidth: 2 transparent (2dp top + 2dp bottom layout space)
+    //   marginBottom: Spacing.sm (= 8)
+    // Visible white starts 2dp ниже top of layout box, ends 2dp выше
+    // bottom of layout-box-без-margin'а. Below margin = 8dp пустого.
+    top: 2,
+    bottom: 10, // 8 marginBottom + 2 invisible border
     // Glow только slight, чтобы не создавать halo выше/ниже banner'а
     // (юзер видел это как «banner больше карточки»). shadowRadius уменьшен
     // с 8 до 4. Halo маленький, помогает отделить banner от карточки
