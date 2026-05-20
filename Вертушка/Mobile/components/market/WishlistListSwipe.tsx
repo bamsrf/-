@@ -156,7 +156,7 @@ interface FullCTARevealProps {
   onPress: () => void;
 }
 
-function FullCTAReveal({ progress, minPriceRub, storesCount, onPress }: FullCTARevealProps) {
+function FullCTAReveal({ progress, minPriceRub, storesCount = 0, onPress }: FullCTARevealProps) {
   const animStyle = useAnimatedStyle(() => {
     const translateX = interpolate(
       progress.value,
