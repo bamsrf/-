@@ -145,7 +145,7 @@ export default function CollectionScreen() {
   const offersSheetRef = useRef<OffersBottomSheetRef>(null);
   const [buyingListingId, setBuyingListingId] = useState<string | undefined>(undefined);
 
-  // Lazy fetch top-N офферов конкретной записи + open sheet
+  // Lazy fetch full offers (exact + alt-version по master_id) + open sheet
   const handleWishlistSwipeOpen = useCallback(async (wi: WishlistItem) => {
     const discogsId = wi.record?.discogs_id;
     if (!discogsId) {
@@ -153,38 +153,40 @@ export default function CollectionScreen() {
       return;
     }
     try {
-      const offers = await api.getRecordOffers(discogsId, 'price');
-      if (!offers || offers.length === 0) {
+      // ВАЖНО: getOfferDetailsFull тянет и exact, и alt-version (другой
+      // pressing того же master_id). getRecordOffers даёт только exact.
+      const full = await api.getOfferDetailsFull(discogsId, true);
+      const offers = full?.offers ?? [];
+      if (offers.length === 0) {
         router.push(`/record/${discogsId}`);
         return;
       }
+      // Fallback cover: если у конкретного offer нет image_url —
+      // используем cover_image_url самой пластинки. Без этого в карточке
+      // отображается серый квадрат (юзер именно об этом писал).
+      const fallbackCover = wi.record.cover_image_url ?? undefined;
+      const mapOffer = (o: typeof offers[number], isAlt: boolean): OfferDetailData => ({
+        listingId: o.listing_id,
+        storeSlug: o.store.slug,
+        storeName: o.store.name,
+        priceRub: Number(o.price_rub),
+        format: o.format ?? undefined,
+        vinylColor: o.vinyl_color ?? undefined,
+        condition: o.condition ?? undefined,
+        catalogNumber: o.catalog_number ?? undefined,
+        // OfferDetailCard prop = coverUrl (НЕ coverImageUrl). Был баг —
+        // серый квадрат в bottom-sheet, потому что неправильное имя поля.
+        coverUrl: o.image_url ?? fallbackCover,
+        artist: wi.record.artist,
+        title: wi.record.title,
+        isAlt,
+      });
       const exact: OfferDetailData[] = offers
         .filter((o) => !o.is_alt_version)
-        .map((o) => ({
-          listingId: o.listing_id,
-          storeSlug: o.store.slug,
-          storeName: o.store.name,
-          priceRub: Number(o.price_rub),
-          format: o.format ?? undefined,
-          vinylColor: o.vinyl_color ?? undefined,
-          condition: o.condition ?? undefined,
-          catalogNumber: o.catalog_number ?? undefined,
-          coverImageUrl: o.image_url ?? undefined,
-        }));
+        .map((o) => mapOffer(o, false));
       const alt: OfferDetailData[] = offers
         .filter((o) => o.is_alt_version)
-        .map((o) => ({
-          listingId: o.listing_id,
-          storeSlug: o.store.slug,
-          storeName: o.store.name,
-          priceRub: Number(o.price_rub),
-          format: o.format ?? undefined,
-          vinylColor: o.vinyl_color ?? undefined,
-          condition: o.condition ?? undefined,
-          isAlt: true,
-          catalogNumber: o.catalog_number ?? undefined,
-          coverImageUrl: o.image_url ?? undefined,
-        }));
+        .map((o) => mapOffer(o, true));
       const minPrice = exact[0]?.priceRub ?? alt[0]?.priceRub ?? 0;
       offersSheetRef.current?.present({
         artist: wi.record.artist,

@@ -272,9 +272,19 @@ async def _ensure_record_discogs_payload(record: Record, db: AsyncSession) -> No
     # обнулил аватар артиста на детальной — что я заметил в проде.
     if not record.discogs_data or "tracklist" not in (record.discogs_data or {}):
         existing = record.discogs_data or {}
+        # Сразу извлекаем artist_id из data.artists[0].id чтобы потом
+        # _ensure_record_artist_data НЕ делал отдельный HTTP-запрос для
+        # повторного fetch'а того же release'а. Это reduces /releases/{id}
+        # с 2 запросов до 1 (payload-load).
+        extras: dict = {}
+        artists_list = data.get("artists") if isinstance(data, dict) else None
+        if isinstance(artists_list, list) and len(artists_list) > 0:
+            first_artist = artists_list[0]
+            if isinstance(first_artist, dict) and first_artist.get("id"):
+                extras["artist_id"] = str(first_artist["id"])
         # Existing идёт ПОСЛЕДНИМ — приоритет у уже сохранённых ценных полей
         # (artist_id, artist_thumb_image_url, vinyl_color_raw).
-        record.discogs_data = {**data, **existing}
+        record.discogs_data = {**data, **extras, **existing}
         changed = True
 
     if changed:

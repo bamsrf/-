@@ -35,13 +35,15 @@ import { MarketPalette } from '../../constants/theme';
 import Grain from './Grain';
 
 /**
- * Transition zone в scrollY-пикселях. Соответствует фрейму 550 = midpoint,
- * где searchAlpha = marketAlpha = 0.5.
+ * Default transition zone (раньше — static).
+ * Сейчас START/END рассчитываются ДИНАМИЧЕСКИ от parent через
+ * `transitionStartY/transitionEndY` props (parent знает реальное место
+ * MarketSection через onLayout). Эти константы оставлены как fallback
+ * для случая когда parent не передал ничего.
  *
- * Изменение этих констант = смещение «потайной двери» по экрану. По умолчанию
- * door опущена на 400-700 — достаточно, чтобы Discogs-новинки полностью
- * вошли в кадр, и юзер сделал «осознанный» скролл вниз, прежде чем
- * случайно провалится в Маркет.
+ * Static zone убивает UX когда content above Маркета меняется (например,
+ * юзер раскрыл длинный список истории) — фон Маркета начинает зажигаться
+ * пока юзер ещё в истории, что выглядит как баг.
  */
 export const TRANSITION_START_Y = 400;
 export const TRANSITION_END_Y = 700;
@@ -56,6 +58,16 @@ interface MarketBackgroundProps {
    *   - 'mid'     — оба слоя по 0.5 (для design preview)
    */
   forcedMode?: 'search' | 'market' | 'mid';
+  /**
+   * Динамический Y начала transition zone. Parent передаёт scrollY-позицию
+   * MarketSection минус buffer (например 100 px). Используется когда parent
+   * знает РЕАЛЬНОЕ место MarketSection (через onLayout).
+   * Если не передано — fallback на статический TRANSITION_START_Y.
+   * SharedValue (а не number) чтобы изменение в parent re-rendered'ило
+   * worklet без mount-cycle'а.
+   */
+  transitionStartY?: SharedValue<number>;
+  transitionEndY?: SharedValue<number>;
 }
 
 /**
@@ -65,11 +77,17 @@ interface MarketBackgroundProps {
 export function MarketBackground({
   scrollY: externalScrollY,
   forcedMode,
+  transitionStartY,
+  transitionEndY,
 }: MarketBackgroundProps) {
   // Если scrollY не передан — создаём фейковый SharedValue,
   // чтобы хуки выше не нарушали правил React.
   const fallbackScrollY = useSharedValue(0);
   const scrollY = externalScrollY ?? fallbackScrollY;
+  const fallbackStartY = useSharedValue(TRANSITION_START_Y);
+  const fallbackEndY = useSharedValue(TRANSITION_END_Y);
+  const startY = transitionStartY ?? fallbackStartY;
+  const endY = transitionEndY ?? fallbackEndY;
 
   const searchAnimStyle = useAnimatedStyle(() => {
     if (forcedMode === 'search') return { opacity: 1 };
@@ -78,7 +96,7 @@ export function MarketBackground({
     return {
       opacity: interpolate(
         scrollY.value,
-        [TRANSITION_START_Y, TRANSITION_END_Y],
+        [startY.value, endY.value],
         [1, 0],
         { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' },
       ),
@@ -92,7 +110,7 @@ export function MarketBackground({
     return {
       opacity: interpolate(
         scrollY.value,
-        [TRANSITION_START_Y, TRANSITION_END_Y],
+        [startY.value, endY.value],
         [0, 1],
         { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' },
       ),
@@ -105,12 +123,12 @@ export function MarketBackground({
   const softOverlayStyle = useAnimatedStyle(() => {
     if (forcedMode === 'mid') return { opacity: 1 };
     if (forcedMode) return { opacity: 0 };
-    // Soft cobalt-overlay видим только в transition-zone, peak ~ 550 (середина).
-    const midY = (TRANSITION_START_Y + TRANSITION_END_Y) / 2;
+    // Soft cobalt-overlay видим только в transition-zone, peak в середине.
+    const midY = (startY.value + endY.value) / 2;
     return {
       opacity: interpolate(
         scrollY.value,
-        [TRANSITION_START_Y, midY, TRANSITION_END_Y],
+        [startY.value, midY, endY.value],
         [0, 0.30, 0],
         { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' },
       ),

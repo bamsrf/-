@@ -80,6 +80,14 @@ function colorHex(name?: string | null): string {
   return VINYL_COLOR_TO_HEX[key] ?? '#5780F0';
 }
 
+function isCommonFormat(format: string): boolean {
+  // LP / Vinyl — стандартный пресс, не несёт дополнительной инфы кроме
+  // того что юзер уже видит из record header'а. Скрываем чтобы не
+  // дублировать («LP к чему?»). 2xLP, CD, Cassette, Box Set оставляем.
+  const f = format.trim().toLowerCase();
+  return f === 'lp' || f === 'vinyl';
+}
+
 function colorLabel(name?: string | null): string {
   if (!name) return '';
   // Переводим простые англ. цвета в русские для UI; multi-word оставляем как есть
@@ -138,28 +146,31 @@ export function OfferDetailCard({
 
           <Text style={styles.price}>{formatPrice(data.priceRub)}</Text>
 
-          {/* Meta: format · color · year */}
+          {/* Meta: format · color · year.
+              Format показываем ТОЛЬКО если нестандартный (2xLP/Box/CD/Cassette)
+              — голый «LP» / «Vinyl» дублирует record.format_type, юзер жаловался
+              на «LP к чему?» в OfferRow. Цвет винила выделяем как chip — это
+              ценная инфа (лимитка/пресс), не «непонятная подпись». */}
           <View style={styles.metaRow}>
-            {data.format && (
+            {data.format && !isCommonFormat(data.format) && (
               <Text style={styles.metaText}>{data.format}</Text>
             )}
             {data.vinylColor && (
-              <>
-                <View style={styles.metaDot} />
-                <View style={styles.colorChip}>
-                  <View
-                    style={[
-                      styles.colorDot,
-                      { backgroundColor: colorHex(data.vinylColor) },
-                    ]}
-                  />
-                  <Text style={styles.metaText}>{colorLabel(data.vinylColor)}</Text>
-                </View>
-              </>
+              <View style={styles.colorChip}>
+                <View
+                  style={[
+                    styles.colorDot,
+                    { backgroundColor: colorHex(data.vinylColor) },
+                  ]}
+                />
+                <Text style={styles.colorLabel}>{colorLabel(data.vinylColor)} винил</Text>
+              </View>
             )}
             {data.year != null && (
               <>
-                <View style={styles.metaDot} />
+                {(data.vinylColor || (data.format && !isCommonFormat(data.format))) && (
+                  <View style={styles.metaDot} />
+                )}
                 <Text style={styles.metaText}>{data.year}</Text>
               </>
             )}
@@ -326,7 +337,21 @@ const styles = StyleSheet.create({
   colorChip: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 4,
+    gap: 6,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 9999,
+    backgroundColor: 'rgba(232,90,42,0.08)',
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: 'rgba(232,90,42,0.25)',
+  },
+  colorLabel: {
+    fontFamily: 'Inter_700Bold',
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#0E121C',
+    letterSpacing: -0.1,
+    includeFontPadding: false,
   },
   colorDot: {
     width: 8,

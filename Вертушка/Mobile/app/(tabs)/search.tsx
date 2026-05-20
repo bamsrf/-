@@ -25,6 +25,7 @@ import { useRouter } from 'expo-router';
 // Reanimated 3 для magic-transition Маркета. NB: импортим под именем
 // `Reanimated` чтобы не конфликтовать с legacy `Animated` из react-native выше.
 import Reanimated, {
+  interpolate,
   useAnimatedScrollHandler,
   useDerivedValue,
   useSharedValue,
@@ -46,6 +47,8 @@ import MarketBackground from '../../components/market/MarketBackground';
 import MarketSection, { type MarketStoreData } from '../../components/market/MarketSection';
 import MarketSearchResults from '../../components/market/MarketSearchResults';
 import MarketResistanceHint from '../../components/market/MarketResistanceHint';
+import MarketEntryHint from '../../components/market/MarketEntryHint';
+import StickyMarketHeader from '../../components/market/StickyMarketHeader';
 import ExitMarketButton from '../../components/market/ExitMarketButton';
 import { useMarketStore } from '../../lib/marketStore';
 import type { MarketSearchItem } from '../../lib/types';
@@ -296,11 +299,22 @@ export default function SearchScreen() {
   // ──────────────────────────────────────────────────────────────────
 
   // Sticky persist: searchScrollY читается на mount, write throttle при скролле.
+  // persistedScrollY оставлен для будущей фичи «вернись где был», сейчас НЕ
+  // используем как initial — иначе на mount фон Маркета уже частично виден
+  // (юзер видит peach/cobalt на чистом экране Поиска).
   const persistedScrollY = useMarketStore((s) => s.searchScrollY);
   const setPersistedScrollY = useMarketStore((s) => s.setSearchScrollY);
 
-  // SharedValue для magic-transition фона (см. MarketBackground)
-  const scrollY = useSharedValue(persistedScrollY);
+  // ВАЖНО: всегда стартуем с 0 — иначе background-layer сразу частично market.
+  const scrollY = useSharedValue(0);
+  // Динамический threshold transition фона. parent обновляет эти SharedValue'и
+  // когда меняется layout (история раскрылась → MarketSection сдвинулся).
+  // Без этого: длинная история → user скроллит её → scrollY входит в [400,700]
+  // → market-bg зажигается раньше времени.
+  const transitionStartY = useSharedValue(400);
+  const transitionEndY = useSharedValue(700);
+  // Sticky-header overlay opacity — driven by scrollY и dynamic threshold.
+  const stickyMarketHeaderOpacity = useSharedValue(0);
   const scrollToTopRef = useRef<(() => void) | null>(null);
   // scrollToOffsetRef нужен для прыжка к Маркету из «Смотреть все →»
   // в карусели «В наличии сейчас». Прокидываем в RecordGrid → FlatList.
@@ -429,48 +443,95 @@ export default function SearchScreen() {
   // Идея: silent messages в Instagram (надо тянуть с усилием).
   // Без повторов: bumpedRef.current флаг ставится после первого срабатывания.
   // ──────────────────────────────────────────────────────────────────
-  // Симметричный speed-bump: при первом крессинге вниз через 340 px
-  // и вверх через MARKET_EXIT_BUMP_Y — Heavy haptic + scroll snap-back.
-  // Эффект «следующий уровень»: уперся, нужно ещё свайп. Каждый раз
-  // через крессинг bumpedDownRef/bumpedUpRef сбрасываются на противоположной
-  // стороне, чтобы юзер мог повторно «провалиться» туда-сюда за сессию.
-  const RESISTANCE_BUMP_Y = 340;
-  const MARKET_EXIT_BUMP_Y = 800;
-  const bumpedDownRef = useRef(false);
-  const bumpedUpRef = useRef(false);
-  // SharedValue вместо useRef — в worklet'е ref'ы не пишутся надёжно.
+  // ──────────────────────────────────────────────────────────────────
+  // Двухстадийный переход «Поиск ⇄ Маркет» — как silent messages в Insta.
+  //
+  // ВНИЗ (вход в Маркет):
+  //   1-е пересечение порога (marketSectionY - 100) → bump-back + heavy haptic +
+  //     показ overlay-подсказки «Ещё раз вниз — войдёшь в Маркет»
+  //   2-е пересечение → auto-scroll ровно к marketSectionY + heavy haptic +
+  //     sticky МАРКЕТ header прибит сверху (через stickyMarketHeaderOpacity).
+  //
+  // ВВЕРХ (выход из Маркета):
+  //   1-е пересечение порога (marketSectionY - 40) → bump-back-down + haptic
+  //   2-е пересечение → auto-scroll к 0 (на «верх Поиска») + haptic.
+  //
+  // Все пороги ДИНАМИЧЕСКИЕ — берутся из marketSectionYRef.current. Иначе
+  // bump срабатывает не в той точке когда история раскрыта.
+  // ──────────────────────────────────────────────────────────────────
+  const bumpDownCountRef = useRef(0); // 0=ещё не bump'нули, 1=1й крос сделан
+  const bumpUpCountRef = useRef(0);
   const lastScrollY = useSharedValue(0);
+  const [showEntryHint, setShowEntryHint] = useState(false);
 
-  const triggerBumpDown = useCallback(() => {
-    if (bumpedDownRef.current) return;
-    bumpedDownRef.current = true;
-    bumpedUpRef.current = false; // готовимся к возможному выходу вверх
+  const enterMarket = useCallback(() => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy).catch(() => {});
-    scrollToOffsetRef.current?.(Math.max(0, RESISTANCE_BUMP_Y - 70), true);
+    setShowEntryHint(false);
+    bumpDownCountRef.current = 0;
+    bumpUpCountRef.current = 0;
+    scrollToOffsetRef.current?.(marketSectionYRef.current, true);
   }, []);
 
-  const triggerBumpUp = useCallback(() => {
-    if (bumpedUpRef.current) return;
-    bumpedUpRef.current = true;
-    bumpedDownRef.current = false; // готовимся к возможному возврату вниз
+  const exitMarket = useCallback(() => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy).catch(() => {});
-    // Snap НИЖЕ exit threshold чтобы юзер увидел «обратно в Маркет»
-    scrollToOffsetRef.current?.(MARKET_EXIT_BUMP_Y + 60, true);
+    bumpDownCountRef.current = 0;
+    bumpUpCountRef.current = 0;
+    scrollToOffsetRef.current?.(0, true);
+  }, []);
+
+  const triggerBumpDown1 = useCallback(() => {
+    bumpDownCountRef.current = 1;
+    bumpUpCountRef.current = 0;
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
+    setShowEntryHint(true);
+    // Snap немного вверх (создаёт «удар об стену»)
+    scrollToOffsetRef.current?.(Math.max(0, marketSectionYRef.current - 170), true);
+    // Hint скрывается сам через 2.5с если юзер не свайпнул ещё раз
+    setTimeout(() => setShowEntryHint(false), 2500);
+  }, []);
+
+  const triggerBumpUp1 = useCallback(() => {
+    bumpUpCountRef.current = 1;
+    bumpDownCountRef.current = 0;
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
+    // Snap обратно вниз в Маркет (создаёт «не отпускает»)
+    scrollToOffsetRef.current?.(marketSectionYRef.current + 30, true);
   }, []);
 
   useDerivedValue(() => {
     const y = scrollY.value;
     const prev = lastScrollY.value;
-    // Down-bump: пересекли 340 ВНИЗ — speed-bump к searchу обратно
-    if (y > prev && prev < RESISTANCE_BUMP_Y && y >= RESISTANCE_BUMP_Y) {
-      runOnJS(triggerBumpDown)();
+    const marketY = transitionEndY.value; // = marketSectionY - 20
+    const downThreshold = Math.max(60, marketY - 80);
+    const upThreshold = marketY + 60;
+
+    // Sticky-header opacity: fully visible once user past marketSectionY
+    stickyMarketHeaderOpacity.value = interpolate(
+      y,
+      [marketY - 10, marketY + 40],
+      [0, 1],
+      { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' },
+    );
+
+    // Скролл ВНИЗ через downThreshold
+    if (y > prev && prev < downThreshold && y >= downThreshold) {
+      if (bumpDownCountRef.current === 0) {
+        runOnJS(triggerBumpDown1)();
+      } else {
+        // 2-е пересечение — auto-scroll в Маркет
+        runOnJS(enterMarket)();
+      }
     }
-    // Up-bump: пересекли 800 ВВЕРХ — speed-bump к Маркету обратно
-    if (y < prev && prev > MARKET_EXIT_BUMP_Y && y <= MARKET_EXIT_BUMP_Y) {
-      runOnJS(triggerBumpUp)();
+    // Скролл ВВЕРХ через upThreshold (когда юзер уже в маркете)
+    if (y < prev && prev > upThreshold && y <= upThreshold && marketY > 100) {
+      if (bumpUpCountRef.current === 0) {
+        runOnJS(triggerBumpUp1)();
+      } else {
+        runOnJS(exitMarket)();
+      }
     }
     lastScrollY.value = y;
-  }, [triggerBumpDown, triggerBumpUp]);
+  }, [triggerBumpDown1, triggerBumpUp1, enterMarket, exitMarket]);
 
   // Debounced save scrollY → Zustand persist. Запускаем через ref'ный timer.
   const savePosTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -521,20 +582,22 @@ export default function SearchScreen() {
   }, [router]);
 
   const handleMarketShowAll = useCallback(() => {
-    // «Смотреть все →» в карусели «В наличии сейчас» проскролливает к
-    // ТОЧНОЙ Y MarketSection — без offset, чтобы «МАРКЕТ» заголовок
-    // доезжал до самого верха viewport'а (под status-bar + минимальный
-    // headerPaddingTop=20). Юзер жалуется на «пустой кусок над МАРКЕТ»
-    // если оставить -80 px.
-    const y = marketSectionYRef.current;
-    scrollToOffsetRef.current?.(y, true);
-  }, []);
+    // «Смотреть все →» — то же что 2-е пересечение порога: auto-scroll
+    // прямо к MarketSection + heavy haptic + сброс bump-счётчиков.
+    enterMarket();
+  }, [enterMarket]);
 
   const handleMarketSectionLayout = useCallback((e: LayoutChangeEvent) => {
     // y относительно FlatList'а. ListHeaderComponent рендерится внутри
     // FlatList → onLayout даёт корректный absolute y от начала контента.
-    marketSectionYRef.current = e.nativeEvent.layout.y;
-  }, []);
+    const y = e.nativeEvent.layout.y;
+    marketSectionYRef.current = y;
+    // Transition zone узкая (180 px) и привязана к РЕАЛЬНОЙ позиции Маркета.
+    // Раньше [400, 700] (static) — фон зажигался когда юзер скроллил длинную
+    // историю/новинки, ещё до Маркета.
+    transitionStartY.value = Math.max(0, y - 200);
+    transitionEndY.value = y - 20;
+  }, [transitionStartY, transitionEndY]);
 
   const handleSearch = useCallback(async () => {
     const trimmed = searchInput.trim();
@@ -885,7 +948,9 @@ export default function SearchScreen() {
             onHeaderActionPress={handleMarketShowAll}
             itemBadgeRenderer={(r) => {
               const price = marketPriceByRecordId.get(r.id);
-              return price ? <MiniPriceBadge price={price} /> : null;
+              // Тёмный текст — карусель живёт на светлом search-фоне.
+              // White text был нечитабельным.
+              return price ? <MiniPriceBadge price={price} color="#0E121C" /> : null;
             }}
           />
         </Section>
@@ -898,6 +963,16 @@ export default function SearchScreen() {
         секций — на светлом фоне без magic-transition.
         MARKET_AND_PRICE_DRAWER.md §1.3.
       */}
+      {/* Placeholder «Введите название» — раньше жил в самом низу контента
+          (за tab-bar'ом, не виден). Теперь между «Новинками» и Маркетом —
+          юзер видит подсказку до того, как провалится в Маркет. */}
+      <View style={styles.searchHintBlock}>
+        <Icon name="search" size={20} color={Colors.royalBlue} />
+        <Text style={styles.searchHintText}>
+          Введите название альбома, артиста или @username — поиск ищет по Discogs и каталогу.
+        </Text>
+      </View>
+
       {marketStores.length > 0 && <View style={styles.marketSpacer} />}
       {marketStores.length > 0 && (
         <View onLayout={handleMarketSectionLayout}>
@@ -1366,13 +1441,8 @@ export default function SearchScreen() {
         </View>
       )}
 
-      {!isLoading && results.length === 0 && artistResults.length === 0 && !query && (
-        <View style={styles.emptyContainer}>
-          <Text style={styles.emptyText}>
-            Введите название альбома, артиста или @username
-          </Text>
-        </View>
-      )}
+      {/* Empty-state «Введите название» — перенесли в HomeSections выше
+          (между «Новинками» и Маркетом), чтобы не торчало за tab-bar'ом. */}
     </View>
   );
 
@@ -1382,7 +1452,11 @@ export default function SearchScreen() {
           Виден через прозрачные участки RecordGrid (фон у container — Colors.background
           ниже, но он переопределяется absolute MarketBackground'ом для magic-transition).
           MARKET_AND_PRICE_DRAWER.md §1.3. */}
-      <MarketBackground scrollY={scrollY} />
+      <MarketBackground
+        scrollY={scrollY}
+        transitionStartY={transitionStartY}
+        transitionEndY={transitionEndY}
+      />
 
       <KeyboardAvoidingView
         style={[styles.flex, { paddingTop: insets.top, backgroundColor: 'transparent' }]}
@@ -1411,12 +1485,16 @@ export default function SearchScreen() {
         {FilterModal}
       </KeyboardAvoidingView>
 
-      {/* «Скролль вниз, чтобы открыть Маркет» — подсказка с haptic.
-          Появляется в zone [240, 400] scrollY (см. MarketResistanceHint).
-          Без блокировки скролла — только визуальный + тактильный сигнал.
-          MARKET_AND_PRICE_DRAWER.md §1.3.5. */}
-      {marketStores.length > 0 && (
-        <MarketResistanceHint scrollY={scrollY} disabled={isUserSearch} />
+      {/* Sticky МАРКЕТ overlay — пробивается поверх FlatList'а когда юзер
+          пересёк marketSectionY. Driven by stickyMarketHeaderOpacity. */}
+      {marketStores.length > 0 && !isUserSearch && (
+        <StickyMarketHeader opacity={stickyMarketHeaderOpacity} />
+      )}
+
+      {/* Silent-messages-стиль hint после 1-го пересечения порога.
+          Показывается через bumpDownCountRef → setShowEntryHint(true). */}
+      {marketStores.length > 0 && !isUserSearch && (
+        <MarketEntryHint visible={showEntryHint} />
       )}
 
       {/* Floating «↑ Выйти из Маркета» — появляется когда scrollY > 1200.
@@ -1444,6 +1522,26 @@ const styles = StyleSheet.create({
   // юзер сразу видит Маркет на светлом Discogs-фоне.
   marketSpacer: {
     height: 280,
+  },
+  searchHintBlock: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    marginHorizontal: Spacing.md,
+    marginTop: Spacing.lg,
+    marginBottom: Spacing.sm,
+    paddingVertical: 14,
+    paddingHorizontal: 14,
+    backgroundColor: 'rgba(59, 75, 245, 0.06)',
+    borderRadius: BorderRadius.md,
+    borderWidth: 1,
+    borderColor: 'rgba(59, 75, 245, 0.10)',
+  },
+  searchHintText: {
+    ...Typography.caption,
+    color: Colors.textSecondary,
+    flex: 1,
+    lineHeight: 16,
   },
   searchContainer: {
     paddingBottom: Spacing.md,

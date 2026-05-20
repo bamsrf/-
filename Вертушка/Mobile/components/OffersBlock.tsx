@@ -177,14 +177,17 @@ function OfferRow({ offer, discogsId }: OfferRowProps) {
   }, [discogsId, offer]);
 
   const priceFormatted = Math.round(Number(offer.price_rub)).toLocaleString('ru-RU');
-  // Мета показываем ТОЛЬКО если есть что-то ценное (цвет винила или состояние).
-  // Голый «LP» дублирует record.format_type из шапки детальной → визуальный шум.
+  // Мета: цвет винила (если нестандартный) + condition. Формат скрываем
+  // если LP/Vinyl (стандартный пресс, дублирует record header). Цвет —
+  // ценная инфа (лимитка/пресс), пишем как отдельный «X винил».
+  const formatToShow =
+    offer.format && !/^(lp|vinyl)$/i.test(offer.format.trim())
+      ? offer.format
+      : null;
   const metaParts: string[] = [];
-  if (offer.vinyl_color) metaParts.push(offer.vinyl_color);
+  if (formatToShow) metaParts.push(formatToShow);
+  if (offer.vinyl_color) metaParts.push(`${offer.vinyl_color} винил`);
   if (offer.condition) metaParts.push(offer.condition);
-  // Format показываем только если оффер отличается форматом — например, оффер
-  // CD на странице LP. Иначе скрываем (одинаковый формат = бесполезный шум).
-  if (offer.format && metaParts.length > 0) metaParts.unshift(offer.format);
   const meta = metaParts.join(' · ');
 
   return (
