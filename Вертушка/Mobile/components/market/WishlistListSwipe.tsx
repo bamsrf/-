@@ -187,17 +187,23 @@ export function WishlistListSwipe({
         </Animated.View>
 
         {/* ОДИН gradient-баннер. Прибит к right:0. Width растёт leftward.
-            height — динамически = measured card height МИНУС 8
-            (listContainer.marginBottom = Spacing.sm = 8 — это пустое
-            пространство ниже card'а, banner не должен в него лезть).
-            pointerEvents=box-none — тапы проходят на Pressable внутри,
-            но drag-жесты bubble up к parent'у GestureDetector. */}
+            ВЫЧЕТЫ из measured cardHeight (= card layout box):
+              - 8  = listContainer.marginBottom (Spacing.sm)
+              - 4  = listContainer.borderWidth × 2 (2dp top + 2dp bottom).
+                    Border transparent (невидим) НО занимает layout space →
+                    banner visually extends past visible white card на 2dp
+                    в каждую сторону если не вычесть.
+            top: 2 — banner начинается с верха visible white card (skip
+            top transparent border).
+            pointerEvents=box-none — тапы на Pressable, drag bubble'ит. */}
         <Animated.View
           pointerEvents="box-none"
           style={[
             styles.bannerWrap,
             bannerStyle,
-            cardHeight != null ? { height: cardHeight - 8 } : null,
+            cardHeight != null
+              ? { top: 2, height: cardHeight - 12 }
+              : null,
           ]}
         >
           <Pressable
