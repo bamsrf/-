@@ -76,7 +76,7 @@ async def get_record_offers(
         select(StoreListing)
         .options(
             joinedload(StoreListing.store),
-            joinedload(StoreListing.matched_record),  # для record_discogs_id в response
+            joinedload(StoreListing.record),  # для record_discogs_id в response (relationship называется record, не matched_record)
         )
         .where(StoreListing.matched_record_id == record_id)
         .where(StoreListing.status.in_((ListingStatus.IN_STOCK, ListingStatus.PREORDER)))
@@ -133,10 +133,10 @@ def _to_response(listing: StoreListing, *, is_alt_version: bool = False) -> Offe
         is_alt_version=is_alt_version,
         image_url=_get_payload_str(listing, 'image_url'),
         # discogs_id записи, к которой матчен листинг (для navigation на
-        # детальную alt-pressing'а). matched_record загружается через relationship.
+        # детальную alt-pressing'а). relationship называется `record`.
         record_discogs_id=(
-            listing.matched_record.discogs_id
-            if listing.matched_record is not None
+            listing.record.discogs_id
+            if listing.record is not None
             else None
         ),
     )
@@ -182,7 +182,7 @@ async def track_offer_click(
         select(StoreListing)
         .options(
             joinedload(StoreListing.store),
-            joinedload(StoreListing.matched_record),  # для record_discogs_id в response
+            joinedload(StoreListing.record),  # для record_discogs_id в response (relationship называется record, не matched_record)
         )
         .where(StoreListing.id == listing_id)
     )
@@ -501,7 +501,7 @@ async def get_record_offers_full(
         select(StoreListing)
         .options(
             joinedload(StoreListing.store),
-            joinedload(StoreListing.matched_record),  # для record_discogs_id в response
+            joinedload(StoreListing.record),  # для record_discogs_id в response (relationship называется record, не matched_record)
         )
         .where(StoreListing.matched_record_id == record_id)
         .where(StoreListing.status.in_((ListingStatus.IN_STOCK, ListingStatus.PREORDER)))
@@ -517,7 +517,7 @@ async def get_record_offers_full(
             select(StoreListing)
             .options(
             joinedload(StoreListing.store),
-            joinedload(StoreListing.matched_record),  # для record_discogs_id в response
+            joinedload(StoreListing.record),  # для record_discogs_id в response (relationship называется record, не matched_record)
         )
             .join(Record, Record.id == StoreListing.matched_record_id)
             .where(Record.discogs_master_id == master_id)
