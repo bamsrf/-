@@ -65,7 +65,7 @@ interface WishlistListSwipeProps {
   style?: StyleProp<ViewStyle>;
 }
 
-const PEEK_WIDTH = 32;       // ширина корешка (ТЯНИ + ←) в rest
+const PEEK_WIDTH = 40;       // ширина корешка (увеличена с 32 — Cyrillic ExtraBold глифы требуют простора)
 const FULL_WIDTH = 168;      // полная ширина баннера в open (peek + CTA)
 const DELTA = FULL_WIDTH - PEEK_WIDTH; // 136 — сколько надо протянуть
 
@@ -211,19 +211,20 @@ export function WishlistListSwipe({
                 </View>
               </Animated.View>
 
-              {/* PEEK (корешок) — ← и вертикальная ТЯНИ.
-                  pointerEvents=none чтобы Pressable снаружи получал тап,
-                  а Pan-жест мог проходить сквозь. */}
+              {/* PEEK (корешок) — ← и вертикальная ТЯНИ. */}
               <View style={styles.peekZone} pointerEvents="none">
                 <View style={styles.peekArrow}>
                   <Icon name="caret-left" size={14} color="onBrand" />
                 </View>
-                {/* Каждая буква на своей строке — НЕ rotation. Стабильнее
-                    геометрически: rotated wrapper всегда занимает свой
-                    PRE-rotation layout box, что в 32dp peek-зоне обрезалось. */}
+                {/* Каждая буква в своём contained View фиксированной ширины.
+                    Cyrillic ExtraBold глифы визуально ШИРЕ своего layout box —
+                    без explicit width Text обрезает их по своей коробке.
+                    width:20 + textAlign:center даёт глифу простор. */}
                 <View style={styles.peekStack}>
                   {'ТЯНИ'.split('').map((ch, i) => (
-                    <Text key={i} style={styles.peekChar}>{ch}</Text>
+                    <View key={i} style={styles.peekCharBox}>
+                      <Text style={styles.peekChar}>{ch}</Text>
+                    </View>
                   ))}
                 </View>
               </View>
@@ -238,7 +239,9 @@ export function WishlistListSwipe({
 const styles = StyleSheet.create({
   rowWrap: {
     position: 'relative',
-    overflow: 'hidden', // важно: баннер на rest торчит только peek-частью
+    // overflow: 'hidden' УБРАН — banner абсолютный right:0 в rowWrap,
+    // он ВНУТРИ границ rowWrap'а (его width ≤ rowWrap.width), overflow
+    // не нужен и потенциально клипал глифы.
   },
 
   // ── ЕДИНЫЙ БАННЕР ────────────────────────────────────────────────
@@ -247,7 +250,6 @@ const styles = StyleSheet.create({
     right: 0,
     top: 4,
     bottom: 4,
-    // width — animated
     // glow ember чтобы выделялся на любой обложке
     shadowColor: '#FF7A4A',
     shadowOffset: { width: -2, height: 0 },
@@ -255,21 +257,23 @@ const styles = StyleSheet.create({
     shadowRadius: 8,
     elevation: 4,
   },
-  // Banner — pull-tab anchored к правому краю экрана. Правые углы ПРЯМЫЕ
-  // (square), левые скруглённые. Тогда буквы «ТЯНИ» не зажимаются
-  // borderRadius'ом правого края. Плюс UX-логично: tab attached к edge.
   bannerPressable: {
     flex: 1,
+    // borderRadius на самом Pressable УБРАН — LinearGradient внутри
+    // на iOS не всегда уважает overflow:hidden родителя. Ставим radius
+    // прямо на gradient.
+  },
+  // borderRadius прямо на LinearGradient. Square right edges (pull-tab
+  // приклеен к правому краю экрана), скруглённые левые.
+  bannerGradient: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
     borderTopLeftRadius: 14,
     borderBottomLeftRadius: 14,
     borderTopRightRadius: 0,
     borderBottomRightRadius: 0,
     overflow: 'hidden',
-  },
-  bannerGradient: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
   },
 
   // CTA «Купить» — flex:1 (занимает всё пространство left от peek-зоны).
@@ -314,23 +318,31 @@ const styles = StyleSheet.create({
     paddingBottom: 10,
     gap: 7,
   },
-  // Arrow и stack центрируются в peekZone — translateX shift убран,
-  // т.к. правый край banner'а теперь прямой (borderRadius right = 0).
   peekArrow: {},
   peekStack: {
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 1,
+    gap: 0,
+  },
+  // Каждая буква в фиксированном 20×14 контейнере. Без этого Cyrillic
+  // ExtraBold глифы клипались своим natural-width Text-view'ом.
+  peekCharBox: {
+    width: 20,
+    height: 13,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   peekChar: {
     fontFamily: 'Inter_800ExtraBold',
-    fontSize: 9,
-    lineHeight: 11,
+    fontSize: 10,
+    lineHeight: 13,
     fontWeight: '800',
     color: '#FFFFFF',
-    letterSpacing: 0.3,
+    letterSpacing: 0,
     includeFontPadding: false,
     textAlign: 'center',
+    // width на тексте чтобы render-area хватало для wide-glyph'ов
+    width: 20,
   },
 });
 
