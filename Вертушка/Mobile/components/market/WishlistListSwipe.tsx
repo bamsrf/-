@@ -215,7 +215,9 @@ export function WishlistListSwipe({
                   pointerEvents=none чтобы Pressable снаружи получал тап,
                   а Pan-жест мог проходить сквозь. */}
               <View style={styles.peekZone} pointerEvents="none">
-                <Icon name="caret-left" size={13} color="onBrand" />
+                <View style={styles.peekArrow}>
+                  <Icon name="caret-left" size={14} color="onBrand" />
+                </View>
                 {/* Каждая буква на своей строке — НЕ rotation. Стабильнее
                     геометрически: rotated wrapper всегда занимает свой
                     PRE-rotation layout box, что в 32dp peek-зоне обрезалось. */}
@@ -296,25 +298,35 @@ const styles = StyleSheet.create({
   },
 
   // PEEK-зона — корешок справа. Фиксированная ширина, всегда видна.
+  // justifyContent:flex-start вместо center — иначе arrow всплывает к
+  // top-edge и подрезается borderRadius:14 right-corner'ом banner'а.
   peekZone: {
     width: PEEK_WIDTH,
     alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
-    paddingVertical: 10,
+    justifyContent: 'flex-start',
+    paddingTop: 18, // arrow ниже от верхнего borderRadius'а — UX-чище
+    paddingBottom: 10,
+    gap: 7,
   },
+  // Arrow тоже шифтаем влево для визуального баланса со stack'ом букв.
+  peekArrow: {
+    transform: [{ translateX: -3 }],
+  },
+  // Буквы шифтаются на -3px влево чтобы не резались правым закруглением
+  // banner'а (rounded right-edge ест часть буквы).
   peekStack: {
     alignItems: 'center',
     justifyContent: 'center',
     gap: 1,
+    transform: [{ translateX: -3 }],
   },
   peekChar: {
     fontFamily: 'Inter_800ExtraBold',
-    fontSize: 10,
-    lineHeight: 12,
+    fontSize: 9,
+    lineHeight: 11,
     fontWeight: '800',
     color: '#FFFFFF',
-    letterSpacing: 0,
+    letterSpacing: 0.3,
     includeFontPadding: false,
     textAlign: 'center',
   },
