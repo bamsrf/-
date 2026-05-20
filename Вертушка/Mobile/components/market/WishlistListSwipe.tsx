@@ -52,7 +52,7 @@ import Animated, {
 } from 'react-native-reanimated';
 
 import { Icon } from '../ui';
-import { Gradients } from '../../constants/theme';
+import { Gradients, Spacing } from '../../constants/theme';
 import { useMarketStore } from '../../lib/marketStore';
 import { formatPrice } from '../HotStockTag';
 
@@ -169,16 +169,21 @@ export function WishlistListSwipe({
     // только над карточкой).
     <GestureDetector gesture={panGesture}>
       <View style={[styles.rowWrap, style]}>
-        {/* КАРТОЧКА — двигается влево с пальцем. paddingRight под peek. */}
+        {/* КАРТОЧКА — двигается влево с пальцем. paddingRight под peek.
+            cardMarginEater: marginBottom:-Spacing.sm ОТНИМАЕТ inner marginBottom
+            listContainer'а из вертикального бюджета rowWrap. Сам margin между
+            строками перенесён на rowWrap.marginBottom. Итог: rowWrap.height
+            ровно равна visible layout-box карточки, top:0/bottom:0 на баннере
+            даёт pixel-perfect height match. */}
         <Animated.View style={[{ paddingRight: PEEK_WIDTH }, cardStyle]}>
-          {children}
+          <View style={styles.cardMarginEater}>
+            {children}
+          </View>
         </Animated.View>
 
         {/* ОДИН gradient-баннер. Прибит к right:0. Width растёт leftward.
-            Геометрия через top/bottom — banner резинится по высоте rowWrap'а:
-            - top: 2  — skip 2dp invisible top border у listContainer'а
-            - bottom: 10 — 8 (marginBottom Spacing.sm) + 2 (invisible bottom border)
-            Pixel-perfect alignment с visible white card.
+            top:0 / bottom:0 — точно равны границам rowWrap'а, которая теперь
+            = visible card layout box (см. cardMarginEater выше).
             pointerEvents=box-none — тапы на Pressable, drag bubble'ит. */}
         <Animated.View
           pointerEvents="box-none"
@@ -242,32 +247,31 @@ export function WishlistListSwipe({
 const styles = StyleSheet.create({
   rowWrap: {
     position: 'relative',
-    // overflow: 'hidden' УБРАН — banner абсолютный right:0 в rowWrap,
-    // он ВНУТРИ границ rowWrap'а (его width ≤ rowWrap.width), overflow
-    // не нужен и потенциально клипал глифы.
+    // marginBottom перенесён с listContainer сюда — см. cardMarginEater.
+    // Между строками визуально остаётся тот же gap = Spacing.sm.
+    marginBottom: Spacing.sm,
+  },
+  // Съедает marginBottom:Spacing.sm у listContainer'а внутри RecordCard,
+  // чтобы Animated.View card-wrapper'а имела height = visible card layout box
+  // (БЕЗ нижнего margin'а). rowWrap получает чистую высоту = карточка,
+  // и баннер top:0/bottom:0 = pixel-match.
+  cardMarginEater: {
+    marginBottom: -Spacing.sm,
   },
 
   // ── ЕДИНЫЙ БАННЕР ────────────────────────────────────────────────
   bannerWrap: {
     position: 'absolute',
     right: 0,
-    // top:2 / bottom:10 — banner aligned с VISIBLE white card.
-    // listContainer структура:
-    //   borderWidth: 2 transparent (2dp top + 2dp bottom layout space)
-    //   marginBottom: Spacing.sm (= 8)
-    // Visible white starts 2dp ниже top of layout box, ends 2dp выше
-    // bottom of layout-box-без-margin'а. Below margin = 8dp пустого.
-    top: 2,
-    bottom: 10, // 8 marginBottom + 2 invisible border
-    // Glow только slight, чтобы не создавать halo выше/ниже banner'а
-    // (юзер видел это как «banner больше карточки»). shadowRadius уменьшен
-    // с 8 до 4. Halo маленький, помогает отделить banner от карточки
-    // без визуального оверсайза.
+    top: 0,
+    bottom: 0,
+    // Halo только горизонтальный (offset.width:-3, radius:0) — никакого
+    // вертикального spread'а, чтобы баннер визуально не казался выше карточки.
     shadowColor: '#FF7A4A',
     shadowOffset: { width: -3, height: 0 },
-    shadowOpacity: 0.35,
-    shadowRadius: 4,
-    elevation: 4,
+    shadowOpacity: 0.3,
+    shadowRadius: 0,
+    elevation: 0,
   },
   bannerPressable: {
     flex: 1,
