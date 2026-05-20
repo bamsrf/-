@@ -37,6 +37,7 @@ import Animated, {
 import { Icon } from '../ui';
 import { Gradients } from '../../constants/theme';
 import { useMarketStore } from '../../lib/marketStore';
+import { formatPrice } from '../HotStockTag';
 
 interface WishlistListSwipeProps {
   children: React.ReactNode;
@@ -107,9 +108,6 @@ export function WishlistListSwipe({
       containerStyle={style}
       onSwipeableOpen={(direction) => {
         if (direction === 'right') {
-          // Юзер свайпнул полностью — открываем BottomSheet и закрываем swipe.
-          // Микро-задержка чтобы пальцу было визуально комфортно (закрытие
-          // не дёргается синхронно с показом панели).
           setTimeout(() => {
             swipeableRef.current?.close();
             onOpen();
@@ -117,7 +115,43 @@ export function WishlistListSwipe({
         }
       }}
     >
-      <View style={styles.contentWrap}>{children}</View>
+      <View style={styles.contentWrap}>
+        {children}
+        {/* Постоянная подсказка-чип на правом краю строки. Юзер должен
+            видеть «зацепку» — что свайп влево что-то откроет. Без неё
+            никто не догадается, что строка кликабельна вбок.
+            pointerEvents=none — тап проваливается на строку (опен detail).
+            При свайпе строка уезжает, и чип уезжает вместе с ней;
+            под низом проявляется CTAReveal (тот же gradient). */}
+        <Pressable
+          onPress={(e) => {
+            e.stopPropagation();
+            onOpen();
+          }}
+          style={styles.affordancePill}
+          hitSlop={6}
+          accessibilityRole="button"
+          accessibilityLabel={
+            minPriceRub
+              ? `Открыть цены: от ${minPriceRub} рублей`
+              : 'Открыть цены'
+          }
+        >
+          <LinearGradient
+            colors={Gradients.hotStock as [string, string, string]}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+            style={styles.affordancePillGradient}
+          >
+            <Icon name="disc" size={11} color="onBrand" weight="duotone" />
+            {minPriceRub != null ? (
+              <Text style={styles.affordancePrice}>
+                {formatPrice(Number(minPriceRub))}
+              </Text>
+            ) : null}
+          </LinearGradient>
+        </Pressable>
+      </View>
     </ReanimatedSwipeable>
   );
 }
@@ -196,6 +230,39 @@ function CTAReveal({ progress, minPriceRub, storesCount, onPress }: CTARevealPro
 const styles = StyleSheet.create({
   contentWrap: {
     position: 'relative',
+  },
+  // Affordance pill: всегда виден на правом краю строки. Юзер видит
+  // disc + price → понимает что свайп влево откроет полный sheet с ценами.
+  affordancePill: {
+    position: 'absolute',
+    right: 8,
+    top: '50%',
+    marginTop: -14, // half height
+    height: 28,
+    borderRadius: 9999,
+    overflow: 'hidden',
+    // glow ember чтобы pill выделялся даже на жёстком фоне
+    shadowColor: '#FF7A4A',
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.45,
+    shadowRadius: 12,
+    elevation: 4,
+  },
+  affordancePillGradient: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+  },
+  affordancePrice: {
+    fontFamily: 'Inter_800ExtraBold',
+    fontSize: 11,
+    fontWeight: '800',
+    color: '#FFFFFF',
+    letterSpacing: -0.2,
+    includeFontPadding: false,
+    fontVariant: ['tabular-nums'],
   },
   ctaOuter: {
     width: CTA_WIDTH,

@@ -14,7 +14,7 @@
  * gradient bg, ведёт в /market/store/{slug}); для нескольких магазинов —
  * мини-плитки магазинов.
  */
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   View,
   Text,
@@ -46,12 +46,17 @@ export function OffersBlock({ discogsId }: OffersBlockProps) {
     let alive = true;
     setOffers(null);
     setError(null);
+    // /offers/full с include_master_versions=true: возвращает и exact-match,
+    // и alt-version листинги (другие прессинги того же мастера). Юзер
+    // жаловался: на детальной alt-pressing'а нет цен — потому что мы тянули
+    // только exact (а exact могло не быть, но alt был).
     api
-      .getRecordOffers(discogsId, 'price')
+      .getOfferDetailsFull(discogsId, true)
       .then((data) => {
         if (!alive) return;
-        setOffers(data);
-        analytics.viewOffers(discogsId, data.length);
+        const list = data?.offers ?? [];
+        setOffers(list);
+        analytics.viewOffers(discogsId, list.length);
       })
       .catch((e) => {
         if (!alive) return;
@@ -61,6 +66,16 @@ export function OffersBlock({ discogsId }: OffersBlockProps) {
       alive = false;
     };
   }, [discogsId]);
+
+  // Разделяем exact и alt-version для двух блоков с разными заголовками
+  const exactOffers = useMemo(
+    () => (offers ?? []).filter((o) => !o.is_alt_version),
+    [offers],
+  );
+  const altOffers = useMemo(
+    () => (offers ?? []).filter((o) => o.is_alt_version),
+    [offers],
+  );
 
   // Loading: компактный скелет
   if (offers === null && !error) {
@@ -99,11 +114,43 @@ export function OffersBlock({ discogsId }: OffersBlockProps) {
         </View>
       </View>
 
-      <View style={styles.list}>
-        {offers!.map((offer) => (
-          <OfferRow key={offer.listing_id} offer={offer} discogsId={discogsId} />
-        ))}
-      </View>
+      {/* Exact-match блок — точное совпадение pressing'а */}
+      {exactOffers.length > 0 && (
+        <View style={styles.list}>
+          {exactOffers.map((offer) => (
+            <OfferRow
+              key={offer.listing_id}
+              offer={offer}
+              discogsId={discogsId}
+              router={router}
+            />
+          ))}
+        </View>
+      )}
+
+      {/* Alt-version блок — другой пресс того же мастера. Юзер просил:
+          «когда проваливаюсь в версию релиза с альтернативной ценой —
+          её нет». Теперь рендерим с заголовком-разделителем. */}
+      {altOffers.length > 0 && (
+        <>
+          <View style={styles.altDivider}>
+            <View style={styles.altDividerLine} />
+            <Text style={styles.altDividerText}>Другая версия мастера</Text>
+            <View style={styles.altDividerLine} />
+          </View>
+          <View style={styles.list}>
+            {altOffers.map((offer) => (
+              <OfferRow
+                key={offer.listing_id}
+                offer={offer}
+                discogsId={discogsId}
+                router={router}
+                isAlt
+              />
+            ))}
+          </View>
+        </>
+      )}
 
       <Text style={styles.disclaimer}>
         Цены и наличие — со страниц магазинов, обновляются ежедневно.
@@ -114,15 +161,7 @@ export function OffersBlock({ discogsId }: OffersBlockProps) {
           лишний. Плашка единая: disc-иконка + копи + arrow.
           Routes to /(tabs)/search где живёт раздел Маркет. */}
       <Pressable
-        onPress={() =>
-          // ?focus=market — search.tsx прочитает query-param и сразу
-          // проскроллит к секции Маркета (вместо приземления на чистый
-          // Поиск, где Маркет где-то снизу за горизонтом).
-          router.push({
-            pathname: '/(tabs)/search' as any,
-            params: { focus: 'market' },
-          })
-        }
+        onPress={() => router.push('/market' as any)}
         accessibilityRole="button"
         accessibilityLabel="Открыть Маркет"
         style={({ pressed }) => [styles.marketEntryWrap, pressed && { opacity: 0.85 }]}
@@ -156,10 +195,20 @@ export function OffersBlock({ discogsId }: OffersBlockProps) {
 interface OfferRowProps {
   offer: Offer;
   discogsId: string;
+  router: ReturnType<typeof useRouter>;
+  isAlt?: boolean;
 }
 
-function OfferRow({ offer, discogsId }: OfferRowProps) {
+function OfferRow({ offer, discogsId, router, isAlt }: OfferRowProps) {
   const handlePress = useCallback(async () => {
+    // Для alt-version листинга: тап = переход на детальную другого
+    // пресса (а не сразу в магазин). Юзер хочет сначала посмотреть
+    // что это за пресс и его OffersBlock.
+    if (isAlt && offer.record_discogs_id) {
+      router.push(`/record/${offer.record_discogs_id}`);
+      return;
+    }
+
     analytics.offerClick({
       listing_id: offer.listing_id,
       store_slug: offer.store.slug,
@@ -182,7 +231,7 @@ function OfferRow({ offer, discogsId }: OfferRowProps) {
     } catch {
       // магазин-URL невалидный — аналитику уже отправили
     }
-  }, [discogsId, offer]);
+  }, [discogsId, offer, isAlt, router]);
 
   const priceFormatted = Math.round(Number(offer.price_rub)).toLocaleString('ru-RU');
   // Мета: цвет винила (если нестандартный) + condition. Формат скрываем
@@ -280,6 +329,27 @@ const styles = StyleSheet.create({
   },
   list: {
     gap: Spacing.xs + 2,
+  },
+  // Разделитель «── Другая версия мастера ──» между exact и alt-version
+  altDivider: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    marginTop: Spacing.md,
+    marginBottom: Spacing.sm,
+    paddingHorizontal: 4,
+  },
+  altDividerLine: {
+    flex: 1,
+    height: StyleSheet.hairlineWidth,
+    backgroundColor: 'rgba(255,255,255,0.15)',
+  },
+  altDividerText: {
+    fontFamily: 'Inter_700Bold',
+    fontSize: 10,
+    color: 'rgba(255,255,255,0.55)',
+    letterSpacing: 1.2,
+    textTransform: 'uppercase',
   },
   loadingRow: {
     paddingVertical: Spacing.md,

@@ -47,7 +47,6 @@ import MarketBackground from '../../components/market/MarketBackground';
 import MarketSection, { type MarketStoreData } from '../../components/market/MarketSection';
 import MarketSearchResults from '../../components/market/MarketSearchResults';
 import MarketGesturePrompt, { type GesturePromptMode } from '../../components/market/MarketGesturePrompt';
-import StickyMarketHeader from '../../components/market/StickyMarketHeader';
 import ExitMarketButton from '../../components/market/ExitMarketButton';
 import { useMarketStore } from '../../lib/marketStore';
 import type { MarketSearchItem } from '../../lib/types';
@@ -317,8 +316,7 @@ export default function SearchScreen() {
   // зажечься в обычных поисковых результатах при scrollY > 400.
   const transitionStartY = useSharedValue(99999);
   const transitionEndY = useSharedValue(99999);
-  // Sticky-header overlay opacity — driven by scrollY и dynamic threshold.
-  const stickyMarketHeaderOpacity = useSharedValue(0);
+  // (StickyMarketHeader удалён по запросу юзера — был дубль «МАРКЕТ» сверху)
   const scrollToTopRef = useRef<(() => void) | null>(null);
   // scrollToOffsetRef нужен для прыжка к Маркету из «Смотреть все →»
   // в карусели «В наличии сейчас». Прокидываем в RecordGrid → FlatList.
@@ -595,22 +593,7 @@ export default function SearchScreen() {
     return () => clearInterval(tryScroll);
   }, [focus]);
 
-  // Sticky-header opacity (independent от gesture-prompt'а): прибит когда
-  // юзер ПРОШЁЛ marketY — то есть уже в Маркете.
-  useDerivedValue(() => {
-    const y = scrollY.value;
-    const marketY = transitionEndY.value;
-    if (marketY > 50000) {
-      stickyMarketHeaderOpacity.value = 0;
-      return;
-    }
-    stickyMarketHeaderOpacity.value = interpolate(
-      y,
-      [marketY - 10, marketY + 40],
-      [0, 1],
-      { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' },
-    );
-  }, []);
+  // (sticky-header useDerivedValue удалён вместе с overlay'ем)
 
   // Debounced save scrollY → Zustand persist. Запускаем через ref'ный timer.
   const savePosTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -1563,12 +1546,6 @@ export default function SearchScreen() {
 
         {FilterModal}
       </KeyboardAvoidingView>
-
-      {/* Sticky МАРКЕТ overlay — пробивается поверх FlatList'а когда юзер
-          пересёк marketSectionY. Driven by stickyMarketHeaderOpacity. */}
-      {marketStores.length > 0 && !isUserSearch && (
-        <StickyMarketHeader opacity={stickyMarketHeaderOpacity} />
-      )}
 
       {/* Silent-messages-стиль gesture-prompt с круговым прогресс-индикатором.
           Появляется в transition-zone, фейдится по visibility, копи

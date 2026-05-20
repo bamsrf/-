@@ -149,6 +149,7 @@ const styles = StyleSheet.create({
   },
   row: {
     paddingHorizontal: 20,
+    paddingTop: 14, // отступ от MarketSearchInput выше (раньше чипы льнули)
     paddingBottom: 12,
     gap: 8,
     flexDirection: 'row',
