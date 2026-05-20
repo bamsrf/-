@@ -1,19 +1,34 @@
 /**
- * WishlistListSwipe — swipe-row с peek-корешком и полным CTA reveal.
+ * WishlistListSwipe — единый ember-баннер, прибитый к правому краю.
  *
- * Концепция (по запросу юзера):
- *   - На правом краю карточки прибит узкий ember-«корешок»:
- *     вертикально «ТЯНИ» + стрелочка ← (минимализм, без плюсиков/счётчиков).
- *   - Корешок — часть КАРТОЧКИ, двигается с ней при свайпе.
- *   - Когда юзер свайпает влево, карточка с корешком уезжает влево,
- *     и из-под неё выезжает full CTA-баннер «Купить · от X ₽ · N маг.»
- *   - При полном свайпе → onOpen() (BottomSheet с офферами).
+ * Архитектура (по итоговому согласованию с юзером):
  *
- * На ReanimatedSwipeable:
- *   - children = карточка + peek-корешок (он часть children'а)
- *   - renderRightActions = full CTA reveal
+ *   ┌──────────────────────────────┬─────────┐
+ *   │ Card content                 │ ← ТЯНИ │   ← peek-зона ВСЕГДА видна,
+ *   │ (двигается влево при свайпе) │         │     находится в одном с CTA
+ *   └──────────────────────────────┴─────────┘     gradient'е.
+ *                                  ↑
+ *                                  Banner: ОДИН gradient-view, прибит right:0.
+ *                                  При rest width = PEEK_WIDTH.
+ *                                  При свайпе влево width РАСТЁТ leftward —
+ *                                  появляется «Купить · от X ₽ · N маг.»
+ *                                  слева от корешка. Это ОДНА непрерывная
+ *                                  плашка.
+ *
+ * Карточка движется с пальцем (translateX = dragX), баннер расширяется
+ * leftward синхронно (width = PEEK + |dragX|). Один gesture, одна
+ * SharedValue, два связанных visual'а.
+ *
+ * Без ReanimatedSwipeable — он не умеет render'ить ОДИН непрерывный
+ * элемент через peek + reveal. Делаем напрямую через Gesture.Pan +
+ * Reanimated.
+ *
+ * Тригеры (оба → onOpen):
+ *   - Тап на баннер (peek в rest или CTA в full)
+ *   - Свайп ≥ 45% / velocity < -500 — auto-snap к full + onOpen +
+ *     возврат на rest через 180ms.
  */
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import {
   Pressable,
   StyleSheet,
@@ -23,14 +38,17 @@ import {
   type ViewStyle,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
-import ReanimatedSwipeable, {
-  type SwipeableMethods,
-} from 'react-native-gesture-handler/ReanimatedSwipeable';
+import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, {
+  Easing,
   Extrapolation,
   interpolate,
+  runOnJS,
   useAnimatedStyle,
-  type SharedValue,
+  useSharedValue,
+  withDelay,
+  withSequence,
+  withTiming,
 } from 'react-native-reanimated';
 
 import { Icon } from '../ui';
@@ -47,8 +65,12 @@ interface WishlistListSwipeProps {
   style?: StyleProp<ViewStyle>;
 }
 
-const PEEK_WIDTH = 28;       // ширина корешка на правом краю карточки
-const FULL_WIDTH = 158;      // ширина full CTA при свайпе
+const PEEK_WIDTH = 32;       // ширина корешка (ТЯНИ + ←) в rest
+const FULL_WIDTH = 168;      // полная ширина баннера в open (peek + CTA)
+const DELTA = FULL_WIDTH - PEEK_WIDTH; // 136 — сколько надо протянуть
+
+const ACTIVE_OFFSET = 12;
+const FAIL_OFFSET_Y = 14;
 const TEASE_DURATION_MS = 1100;
 
 export function WishlistListSwipe({
@@ -59,160 +81,159 @@ export function WishlistListSwipe({
   onOpen,
   style,
 }: WishlistListSwipeProps) {
-  const swipeableRef = useRef<SwipeableMethods>(null);
   const hasSeenHint = useMarketStore((s) => s.hasSeenSwipeHint);
   const markHintSeen = useMarketStore((s) => s.markSwipeHintSeen);
   const [didTease, setDidTease] = useState(false);
 
-  // One-shot teaser: показываем что строку можно тянуть.
+  // dragX: 0 (rest) → -DELTA (full open). Двигает И карточку И баннер.
+  const dragX = useSharedValue(0);
+  const startX = useSharedValue(0);
+
+  const triggerOpen = useCallback(() => {
+    onOpen();
+  }, [onOpen]);
+
+  // One-shot teaser: показываем юзеру что баннер можно тянуть.
   useEffect(() => {
     if (!hasOffers || hasSeenHint || didTease) return;
     const t = setTimeout(() => {
-      swipeableRef.current?.openRight();
+      dragX.value = withSequence(
+        withTiming(-DELTA * 0.45, { duration: 520, easing: Easing.out(Easing.cubic) }),
+        withDelay(TEASE_DURATION_MS, withTiming(0, { duration: 360, easing: Easing.in(Easing.cubic) })),
+      );
       setTimeout(() => {
-        swipeableRef.current?.close();
         markHintSeen();
         setDidTease(true);
-      }, TEASE_DURATION_MS);
+      }, TEASE_DURATION_MS + 520 + 360);
     }, 900);
     return () => clearTimeout(t);
-  }, [hasOffers, hasSeenHint, didTease, markHintSeen]);
+  }, [hasOffers, hasSeenHint, didTease, markHintSeen, dragX]);
+
+  // Pan gesture
+  const panGesture = Gesture.Pan()
+    .activeOffsetX([-ACTIVE_OFFSET, ACTIVE_OFFSET])
+    .failOffsetY([-FAIL_OFFSET_Y, FAIL_OFFSET_Y])
+    .onStart(() => {
+      startX.value = dragX.value;
+    })
+    .onUpdate((e) => {
+      const next = startX.value + e.translationX;
+      // Clamp [-DELTA, 0] с elastic overscroll
+      if (next > 0) {
+        dragX.value = next * 0.15;
+      } else if (next < -DELTA) {
+        dragX.value = -DELTA - (next + DELTA) * 0.4;
+      } else {
+        dragX.value = next;
+      }
+    })
+    .onEnd((e) => {
+      const shouldOpen = dragX.value < -DELTA * 0.45 || e.velocityX < -500;
+      if (shouldOpen) {
+        dragX.value = withSequence(
+          withTiming(-DELTA, { duration: 200, easing: Easing.out(Easing.cubic) }),
+          withDelay(180, withTiming(0, { duration: 280, easing: Easing.in(Easing.cubic) })),
+        );
+        runOnJS(triggerOpen)();
+      } else {
+        dragX.value = withTiming(0, { duration: 220, easing: Easing.out(Easing.cubic) });
+      }
+    });
+
+  // КАРТОЧКА — двигается с пальцем (translateX = dragX напрямую)
+  const cardStyle = useAnimatedStyle(() => ({
+    transform: [{ translateX: dragX.value }],
+  }));
+
+  // БАННЕР — width = PEEK + |dragX|. Прибит right:0, растёт leftward.
+  const bannerStyle = useAnimatedStyle(() => {
+    const w = PEEK_WIDTH + Math.min(DELTA, Math.max(0, -dragX.value));
+    return { width: w };
+  });
+
+  // CTA «Купить» — opacity fade in по мере раскрытия баннера
+  const ctaStyle = useAnimatedStyle(() => {
+    const openness = Math.min(1, Math.max(0, -dragX.value / DELTA));
+    return {
+      opacity: interpolate(openness, [0, 0.55, 1], [0, 0.4, 1], Extrapolation.CLAMP),
+    };
+  });
 
   if (!hasOffers) {
     return <View style={style}>{children}</View>;
   }
 
   return (
-    <ReanimatedSwipeable
-      ref={swipeableRef}
-      renderRightActions={(progress) => (
-        <FullCTAReveal
-          progress={progress}
-          minPriceRub={minPriceRub}
-          storesCount={storesCount}
-          onPress={() => {
-            swipeableRef.current?.close();
-            onOpen();
-          }}
-        />
-      )}
-      friction={1.6}
-      rightThreshold={FULL_WIDTH * 0.5}
-      overshootRight={false}
-      containerStyle={style}
-      onSwipeableOpen={(direction) => {
-        if (direction === 'right') {
-          setTimeout(() => {
-            swipeableRef.current?.close();
-            onOpen();
-          }, 80);
-        }
-      }}
-    >
-      <View style={styles.rowWrap}>
-        {/* Карточка получает right padding чтобы текст не наезжал на корешок */}
-        <View style={{ paddingRight: PEEK_WIDTH }}>
+    <View style={[styles.rowWrap, style]}>
+      {/* КАРТОЧКА — двигается влево с пальцем. paddingRight под peek. */}
+      <GestureDetector gesture={panGesture}>
+        <Animated.View style={[{ paddingRight: PEEK_WIDTH }, cardStyle]}>
           {children}
-        </View>
+        </Animated.View>
+      </GestureDetector>
 
-        {/* Корешок справа: вертикальная ТЯНИ + chevron-left.
-            Часть карточки (двигается вместе с ней при свайпе).
-            Тап = открыть bottom-sheet (то же что свайп). */}
+      {/* ОДИН gradient-баннер. Прибит к right:0. Width растёт leftward. */}
+      <Animated.View
+        pointerEvents="box-none"
+        style={[styles.bannerWrap, bannerStyle]}
+      >
         <Pressable
-          style={styles.peekSpine}
-          onPress={onOpen}
-          hitSlop={4}
+          onPress={triggerOpen}
           accessibilityRole="button"
           accessibilityLabel={
             minPriceRub
-              ? `Сравнить цены: от ${minPriceRub} рублей в ${storesCount} магазинах`
-              : 'Сравнить цены'
+              ? `Купить: от ${minPriceRub} рублей в ${storesCount} магазинах`
+              : 'Открыть цены'
           }
+          style={styles.bannerPressable}
         >
           <LinearGradient
             colors={Gradients.hotStock as [string, string, string]}
             start={{ x: 0, y: 0 }}
             end={{ x: 1, y: 1 }}
-            style={styles.peekGradient}
+            style={styles.bannerGradient}
           >
-            <Icon name="chevron-left" size={11} color="onBrand" />
-            <View style={styles.peekLabelWrap}>
-              <Text style={styles.peekLabel}>ТЯНИ</Text>
+            {/* CTA "Купить" — слева от корешка, fade in по openness */}
+            <Animated.View style={[styles.ctaZone, ctaStyle]}>
+              <Icon name="storefront" size={18} color="onBrand" />
+              <View style={styles.ctaTextBlock}>
+                <Text style={styles.ctaTitle} numberOfLines={1}>Купить</Text>
+                {minPriceRub != null ? (
+                  <Text style={styles.ctaSub} numberOfLines={1}>
+                    от {formatPrice(Number(minPriceRub))}
+                    {storesCount > 1 ? ` · ${storesCount} маг.` : ''}
+                  </Text>
+                ) : null}
+              </View>
+            </Animated.View>
+
+            {/* PEEK (корешок) — ← и вертикальная ТЯНИ. Всегда виден. */}
+            <View style={styles.peekZone} pointerEvents="none">
+              <Icon name="caret-left" size={12} color="onBrand" />
+              <View style={styles.peekLabelWrap}>
+                <Text style={styles.peekLabel}>ТЯНИ</Text>
+              </View>
             </View>
           </LinearGradient>
         </Pressable>
-      </View>
-    </ReanimatedSwipeable>
-  );
-}
-
-// ────────────────────────────────────────────────────────────────────────
-// Full CTA — выезжает из-под карточки при свайпе
-
-interface FullCTARevealProps {
-  progress: SharedValue<number>;
-  minPriceRub?: number | null;
-  storesCount?: number;
-  onPress: () => void;
-}
-
-function FullCTAReveal({ progress, minPriceRub, storesCount = 0, onPress }: FullCTARevealProps) {
-  const animStyle = useAnimatedStyle(() => {
-    const translateX = interpolate(
-      progress.value,
-      [0, 1],
-      [FULL_WIDTH, 0],
-      Extrapolation.CLAMP,
-    );
-    const opacity = interpolate(progress.value, [0, 0.3, 1], [0, 0.8, 1], Extrapolation.CLAMP);
-    return {
-      transform: [{ translateX }],
-      opacity,
-    };
-  });
-
-  return (
-    <Animated.View style={[styles.ctaOuter, animStyle]}>
-      <Pressable
-        onPress={onPress}
-        style={({ pressed }) => [styles.ctaInner, pressed && { opacity: 0.85 }]}
-      >
-        <LinearGradient
-          colors={Gradients.hotStock as [string, string, string]}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 1, y: 1 }}
-          style={styles.ctaGradient}
-        >
-          <Icon name="storefront" size={18} color="onBrand" />
-          <View style={styles.ctaTextBlock}>
-            <Text style={styles.ctaTitle}>Купить</Text>
-            {minPriceRub != null ? (
-              <Text style={styles.ctaSub} numberOfLines={1}>
-                от {formatPrice(Number(minPriceRub))}
-                {storesCount > 1 ? ` · ${storesCount} маг.` : ''}
-              </Text>
-            ) : null}
-          </View>
-        </LinearGradient>
-      </Pressable>
-    </Animated.View>
+      </Animated.View>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
   rowWrap: {
     position: 'relative',
+    overflow: 'hidden', // важно: баннер на rest торчит только peek-частью
   },
 
-  // ── PEEK-КОРЕШОК (часть карточки, едет с ней при свайпе) ──────────
-  peekSpine: {
+  // ── ЕДИНЫЙ БАННЕР ────────────────────────────────────────────────
+  bannerWrap: {
     position: 'absolute',
     right: 0,
     top: 4,
     bottom: 4,
-    width: PEEK_WIDTH,
-    borderRadius: 14,
-    overflow: 'hidden',
+    // width — animated
     // glow ember чтобы выделялся на любой обложке
     shadowColor: '#FF7A4A',
     shadowOffset: { width: -2, height: 0 },
@@ -220,11 +241,54 @@ const styles = StyleSheet.create({
     shadowRadius: 8,
     elevation: 4,
   },
-  peekGradient: {
+  bannerPressable: {
     flex: 1,
+    borderRadius: 14,
+    overflow: 'hidden',
+  },
+  bannerGradient: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+
+  // CTA «Купить» — flex:1 (занимает всё пространство left от peek-зоны).
+  // overflow:hidden у parent banner'а — текст не торчит при узком rest.
+  ctaZone: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    paddingLeft: 12,
+    paddingRight: 4,
+    minWidth: 0,
+  },
+  ctaTextBlock: {
+    flex: 1,
+    minWidth: 0,
+  },
+  ctaTitle: {
+    fontFamily: 'Inter_800ExtraBold',
+    fontSize: 14,
+    fontWeight: '800',
+    color: '#FFFFFF',
+    letterSpacing: -0.2,
+    includeFontPadding: false,
+  },
+  ctaSub: {
+    fontFamily: 'Inter_500Medium',
+    fontSize: 10.5,
+    color: 'rgba(255,255,255,0.85)',
+    marginTop: 1,
+    includeFontPadding: false,
+  },
+
+  // PEEK-зона — корешок справа. Фиксированная ширина, всегда видна.
+  peekZone: {
+    width: PEEK_WIDTH,
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 8,
+    gap: 6,
     paddingVertical: 10,
   },
   peekLabelWrap: {
@@ -241,42 +305,6 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     letterSpacing: 1.4,
     includeFontPadding: false,
-  },
-
-  // ── FULL CTA REVEAL (выезжает из-под карточки) ────────────────────
-  ctaOuter: {
-    width: FULL_WIDTH,
-    paddingLeft: 8,
-    paddingVertical: 4,
-  },
-  ctaInner: {
-    flex: 1,
-    borderRadius: 14,
-    overflow: 'hidden',
-  },
-  ctaGradient: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-    paddingHorizontal: 14,
-  },
-  ctaTextBlock: {
-    flex: 1,
-    minWidth: 0,
-  },
-  ctaTitle: {
-    fontFamily: 'Inter_800ExtraBold',
-    fontSize: 14,
-    fontWeight: '800',
-    color: '#FFFFFF',
-    letterSpacing: -0.2,
-  },
-  ctaSub: {
-    fontFamily: 'Inter_500Medium',
-    fontSize: 10.5,
-    color: 'rgba(255,255,255,0.85)',
-    marginTop: 1,
   },
 });
 
