@@ -255,9 +255,15 @@ const styles = StyleSheet.create({
     shadowRadius: 8,
     elevation: 4,
   },
+  // Banner — pull-tab anchored к правому краю экрана. Правые углы ПРЯМЫЕ
+  // (square), левые скруглённые. Тогда буквы «ТЯНИ» не зажимаются
+  // borderRadius'ом правого края. Плюс UX-логично: tab attached к edge.
   bannerPressable: {
     flex: 1,
-    borderRadius: 14,
+    borderTopLeftRadius: 14,
+    borderBottomLeftRadius: 14,
+    borderTopRightRadius: 0,
+    borderBottomRightRadius: 0,
     overflow: 'hidden',
   },
   bannerGradient: {
@@ -308,17 +314,13 @@ const styles = StyleSheet.create({
     paddingBottom: 10,
     gap: 7,
   },
-  // Arrow тоже шифтаем влево для визуального баланса со stack'ом букв.
-  peekArrow: {
-    transform: [{ translateX: -3 }],
-  },
-  // Буквы шифтаются на -3px влево чтобы не резались правым закруглением
-  // banner'а (rounded right-edge ест часть буквы).
+  // Arrow и stack центрируются в peekZone — translateX shift убран,
+  // т.к. правый край banner'а теперь прямой (borderRadius right = 0).
+  peekArrow: {},
   peekStack: {
     alignItems: 'center',
     justifyContent: 'center',
     gap: 1,
-    transform: [{ translateX: -3 }],
   },
   peekChar: {
     fontFamily: 'Inter_800ExtraBold',
