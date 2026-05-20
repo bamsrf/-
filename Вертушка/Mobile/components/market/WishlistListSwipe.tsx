@@ -30,6 +30,7 @@
  */
 import React, { useCallback, useEffect, useState } from 'react';
 import {
+  type LayoutChangeEvent,
   Pressable,
   StyleSheet,
   Text,
@@ -84,6 +85,13 @@ export function WishlistListSwipe({
   const hasSeenHint = useMarketStore((s) => s.hasSeenSwipeHint);
   const markHintSeen = useMarketStore((s) => s.markSwipeHintSeen);
   const [didTease, setDidTease] = useState(false);
+  // Замеряем реальную высоту КАРТОЧКИ (без её marginBottom) — банер
+  // получает точно ту же высоту, идеальное выравнивание без magic-numbers.
+  const [cardHeight, setCardHeight] = useState<number | null>(null);
+  const handleCardLayout = useCallback((e: LayoutChangeEvent) => {
+    const h = e.nativeEvent.layout.height;
+    setCardHeight((prev) => (prev === h ? prev : h));
+  }, []);
 
   // dragX: 0 (rest) → -DELTA (full open). Двигает И карточку И баннер.
   const dragX = useSharedValue(0);
@@ -169,17 +177,28 @@ export function WishlistListSwipe({
     // только над карточкой).
     <GestureDetector gesture={panGesture}>
       <View style={[styles.rowWrap, style]}>
-        {/* КАРТОЧКА — двигается влево с пальцем. paddingRight под peek. */}
+        {/* КАРТОЧКА — двигается влево с пальцем. paddingRight под peek.
+            onLayout на ВНУТРЕННЕМ View — measures children's actual size
+            БЕЗ их marginBottom (margin вне layout box ребёнка). */}
         <Animated.View style={[{ paddingRight: PEEK_WIDTH }, cardStyle]}>
-          {children}
+          <View onLayout={handleCardLayout} collapsable={false}>
+            {children}
+          </View>
         </Animated.View>
 
         {/* ОДИН gradient-баннер. Прибит к right:0. Width растёт leftward.
+            height — динамически = measured card height МИНУС 8
+            (listContainer.marginBottom = Spacing.sm = 8 — это пустое
+            пространство ниже card'а, banner не должен в него лезть).
             pointerEvents=box-none — тапы проходят на Pressable внутри,
             но drag-жесты bubble up к parent'у GestureDetector. */}
         <Animated.View
           pointerEvents="box-none"
-          style={[styles.bannerWrap, bannerStyle]}
+          style={[
+            styles.bannerWrap,
+            bannerStyle,
+            cardHeight != null ? { height: cardHeight - 8 } : null,
+          ]}
         >
           <Pressable
             onPress={triggerOpen}
@@ -248,11 +267,10 @@ const styles = StyleSheet.create({
   bannerWrap: {
     position: 'absolute',
     right: 0,
-    // top:0 — выравнен с верхом white card.
-    // bottom:8 — выравнен с низом card (card имеет marginBottom:Spacing.sm=8
-    // внутри rowWrap'а, banner должен заканчиваться вместе с белой плашкой).
     top: 0,
-    bottom: 8,
+    // height задаётся динамически в inline style = measured card height - 8.
+    // Заменяет старый bottom:8 — теперь точный pixel-match даже если
+    // RecordCard list-variant изменит padding/margin в будущем.
     // Glow только slight, чтобы не создавать halo выше/ниже banner'а
     // (юзер видел это как «banner больше карточки»). shadowRadius уменьшен
     // с 8 до 4. Halo маленький, помогает отделить banner от карточки
