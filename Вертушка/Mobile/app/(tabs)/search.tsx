@@ -46,7 +46,7 @@ import { MiniPriceBadge } from '../../components/MiniPriceBadge';
 import MarketBackground from '../../components/market/MarketBackground';
 import MarketSection, { type MarketStoreData } from '../../components/market/MarketSection';
 import MarketSearchResults from '../../components/market/MarketSearchResults';
-import MarketEntryHint from '../../components/market/MarketEntryHint';
+import MarketGesturePrompt, { type GesturePromptMode } from '../../components/market/MarketGesturePrompt';
 import StickyMarketHeader from '../../components/market/StickyMarketHeader';
 import ExitMarketButton from '../../components/market/ExitMarketButton';
 import { useMarketStore } from '../../lib/marketStore';
@@ -419,11 +419,98 @@ export default function SearchScreen() {
     };
   }, [isMarketSearchActive, marketSearch, marketFormatFilter]);
 
-  // Scroll handler: пишем в SharedValue (worklet) + throttled JS-write
-  // в Zustand для sticky-state.
+  // ────────────────────────────────────────────────────────────────
+  // Gesture-progress поля для silent-messages-стиль перехода.
+  // - gestureProgress: 0..1 насколько юзер «вошёл» в transition-zone
+  // - gestureVisibility: 0..1 видимость promp'а (fade in/out)
+  // - gestureMode: 'entry' (идёт в Маркет) или 'exit' (выходит)
+  // ────────────────────────────────────────────────────────────────
+  const gestureProgress = useSharedValue(0);
+  const gestureVisibility = useSharedValue(0);
+  const [gestureMode, setGestureMode] = useState<GesturePromptMode>('entry');
+  // zone-marker SharedValue: 0=outside, 1=entry, 2=exit. Используется
+  // worklet'ом чтобы вызывать runOnJS(setGestureMode) только на СМЕНЕ зоны,
+  // а не каждый frame (60+ JS calls в сек — мусор).
+  const zoneMarker = useSharedValue(0);
+
+  // Scroll handler: scrollY + progress в onScroll, триггер на onEndDrag.
   const onScroll = useAnimatedScrollHandler({
     onScroll: (e) => {
-      scrollY.value = e.contentOffset.y;
+      const y = e.contentOffset.y;
+      scrollY.value = y;
+      const marketY = transitionEndY.value;
+      if (marketY > 50000) {
+        // MarketSection не отмерян → выключаем progress
+        gestureVisibility.value = 0;
+        gestureProgress.value = 0;
+        return;
+      }
+
+      // Entry zone: scrollY в [marketY-200, marketY-20]. Progress 0→1.
+      const entryStart = marketY - 200;
+      const entryTarget = marketY - 20;
+      // Exit zone: после того как юзер уже в Маркете (scrollY > marketY+200),
+      // обратный скролл к [marketY+200, marketY+30] заполняет exit-progress.
+      const exitStart = marketY + 200;
+      const exitTarget = marketY + 30;
+
+      if (y >= entryStart && y < marketY - 5) {
+        // Внутри entry zone
+        const p = interpolate(y, [entryStart, entryTarget], [0, 1], {
+          extrapolateLeft: 'clamp',
+          extrapolateRight: 'clamp',
+        });
+        gestureProgress.value = p;
+        gestureVisibility.value = interpolate(
+          y,
+          [entryStart - 20, entryStart + 30],
+          [0, 1],
+          { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' },
+        );
+        if (zoneMarker.value !== 1) {
+          zoneMarker.value = 1;
+          runOnJS(setGestureMode)('entry');
+        }
+      } else if (y <= exitStart && y > marketY + 5) {
+        // Внутри exit zone (юзер в Маркете и скроллит вверх)
+        const p = interpolate(y, [exitStart, exitTarget], [0, 1], {
+          extrapolateLeft: 'clamp',
+          extrapolateRight: 'clamp',
+        });
+        gestureProgress.value = p;
+        gestureVisibility.value = interpolate(
+          y,
+          [exitStart + 20, exitStart - 30],
+          [0, 1],
+          { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' },
+        );
+        if (zoneMarker.value !== 2) {
+          zoneMarker.value = 2;
+          runOnJS(setGestureMode)('exit');
+        }
+      } else {
+        gestureVisibility.value = 0;
+        gestureProgress.value = 0;
+        if (zoneMarker.value !== 0) {
+          zoneMarker.value = 0;
+        }
+      }
+    },
+    onEndDrag: (e) => {
+      // Триггер действия в момент отпускания пальца. Если progress полный —
+      // делаем snap + heavy haptic. Иначе оставляем как есть (юзер может
+      // продолжить скроллить и не активировать).
+      const marketY = transitionEndY.value;
+      if (marketY > 50000) return;
+      if (gestureProgress.value < 1) return;
+      // gestureMode читается из shared ref — но в worklet'е shared ref
+      // ненадёжен. Решение: смотрим scrollY относительно marketY.
+      const y = e.contentOffset.y;
+      if (y < marketY) {
+        runOnJS(triggerEnterMarket)();
+      } else {
+        runOnJS(triggerExitMarket)();
+      }
     },
   });
 
@@ -445,103 +532,39 @@ export default function SearchScreen() {
   // Без повторов: bumpedRef.current флаг ставится после первого срабатывания.
   // ──────────────────────────────────────────────────────────────────
   // ──────────────────────────────────────────────────────────────────
-  // Двухстадийный переход «Поиск ⇄ Маркет» — как silent messages в Insta.
-  //
-  // ВНИЗ (вход в Маркет):
-  //   1-е пересечение порога (marketSectionY - 100) → bump-back + heavy haptic +
-  //     показ overlay-подсказки «Ещё раз вниз — войдёшь в Маркет»
-  //   2-е пересечение → auto-scroll ровно к marketSectionY + heavy haptic +
-  //     sticky МАРКЕТ header прибит сверху (через stickyMarketHeaderOpacity).
-  //
-  // ВВЕРХ (выход из Маркета):
-  //   1-е пересечение порога (marketSectionY - 40) → bump-back-down + haptic
-  //   2-е пересечение → auto-scroll к 0 (на «верх Поиска») + haptic.
-  //
-  // Все пороги ДИНАМИЧЕСКИЕ — берутся из marketSectionYRef.current. Иначе
-  // bump срабатывает не в той точке когда история раскрыта.
+  // Silent-messages-стиль переход «Поиск ⇄ Маркет».
+  // - В transition-зоне снизу/сверху появляется MarketGesturePrompt
+  //   (круг прогресса + копи). progress.value = насколько глубоко вошёл.
+  // - При отпускании пальца (onScrollEndDrag в onScroll handler выше):
+  //   если progress >= 1 → snap (enterMarket / exitMarket) + heavy haptic.
+  // - Если меньше — overshoot затухает естественно, prompt скрывается.
   // ──────────────────────────────────────────────────────────────────
-  const bumpDownCountRef = useRef(0); // 0=ещё не bump'нули, 1=1й крос сделан
-  const bumpUpCountRef = useRef(0);
-  const lastScrollY = useSharedValue(0);
-  const [showEntryHint, setShowEntryHint] = useState(false);
-
-  const enterMarket = useCallback(() => {
+  const triggerEnterMarket = useCallback(() => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy).catch(() => {});
-    setShowEntryHint(false);
-    bumpDownCountRef.current = 0;
-    bumpUpCountRef.current = 0;
     scrollToOffsetRef.current?.(marketSectionYRef.current, true);
   }, []);
 
-  const exitMarket = useCallback(() => {
+  const triggerExitMarket = useCallback(() => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy).catch(() => {});
-    bumpDownCountRef.current = 0;
-    bumpUpCountRef.current = 0;
     scrollToOffsetRef.current?.(0, true);
   }, []);
 
-  const triggerBumpDown1 = useCallback(() => {
-    bumpDownCountRef.current = 1;
-    bumpUpCountRef.current = 0;
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
-    setShowEntryHint(true);
-    // Snap немного вверх (создаёт «удар об стену»)
-    scrollToOffsetRef.current?.(Math.max(0, marketSectionYRef.current - 170), true);
-    // Hint скрывается сам через 2.5с если юзер не свайпнул ещё раз
-    setTimeout(() => setShowEntryHint(false), 2500);
-  }, []);
-
-  const triggerBumpUp1 = useCallback(() => {
-    bumpUpCountRef.current = 1;
-    bumpDownCountRef.current = 0;
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
-    // Snap обратно вниз в Маркет (создаёт «не отпускает»)
-    scrollToOffsetRef.current?.(marketSectionYRef.current + 30, true);
-  }, []);
-
+  // Sticky-header opacity (independent от gesture-prompt'а): прибит когда
+  // юзер ПРОШЁЛ marketY — то есть уже в Маркете.
   useDerivedValue(() => {
     const y = scrollY.value;
-    const prev = lastScrollY.value;
-    const marketY = transitionEndY.value; // = marketSectionY - 20
-    lastScrollY.value = y;
-
-    // GUARD: если MarketSection не отмерян (marketY ≈ 99999 — initial off),
-    // вся transition-логика выключена. Иначе bump срабатывает в режиме
-    // обычного поиска, а sticky МАРКЕТ overlay частично виден на нулевом
-    // scrollY.
+    const marketY = transitionEndY.value;
     if (marketY > 50000) {
       stickyMarketHeaderOpacity.value = 0;
       return;
     }
-
-    const downThreshold = Math.max(60, marketY - 80);
-    const upThreshold = marketY + 60;
-
-    // Sticky-header opacity: fully visible once user past marketSectionY
     stickyMarketHeaderOpacity.value = interpolate(
       y,
       [marketY - 10, marketY + 40],
       [0, 1],
       { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' },
     );
-
-    // Скролл ВНИЗ через downThreshold
-    if (y > prev && prev < downThreshold && y >= downThreshold) {
-      if (bumpDownCountRef.current === 0) {
-        runOnJS(triggerBumpDown1)();
-      } else {
-        runOnJS(enterMarket)();
-      }
-    }
-    // Скролл ВВЕРХ через upThreshold
-    if (y < prev && prev > upThreshold && y <= upThreshold) {
-      if (bumpUpCountRef.current === 0) {
-        runOnJS(triggerBumpUp1)();
-      } else {
-        runOnJS(exitMarket)();
-      }
-    }
-  }, [triggerBumpDown1, triggerBumpUp1, enterMarket, exitMarket]);
+  }, []);
 
   // Debounced save scrollY → Zustand persist. Запускаем через ref'ный timer.
   const savePosTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -592,10 +615,10 @@ export default function SearchScreen() {
   }, [router]);
 
   const handleMarketShowAll = useCallback(() => {
-    // «Смотреть все →» — то же что 2-е пересечение порога: auto-scroll
-    // прямо к MarketSection + heavy haptic + сброс bump-счётчиков.
-    enterMarket();
-  }, [enterMarket]);
+    // «Смотреть все →» — то же что отпустить палец с полным progress'ом:
+    // auto-scroll прямо к MarketSection + heavy haptic.
+    triggerEnterMarket();
+  }, [triggerEnterMarket]);
 
   const handleMarketSectionLayout = useCallback((e: LayoutChangeEvent) => {
     // y относительно FlatList'а. ListHeaderComponent рендерится внутри
@@ -1501,10 +1524,17 @@ export default function SearchScreen() {
         <StickyMarketHeader opacity={stickyMarketHeaderOpacity} />
       )}
 
-      {/* Silent-messages-стиль hint после 1-го пересечения порога.
-          Показывается через bumpDownCountRef → setShowEntryHint(true). */}
+      {/* Silent-messages-стиль gesture-prompt с круговым прогресс-индикатором.
+          Появляется в transition-zone, фейдится по visibility, копи
+          переключается по progress (pending→armed). Триггер действия —
+          в onEndDrag scroll-handler выше. */}
       {marketStores.length > 0 && !isUserSearch && (
-        <MarketEntryHint visible={showEntryHint} />
+        <MarketGesturePrompt
+          progress={gestureProgress}
+          visibility={gestureVisibility}
+          mode={gestureMode}
+          position={gestureMode === 'exit' ? 'top' : 'bottom'}
+        />
       )}
 
       {/* Floating «↑ Выйти из Маркета» — появляется когда scrollY > 1200.
