@@ -164,60 +164,72 @@ export function WishlistListSwipe({
   }
 
   return (
-    <View style={[styles.rowWrap, style]}>
-      {/* КАРТОЧКА — двигается влево с пальцем. paddingRight под peek. */}
-      <GestureDetector gesture={panGesture}>
+    // GestureDetector ОБОРАЧИВАЕТ ВСЁ — и карточку и баннер. Иначе если
+    // палец стартует с баннера справа, gesture не ловится (раньше был
+    // только над карточкой).
+    <GestureDetector gesture={panGesture}>
+      <View style={[styles.rowWrap, style]}>
+        {/* КАРТОЧКА — двигается влево с пальцем. paddingRight под peek. */}
         <Animated.View style={[{ paddingRight: PEEK_WIDTH }, cardStyle]}>
           {children}
         </Animated.View>
-      </GestureDetector>
 
-      {/* ОДИН gradient-баннер. Прибит к right:0. Width растёт leftward. */}
-      <Animated.View
-        pointerEvents="box-none"
-        style={[styles.bannerWrap, bannerStyle]}
-      >
-        <Pressable
-          onPress={triggerOpen}
-          accessibilityRole="button"
-          accessibilityLabel={
-            minPriceRub
-              ? `Купить: от ${minPriceRub} рублей в ${storesCount} магазинах`
-              : 'Открыть цены'
-          }
-          style={styles.bannerPressable}
+        {/* ОДИН gradient-баннер. Прибит к right:0. Width растёт leftward.
+            pointerEvents=box-none — тапы проходят на Pressable внутри,
+            но drag-жесты bubble up к parent'у GestureDetector. */}
+        <Animated.View
+          pointerEvents="box-none"
+          style={[styles.bannerWrap, bannerStyle]}
         >
-          <LinearGradient
-            colors={Gradients.hotStock as [string, string, string]}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 1 }}
-            style={styles.bannerGradient}
+          <Pressable
+            onPress={triggerOpen}
+            accessibilityRole="button"
+            accessibilityLabel={
+              minPriceRub
+                ? `Купить: от ${minPriceRub} рублей в ${storesCount} магазинах`
+                : 'Открыть цены'
+            }
+            style={styles.bannerPressable}
           >
-            {/* CTA "Купить" — слева от корешка, fade in по openness */}
-            <Animated.View style={[styles.ctaZone, ctaStyle]}>
-              <Icon name="storefront" size={18} color="onBrand" />
-              <View style={styles.ctaTextBlock}>
-                <Text style={styles.ctaTitle} numberOfLines={1}>Купить</Text>
-                {minPriceRub != null ? (
-                  <Text style={styles.ctaSub} numberOfLines={1}>
-                    от {formatPrice(Number(minPriceRub))}
-                    {storesCount > 1 ? ` · ${storesCount} маг.` : ''}
-                  </Text>
-                ) : null}
-              </View>
-            </Animated.View>
+            <LinearGradient
+              colors={Gradients.hotStock as [string, string, string]}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+              style={styles.bannerGradient}
+            >
+              {/* CTA "Купить" — слева от корешка, fade in по openness */}
+              <Animated.View style={[styles.ctaZone, ctaStyle]}>
+                <Icon name="storefront" size={18} color="onBrand" />
+                <View style={styles.ctaTextBlock}>
+                  <Text style={styles.ctaTitle} numberOfLines={1}>Купить</Text>
+                  {minPriceRub != null ? (
+                    <Text style={styles.ctaSub} numberOfLines={1}>
+                      от {formatPrice(Number(minPriceRub))}
+                      {storesCount > 1 ? ` · ${storesCount} маг.` : ''}
+                    </Text>
+                  ) : null}
+                </View>
+              </Animated.View>
 
-            {/* PEEK (корешок) — ← и вертикальная ТЯНИ. Всегда виден. */}
-            <View style={styles.peekZone} pointerEvents="none">
-              <Icon name="caret-left" size={12} color="onBrand" />
-              <View style={styles.peekLabelWrap}>
-                <Text style={styles.peekLabel}>ТЯНИ</Text>
+              {/* PEEK (корешок) — ← и вертикальная ТЯНИ.
+                  pointerEvents=none чтобы Pressable снаружи получал тап,
+                  а Pan-жест мог проходить сквозь. */}
+              <View style={styles.peekZone} pointerEvents="none">
+                <Icon name="caret-left" size={13} color="onBrand" />
+                {/* Каждая буква на своей строке — НЕ rotation. Стабильнее
+                    геометрически: rotated wrapper всегда занимает свой
+                    PRE-rotation layout box, что в 32dp peek-зоне обрезалось. */}
+                <View style={styles.peekStack}>
+                  {'ТЯНИ'.split('').map((ch, i) => (
+                    <Text key={i} style={styles.peekChar}>{ch}</Text>
+                  ))}
+                </View>
               </View>
-            </View>
-          </LinearGradient>
-        </Pressable>
-      </Animated.View>
-    </View>
+            </LinearGradient>
+          </Pressable>
+        </Animated.View>
+      </View>
+    </GestureDetector>
   );
 }
 
@@ -288,23 +300,23 @@ const styles = StyleSheet.create({
     width: PEEK_WIDTH,
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 6,
+    gap: 8,
     paddingVertical: 10,
   },
-  peekLabelWrap: {
-    width: 50,
-    height: 14,
+  peekStack: {
     alignItems: 'center',
     justifyContent: 'center',
-    transform: [{ rotate: '-90deg' }],
+    gap: 1,
   },
-  peekLabel: {
+  peekChar: {
     fontFamily: 'Inter_800ExtraBold',
     fontSize: 10,
+    lineHeight: 12,
     fontWeight: '800',
     color: '#FFFFFF',
-    letterSpacing: 1.4,
+    letterSpacing: 0,
     includeFontPadding: false,
+    textAlign: 'center',
   },
 });
 
