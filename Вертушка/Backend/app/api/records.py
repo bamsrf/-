@@ -618,7 +618,10 @@ async def get_record_by_discogs_id(
     Получение информации о пластинке по Discogs ID.
     Если пластинка не найдена в локальной БД, запрашивает Discogs и сохраняет.
     """
-    response.headers["Cache-Control"] = "public, max-age=3600"
+    # max-age 60 (раньше 3600) — после первой загрузки enrichment может
+    # дополнить запись tracklist/artist_thumb/master_id. Если кэш на час,
+    # юзер видит пустые поля до истечения. С 60 сек обновление через минуту.
+    response.headers["Cache-Control"] = "public, max-age=60"
     # Проверяем локальную БД
     result = await db.execute(
         select(Record).where(Record.discogs_id == discogs_id)

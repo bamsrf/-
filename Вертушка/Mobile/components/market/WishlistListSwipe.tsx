@@ -1,19 +1,18 @@
 /**
- * WishlistListSwipe — лёгкий swipe-wrapper для строк вишлиста (list mode).
+ * WishlistListSwipe — swipe-wrapper для строк вишлиста (list mode).
  *
- * Идея пользователя: при горизонтальном свайпе влево показывается «карман»
- * с CTA, как в Telegram (silent messages / unread / pin). Тап на CTA →
- * детальная запись где живёт OffersBlock (стилизованный под Маркет).
+ * Концепция: палец тянет строку влево → CTA «К ценам» плавно ВЫЕЗЖАЕТ из-за
+ * правого края экрана, следуя за пальцем. При полном свайпе → автоматически
+ * открывается BottomSheet с топ-3 ценами + ссылкой «Все варианты».
  *
- * Если для записи нет офферов в наличии (hasOffers=false) — рендерим
- * детей напрямую без gesture-обёртки. Иначе бесполезные язычки на каждой
- * строке вишлиста.
+ * Анимация slide-in реализована через `renderRightActions(progress, dragX)` —
+ * мы интерполируем translateX от width до 0 по `progress` (0..1 при свайпе).
+ * Это и есть «плавно сбоку подтягивается» как просил юзер.
  *
- * Pulse-подсказку показываем ОДИН РАЗ на первой строке за сессию
+ * Pulse-подсказка играет ОДИН РАЗ за сессию на первой строке с офферами
  * (через useMarketStore.hasSeenSwipeHint).
  *
- * Источник: WishlistRowWithOffers + MARKET_AND_PRICE_DRAWER.md §2.1
- *           (упрощённая версия — без inline drawer, без top-3 загрузки).
+ * Источник: WishlistRowWithOffers + MARKET_AND_PRICE_DRAWER.md §2.1.
  */
 import React, { useEffect, useRef, useState } from 'react';
 import {
@@ -29,13 +28,10 @@ import ReanimatedSwipeable, {
   type SwipeableMethods,
 } from 'react-native-gesture-handler/ReanimatedSwipeable';
 import Animated, {
-  Easing,
+  Extrapolation,
+  interpolate,
   useAnimatedStyle,
-  useSharedValue,
-  withDelay,
-  withRepeat,
-  withSequence,
-  withTiming,
+  type SharedValue,
 } from 'react-native-reanimated';
 
 import { Icon } from '../ui';
@@ -43,16 +39,17 @@ import { Gradients } from '../../constants/theme';
 import { useMarketStore } from '../../lib/marketStore';
 
 interface WishlistListSwipeProps {
-  /** Карточка пластинки. */
   children: React.ReactNode;
   /** Есть ли офферы в наличии. false → рендерим children без swipe. */
   hasOffers: boolean;
-  /** Минимальная цена для подписи под CTA. Если null — не пишем. */
   minPriceRub?: number | null;
-  /** Сколько магазинов с in_stock — для подписи. */
   storesCount?: number;
-  /** Тап на reveal-CTA. Обычно navigation к /record/[id]. */
-  onCTAPress: () => void;
+  /**
+   * Колбэк при полном открытии swipe (right-side reveal завершён).
+   * Здесь родитель должен открыть BottomSheet с ценами.
+   * НЕ navigation — сам swipe = действие.
+   */
+  onOpen: () => void;
   style?: StyleProp<ViewStyle>;
 }
 
@@ -64,7 +61,7 @@ export function WishlistListSwipe({
   hasOffers,
   minPriceRub,
   storesCount,
-  onCTAPress,
+  onOpen,
   style,
 }: WishlistListSwipeProps) {
   const swipeableRef = useRef<SwipeableMethods>(null);
@@ -72,7 +69,7 @@ export function WishlistListSwipe({
   const markHintSeen = useMarketStore((s) => s.markSwipeHintSeen);
   const [didPulse, setDidPulse] = useState(false);
 
-  // Анимация-подсказка: открыть на 60px → закрыть через 1.2s, один раз
+  // Анимация-подсказка: один раз за сессию открываем на ~60% → закрываем
   useEffect(() => {
     if (!hasOffers || hasSeenHint || didPulse) return;
     const t = setTimeout(() => {
@@ -90,55 +87,109 @@ export function WishlistListSwipe({
     return <View style={style}>{children}</View>;
   }
 
-  const renderCTA = () => (
-    <Pressable
-      style={styles.ctaWrap}
-      onPress={() => {
-        swipeableRef.current?.close();
-        onCTAPress();
-      }}
-      accessibilityRole="button"
-      accessibilityLabel={
-        minPriceRub
-          ? `Открыть детальную: цены от ${minPriceRub} рублей`
-          : 'Открыть детальную записи и посмотреть цены'
-      }
-    >
-      <LinearGradient
-        colors={Gradients.hotStock as [string, string, string]}
-        start={{ x: 0, y: 0 }}
-        end={{ x: 1, y: 1 }}
-        style={styles.ctaGradient}
-      >
-        <Icon name="storefront" size={20} color="onBrand" />
-        <View style={styles.ctaTextBlock}>
-          <Text style={styles.ctaTitle}>К ценам</Text>
-          {minPriceRub != null ? (
-            <Text style={styles.ctaSub} numberOfLines={1}>
-              от {Math.round(minPriceRub).toLocaleString('ru-RU')} ₽
-              {storesCount && storesCount > 1 ? ` · ${storesCount} маг.` : ''}
-            </Text>
-          ) : storesCount && storesCount >= 1 ? (
-            <Text style={styles.ctaSub} numberOfLines={1}>
-              {storesCount} маг.
-            </Text>
-          ) : null}
-        </View>
-      </LinearGradient>
-    </Pressable>
-  );
-
   return (
     <ReanimatedSwipeable
       ref={swipeableRef}
-      renderRightActions={renderCTA}
-      friction={2}
-      rightThreshold={40}
+      renderRightActions={(progress) => (
+        <CTAReveal
+          progress={progress}
+          minPriceRub={minPriceRub}
+          storesCount={storesCount}
+          onPress={() => {
+            swipeableRef.current?.close();
+            onOpen();
+          }}
+        />
+      )}
+      friction={1.6}
+      rightThreshold={CTA_WIDTH * 0.55}
       overshootRight={false}
       containerStyle={style}
+      onSwipeableOpen={(direction) => {
+        if (direction === 'right') {
+          // Юзер свайпнул полностью — открываем BottomSheet и закрываем swipe.
+          // Микро-задержка чтобы пальцу было визуально комфортно (закрытие
+          // не дёргается синхронно с показом панели).
+          setTimeout(() => {
+            swipeableRef.current?.close();
+            onOpen();
+          }, 80);
+        }
+      }}
     >
       <View style={styles.contentWrap}>{children}</View>
     </ReanimatedSwipeable>
+  );
+}
+
+// ────────────────────────────────────────────────────────────────────────
+
+interface CTARevealProps {
+  progress: SharedValue<number>;
+  minPriceRub?: number | null;
+  storesCount?: number;
+  onPress: () => void;
+}
+
+/**
+ * Reveal-карточка: translateX driven by progress (0 = off-screen-right, 1 = на месте).
+ * Так CTA визуально «вытягивается» из-под правой строки. Без этого
+ * ReanimatedSwipeable показывает renderRightActions через flex-reveal, что
+ * выглядит как «появилась на месте» — что и не понравилось юзеру.
+ */
+function CTAReveal({ progress, minPriceRub, storesCount, onPress }: CTARevealProps) {
+  const animStyle = useAnimatedStyle(() => {
+    // 0 → +CTA_WIDTH (за экраном), 1 → 0 (на месте)
+    const translateX = interpolate(
+      progress.value,
+      [0, 1],
+      [CTA_WIDTH, 0],
+      Extrapolation.CLAMP,
+    );
+    // Лёгкое замыкание opacity и scale — добавляет «массы» движению
+    const opacity = interpolate(progress.value, [0, 0.3, 1], [0, 0.8, 1], Extrapolation.CLAMP);
+    const scale = interpolate(progress.value, [0, 1], [0.92, 1], Extrapolation.CLAMP);
+    return {
+      transform: [{ translateX }, { scale }],
+      opacity,
+    };
+  });
+
+  return (
+    <Animated.View style={[styles.ctaOuter, animStyle]}>
+      <Pressable
+        onPress={onPress}
+        accessibilityRole="button"
+        accessibilityLabel={
+          minPriceRub
+            ? `Открыть цены: от ${minPriceRub} рублей`
+            : 'Открыть цены'
+        }
+        style={({ pressed }) => [styles.ctaInner, pressed && { opacity: 0.85 }]}
+      >
+        <LinearGradient
+          colors={Gradients.hotStock as [string, string, string]}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+          style={styles.ctaGradient}
+        >
+          <Icon name="storefront" size={20} color="onBrand" />
+          <View style={styles.ctaTextBlock}>
+            <Text style={styles.ctaTitle}>К ценам</Text>
+            {minPriceRub != null ? (
+              <Text style={styles.ctaSub} numberOfLines={1}>
+                от {Math.round(minPriceRub).toLocaleString('ru-RU')} ₽
+                {storesCount && storesCount > 1 ? ` · ${storesCount} маг.` : ''}
+              </Text>
+            ) : storesCount && storesCount >= 1 ? (
+              <Text style={styles.ctaSub} numberOfLines={1}>
+                {storesCount} маг.
+              </Text>
+            ) : null}
+          </View>
+        </LinearGradient>
+      </Pressable>
+    </Animated.View>
   );
 }
 
@@ -146,10 +197,16 @@ const styles = StyleSheet.create({
   contentWrap: {
     position: 'relative',
   },
-  ctaWrap: {
+  ctaOuter: {
     width: CTA_WIDTH,
     paddingLeft: 8,
     paddingVertical: 4,
+    // overflow hidden внутри inner-Pressable
+  },
+  ctaInner: {
+    flex: 1,
+    borderRadius: 14,
+    overflow: 'hidden',
   },
   ctaGradient: {
     flex: 1,
@@ -157,7 +214,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 10,
     paddingHorizontal: 14,
-    borderRadius: 14,
   },
   ctaTextBlock: {
     flex: 1,

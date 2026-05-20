@@ -25,6 +25,9 @@ import { CollectionItem, WishlistItem, CollectionTab, RecordOffersSummary } from
 import { Colors, Spacing, Typography, BorderRadius, Gradients, Shadows } from '../../constants/theme';
 import { summaryToHotStock, type ResolvedHotStock } from '../../components/HotStockTag';
 import WishlistListSwipe from '../../components/market/WishlistListSwipe';
+import OffersBottomSheet, { type OffersBottomSheetRef } from '../../components/market/OffersBottomSheet';
+import { type OfferDetailData } from '../../components/market/OfferDetailCard';
+import { Linking } from 'react-native';
 
 if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
   UIManager.setLayoutAnimationEnabledExperimental(true);
@@ -138,6 +141,78 @@ export default function CollectionScreen() {
   const [hotStockMap, setHotStockMap] = useState<Map<string, ResolvedHotStock | null>>(new Map());
   // Raw summary map нужен для list-swipe (показать min_price + stores_count)
   const [summaryMap, setSummaryMap] = useState<Map<string, RecordOffersSummary>>(new Map());
+  // Bottom-sheet refs + state для открытия цен при свайпе по вишлист-строке
+  const offersSheetRef = useRef<OffersBottomSheetRef>(null);
+  const [buyingListingId, setBuyingListingId] = useState<string | undefined>(undefined);
+
+  // Lazy fetch top-N офферов конкретной записи + open sheet
+  const handleWishlistSwipeOpen = useCallback(async (wi: WishlistItem) => {
+    const discogsId = wi.record?.discogs_id;
+    if (!discogsId) {
+      router.push(`/record/${wi.record.id}`);
+      return;
+    }
+    try {
+      const offers = await api.getRecordOffers(discogsId, 'price');
+      if (!offers || offers.length === 0) {
+        router.push(`/record/${discogsId}`);
+        return;
+      }
+      const exact: OfferDetailData[] = offers
+        .filter((o) => !o.is_alt_version)
+        .map((o) => ({
+          listingId: o.listing_id,
+          storeSlug: o.store.slug,
+          storeName: o.store.name,
+          priceRub: Number(o.price_rub),
+          format: o.format ?? undefined,
+          vinylColor: o.vinyl_color ?? undefined,
+          condition: o.condition ?? undefined,
+          catalogNumber: o.catalog_number ?? undefined,
+          coverImageUrl: o.image_url ?? undefined,
+        }));
+      const alt: OfferDetailData[] = offers
+        .filter((o) => o.is_alt_version)
+        .map((o) => ({
+          listingId: o.listing_id,
+          storeSlug: o.store.slug,
+          storeName: o.store.name,
+          priceRub: Number(o.price_rub),
+          format: o.format ?? undefined,
+          vinylColor: o.vinyl_color ?? undefined,
+          condition: o.condition ?? undefined,
+          isAlt: true,
+          catalogNumber: o.catalog_number ?? undefined,
+          coverImageUrl: o.image_url ?? undefined,
+        }));
+      const minPrice = exact[0]?.priceRub ?? alt[0]?.priceRub ?? 0;
+      offersSheetRef.current?.present({
+        artist: wi.record.artist,
+        title: wi.record.title,
+        minPriceRub: minPrice,
+        exactOffers: exact,
+        altOffers: alt,
+      });
+    } catch {
+      // fallback на детальную если оферы упали
+      router.push(`/record/${discogsId}`);
+    }
+  }, [router]);
+
+  const handleBuyPress = useCallback(async (offer: OfferDetailData) => {
+    setBuyingListingId(offer.listingId);
+    let urlToOpen: string | null = null;
+    try {
+      const { url } = await api.trackOfferClick(offer.listingId);
+      urlToOpen = url;
+    } catch {
+      // backend упал — открываем без affiliate tracking
+    }
+    setBuyingListingId(undefined);
+    if (urlToOpen) {
+      try { await Linking.openURL(urlToOpen); } catch { /* ignore */ }
+    }
+  }, []);
 
   useEffect(() => {
     if (activeTab !== 'wishlist' || wishlistItems.length === 0) {
@@ -935,9 +1010,7 @@ export default function CollectionScreen() {
                       hasOffers={hasOffers}
                       minPriceRub={summary?.min_price_rub != null ? Number(summary.min_price_rub) : null}
                       storesCount={summary?.stores_with_stock ?? 0}
-                      onCTAPress={() =>
-                        router.push(`/record/${discogsId ?? wi.record.id}`)
-                      }
+                      onOpen={() => handleWishlistSwipeOpen(wi)}
                     >
                       {child}
                     </WishlistListSwipe>
@@ -1092,6 +1165,15 @@ export default function CollectionScreen() {
         selectedWishlistItemIds={wishlistItems
           .filter(item => selectedItems.has(item.id))
           .map(item => item.id)}
+      />
+
+      {/* OffersBottomSheet — открывается при свайпе влево в вишлист-list-mode.
+          Не разворачиваем preemptively (BottomSheetModal лениво монтирует).
+          MARKET_AND_PRICE_DRAWER.md §2.3. */}
+      <OffersBottomSheet
+        ref={offersSheetRef}
+        onBuyPress={handleBuyPress}
+        buyingListingId={buyingListingId}
       />
     </View>
   );

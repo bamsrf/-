@@ -14,7 +14,7 @@
  * gradient bg, ведёт в /market/store/{slug}); для нескольких магазинов —
  * мини-плитки магазинов.
  */
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import {
   View,
   Text,
@@ -41,20 +41,6 @@ export function OffersBlock({ discogsId }: OffersBlockProps) {
   const router = useRouter();
   const [offers, setOffers] = useState<Offer[] | null>(null);
   const [error, setError] = useState<string | null>(null);
-
-  // Уникальные магазины из текущих offers — для кнопок «Что ещё в наличии».
-  const storeButtons = useMemo(() => {
-    if (!offers || offers.length === 0) return [];
-    const seen = new Set<string>();
-    const result: { slug: string; name: string }[] = [];
-    for (const o of offers) {
-      if (!seen.has(o.store.slug)) {
-        seen.add(o.store.slug);
-        result.push({ slug: o.store.slug, name: o.store.name });
-      }
-    }
-    return result;
-  }, [offers]);
 
   useEffect(() => {
     let alive = true;
@@ -123,67 +109,38 @@ export function OffersBlock({ discogsId }: OffersBlockProps) {
         Цены и наличие — со страниц магазинов, обновляются ежедневно.
       </Text>
 
-      {/* Точка входа в Маркет.
-          1 магазин → одна большая «открой ящик» плашка с gradient.
-          ≥2     → мини-плитки магазинов в столбик. */}
-      {storeButtons.length === 1 && (
-        <Pressable
-          onPress={() => router.push(`/market/store/${storeButtons[0].slug}` as any)}
-          accessibilityRole="button"
-          accessibilityLabel={`Открыть витрину ${storeButtons[0].name} в Маркете`}
-          style={({ pressed }) => [styles.marketEntryWrap, pressed && { opacity: 0.85 }]}
+      {/* Generic CTA → ведём в Маркет в целом (не в конкретный магазин).
+          Юзер увидел текущего продавца в OfferRow выше — дубль лого внизу
+          лишний. Плашка единая: disc-иконка + копи + arrow.
+          Routes to /(tabs)/search где живёт раздел Маркет. */}
+      <Pressable
+        onPress={() => router.push('/(tabs)/search' as any)}
+        accessibilityRole="button"
+        accessibilityLabel="Открыть Маркет"
+        style={({ pressed }) => [styles.marketEntryWrap, pressed && { opacity: 0.85 }]}
+      >
+        <LinearGradient
+          colors={Gradients.hotStock as [string, string, string]}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+          style={styles.marketEntryGradient}
         >
-          <LinearGradient
-            colors={Gradients.hotStock as [string, string, string]}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 1 }}
-            style={styles.marketEntryGradient}
-          >
-            <StoreLogo slug={storeButtons[0].slug} size={40} radius={9} />
-            <View style={{ flex: 1, minWidth: 0 }}>
-              <Text style={styles.marketEntryEyebrow} numberOfLines={1}>
-                В МАРКЕТЕ · {storeButtons[0].name.toUpperCase()}
-              </Text>
-              <Text style={styles.marketEntryTitle} numberOfLines={2}>
-                Нажми и посмотри, что ещё привезли
-              </Text>
-            </View>
-            <View style={styles.marketEntryArrowCircle}>
-              <Icon name="arrow-right" size={16} color="onBrand" />
-            </View>
-          </LinearGradient>
-        </Pressable>
-      )}
-      {storeButtons.length > 1 && (
-        <View style={styles.multiBlock}>
-          <Text style={styles.multiBlockTitle}>
-            Нажми, чтобы посмотреть что ещё есть
-          </Text>
-          {storeButtons.map((s) => (
-            <Pressable
-              key={s.slug}
-              onPress={() => router.push(`/market/store/${s.slug}` as any)}
-              style={({ pressed }) => [
-                styles.marketEntryMultiBtn,
-                pressed && { opacity: 0.75 },
-              ]}
-              accessibilityRole="button"
-              accessibilityLabel={`Открыть витрину ${s.name} в Маркете`}
-            >
-              <StoreLogo slug={s.slug} size={32} radius={7} />
-              <View style={{ flex: 1, minWidth: 0 }}>
-                <Text style={styles.marketEntryMultiName} numberOfLines={1}>
-                  {s.name}
-                </Text>
-                <Text style={styles.marketEntryMultiSub} numberOfLines={1}>
-                  Открыть витрину магазина →
-                </Text>
-              </View>
-              <Icon name="arrow-right" size={14} color="onBrand" style={{ opacity: 0.7 }} />
-            </Pressable>
-          ))}
-        </View>
-      )}
+          <View style={styles.marketEntryDiscBadge}>
+            <Icon name="disc" size={22} color="onBrand" weight="duotone" />
+          </View>
+          <View style={{ flex: 1, minWidth: 0 }}>
+            <Text style={styles.marketEntryEyebrow} numberOfLines={1}>
+              В МАРКЕТЕ
+            </Text>
+            <Text style={styles.marketEntryTitle} numberOfLines={2}>
+              Нажми и посмотри, что ещё есть в наличии
+            </Text>
+          </View>
+          <View style={styles.marketEntryArrowCircle}>
+            <Icon name="arrow-right" size={16} color="onBrand" />
+          </View>
+        </LinearGradient>
+      </Pressable>
     </View>
   );
 }
@@ -220,10 +177,14 @@ function OfferRow({ offer, discogsId }: OfferRowProps) {
   }, [discogsId, offer]);
 
   const priceFormatted = Math.round(Number(offer.price_rub)).toLocaleString('ru-RU');
+  // Мета показываем ТОЛЬКО если есть что-то ценное (цвет винила или состояние).
+  // Голый «LP» дублирует record.format_type из шапки детальной → визуальный шум.
   const metaParts: string[] = [];
-  if (offer.format) metaParts.push(offer.format);
   if (offer.vinyl_color) metaParts.push(offer.vinyl_color);
   if (offer.condition) metaParts.push(offer.condition);
+  // Format показываем только если оффер отличается форматом — например, оффер
+  // CD на странице LP. Иначе скрываем (одинаковый формат = бесполезный шум).
+  if (offer.format && metaParts.length > 0) metaParts.unshift(offer.format);
   const meta = metaParts.join(' · ');
 
   return (
@@ -412,43 +373,18 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-
-  // ---- Market entry: multi store ----
-  multiBlock: {
-    marginTop: Spacing.md,
-    gap: 6,
-  },
-  multiBlockTitle: {
-    fontFamily: 'Inter_700Bold',
-    fontSize: 10.5,
-    color: 'rgba(255,255,255,0.55)',
-    letterSpacing: 1.2,
-    textTransform: 'uppercase',
-    marginBottom: 4,
-  },
-  marketEntryMultiBtn: {
-    flexDirection: 'row',
+  marketEntryDiscBadge: {
+    // Disc-знак Маркета (заменяет лого магазина в нижней CTA).
+    // Контрастная white-15 подложка чтобы duotone-иконка читалась поверх
+    // gradient'а.
+    width: 40,
+    height: 40,
+    borderRadius: 10,
+    backgroundColor: 'rgba(255,255,255,0.15)',
     alignItems: 'center',
-    gap: 10,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    borderRadius: BorderRadius.md,
-    backgroundColor: 'rgba(255,255,255,0.06)',
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: MarketPalette.chrome.border,
+    justifyContent: 'center',
   },
-  marketEntryMultiName: {
-    fontFamily: 'Inter_700Bold',
-    fontSize: 13,
-    color: '#FFFFFF',
-    fontWeight: '700',
-  },
-  marketEntryMultiSub: {
-    fontFamily: 'Inter_400Regular',
-    fontSize: 10.5,
-    color: 'rgba(255,255,255,0.55)',
-    marginTop: 1,
-  },
+
 });
 
 export default OffersBlock;

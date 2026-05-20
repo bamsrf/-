@@ -429,29 +429,48 @@ export default function SearchScreen() {
   // Идея: silent messages в Instagram (надо тянуть с усилием).
   // Без повторов: bumpedRef.current флаг ставится после первого срабатывания.
   // ──────────────────────────────────────────────────────────────────
+  // Симметричный speed-bump: при первом крессинге вниз через 340 px
+  // и вверх через MARKET_EXIT_BUMP_Y — Heavy haptic + scroll snap-back.
+  // Эффект «следующий уровень»: уперся, нужно ещё свайп. Каждый раз
+  // через крессинг bumpedDownRef/bumpedUpRef сбрасываются на противоположной
+  // стороне, чтобы юзер мог повторно «провалиться» туда-сюда за сессию.
   const RESISTANCE_BUMP_Y = 340;
-  const bumpedRef = useRef(false);
+  const MARKET_EXIT_BUMP_Y = 800;
+  const bumpedDownRef = useRef(false);
+  const bumpedUpRef = useRef(false);
   // SharedValue вместо useRef — в worklet'е ref'ы не пишутся надёжно.
   const lastScrollY = useSharedValue(0);
 
-  const triggerSpeedBump = useCallback(() => {
-    if (bumpedRef.current) return;
-    bumpedRef.current = true;
+  const triggerBumpDown = useCallback(() => {
+    if (bumpedDownRef.current) return;
+    bumpedDownRef.current = true;
+    bumpedUpRef.current = false; // готовимся к возможному выходу вверх
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy).catch(() => {});
-    // Snap-back на ~70 px НИЖЕ bump_y чтобы юзер увидел «упёрся».
-    // Animated scroll даёт классическую упругую анимацию.
     scrollToOffsetRef.current?.(Math.max(0, RESISTANCE_BUMP_Y - 70), true);
+  }, []);
+
+  const triggerBumpUp = useCallback(() => {
+    if (bumpedUpRef.current) return;
+    bumpedUpRef.current = true;
+    bumpedDownRef.current = false; // готовимся к возможному возврату вниз
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy).catch(() => {});
+    // Snap НИЖЕ exit threshold чтобы юзер увидел «обратно в Маркет»
+    scrollToOffsetRef.current?.(MARKET_EXIT_BUMP_Y + 60, true);
   }, []);
 
   useDerivedValue(() => {
     const y = scrollY.value;
     const prev = lastScrollY.value;
-    // Только при скролле ВНИЗ — иначе bump срабатывает при scrollToOffset из exit'а
+    // Down-bump: пересекли 340 ВНИЗ — speed-bump к searchу обратно
     if (y > prev && prev < RESISTANCE_BUMP_Y && y >= RESISTANCE_BUMP_Y) {
-      runOnJS(triggerSpeedBump)();
+      runOnJS(triggerBumpDown)();
+    }
+    // Up-bump: пересекли 800 ВВЕРХ — speed-bump к Маркету обратно
+    if (y < prev && prev > MARKET_EXIT_BUMP_Y && y <= MARKET_EXIT_BUMP_Y) {
+      runOnJS(triggerBumpUp)();
     }
     lastScrollY.value = y;
-  }, [triggerSpeedBump]);
+  }, [triggerBumpDown, triggerBumpUp]);
 
   // Debounced save scrollY → Zustand persist. Запускаем через ref'ный timer.
   const savePosTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -503,10 +522,11 @@ export default function SearchScreen() {
 
   const handleMarketShowAll = useCallback(() => {
     // «Смотреть все →» в карусели «В наличии сейчас» проскролливает к
-    // полноценному Маркет-разделу ниже. Используем заранее измеренную
-    // позицию MarketSection (через onLayout). Минус 80 px чтобы hero-
-    // заголовок попал в видимую область с отступом от status-bar.
-    const y = Math.max(0, marketSectionYRef.current - 80);
+    // ТОЧНОЙ Y MarketSection — без offset, чтобы «МАРКЕТ» заголовок
+    // доезжал до самого верха viewport'а (под status-bar + минимальный
+    // headerPaddingTop=20). Юзер жалуется на «пустой кусок над МАРКЕТ»
+    // если оставить -80 px.
+    const y = marketSectionYRef.current;
     scrollToOffsetRef.current?.(y, true);
   }, []);
 
@@ -891,7 +911,7 @@ export default function SearchScreen() {
             totalItems={marketStores.reduce((sum, s) => sum + s.totalCount, 0)}
             onStorePress={(slug) => router.push(`/market/store/${slug}` as any)}
             onItemPress={(item) => router.push(`/record/${item.id}` as any)}
-            headerPaddingTop={40}
+            headerPaddingTop={20}
           />
           {isMarketSearchActive && (
             <MarketSearchResults
