@@ -253,11 +253,14 @@ const styles = StyleSheet.create({
     // внутри rowWrap'а, banner должен заканчиваться вместе с белой плашкой).
     top: 0,
     bottom: 8,
-    // glow ember чтобы выделялся на любой обложке
+    // Glow только slight, чтобы не создавать halo выше/ниже banner'а
+    // (юзер видел это как «banner больше карточки»). shadowRadius уменьшен
+    // с 8 до 4. Halo маленький, помогает отделить banner от карточки
+    // без визуального оверсайза.
     shadowColor: '#FF7A4A',
-    shadowOffset: { width: -2, height: 0 },
-    shadowOpacity: 0.45,
-    shadowRadius: 8,
+    shadowOffset: { width: -3, height: 0 },
+    shadowOpacity: 0.35,
+    shadowRadius: 4,
     elevation: 4,
   },
   bannerPressable: {
