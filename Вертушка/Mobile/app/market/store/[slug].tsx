@@ -12,7 +12,7 @@
  * Источник: docs/plans/MARKET_AND_PRICE_DRAWER.md §1.12 + screens-market.jsx
  * (ScreenStorePage из Design Claude handoff).
  */
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   FlatList,
   Image,
@@ -56,7 +56,22 @@ export default function StorePage() {
   const [offset, setOffset] = useState(0);
 
   const [searchValue, setSearchValue] = useState('');
+  // debouncedQuery — отдельный от searchValue, обновляется через 400ms тишины.
+  // Без этого useEffect re-fetch'ил после каждого keystroke → setLoading(true)
+  // → FlatList re-renderил → keyboard dismiss. Юзер не мог дописать слово.
+  const [debouncedQuery, setDebouncedQuery] = useState('');
   const [format, setFormat] = useState<MarketFormatFilter | 'all'>('all');
+  const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    if (searchTimer.current) clearTimeout(searchTimer.current);
+    searchTimer.current = setTimeout(() => {
+      setDebouncedQuery(searchValue.trim());
+    }, 400);
+    return () => {
+      if (searchTimer.current) clearTimeout(searchTimer.current);
+    };
+  }, [searchValue]);
 
   // Загружаем метаданные магазина — фильтруем из общего getMarketStores'а.
   useEffect(() => {
@@ -71,13 +86,13 @@ export default function StorePage() {
     return () => { cancelled = true; };
   }, [slug]);
 
-  // Загружаем листинги при mount + при изменении фильтров/поиска.
+  // Загружаем листинги при mount + при изменении фильтров/debounced поиска.
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
     setOffset(0);
     api.getStoreAll(slug, {
-      q: searchValue.trim().length >= 2 ? searchValue.trim() : undefined,
+      q: debouncedQuery.length >= 2 ? debouncedQuery : undefined,
       format: format === 'all' ? null : format,
       sort: 'price_asc',
       limit: PAGE_SIZE,
@@ -92,14 +107,14 @@ export default function StorePage() {
       .catch(() => { if (!cancelled) setItems([]); })
       .finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
-  }, [slug, format, searchValue]);
+  }, [slug, format, debouncedQuery]);
 
   const loadMore = async () => {
     if (loadingMore || !hasMore || loading) return;
     setLoadingMore(true);
     try {
       const more = await api.getStoreAll(slug, {
-        q: searchValue.trim().length >= 2 ? searchValue.trim() : undefined,
+        q: debouncedQuery.length >= 2 ? debouncedQuery : undefined,
         format: format === 'all' ? null : format,
         sort: 'price_asc',
         limit: PAGE_SIZE,
@@ -224,6 +239,12 @@ export default function StorePage() {
         pointerEvents="none"
       />
 
+      {/* Header ВНЕ FlatList — иначе re-render списка на каждый refetch
+          re-mount'ает MarketSearchInput → клавиатура дисмиссится на
+          каждой букве. Header stick'ается сверху, FlatList скроллится
+          под ним. */}
+      {renderHeader()}
+
       <FlatList
         data={items}
         renderItem={renderItem}
@@ -231,7 +252,6 @@ export default function StorePage() {
         numColumns={2}
         columnWrapperStyle={styles.row}
         contentContainerStyle={styles.listContent}
-        ListHeaderComponent={renderHeader}
         ListEmptyComponent={
           loading ? null : (
             <View style={styles.empty}>
@@ -249,6 +269,10 @@ export default function StorePage() {
         onEndReached={loadMore}
         onEndReachedThreshold={0.4}
         showsVerticalScrollIndicator={false}
+        // Без этого: data меняется на каждый refetch → FlatList re-render
+        // → input теряет focus → клавиатура дисмиссит при каждой букве.
+        keyboardShouldPersistTaps="always"
+        keyboardDismissMode="none"
       />
     </View>
   );

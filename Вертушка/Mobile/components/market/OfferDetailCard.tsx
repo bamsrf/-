@@ -48,6 +48,10 @@ export interface OfferDetailData {
   condition?: string | null;
   /** true если другой pressing того же мастера, не тот что в вишлисте. */
   isAlt?: boolean;
+  /** discogs_id записи к которой матчен листинг. Для alt-cards — это
+   *  ДРУГОЙ pressing того же master_id. Парент использует для
+   *  router.push(`/record/${recordDiscogsId}`) при onCardPress. */
+  recordDiscogsId?: string | null;
 }
 
 interface OfferDetailCardProps {
@@ -56,6 +60,10 @@ interface OfferDetailCardProps {
   highlighted?: boolean;
   /** Тап на «КУПИТЬ» — родитель делает POST /offers/{id}/click + Linking.openURL. */
   onBuyPress: () => void;
+  /** Тап на корпус карточки (обложка/название/мета) — обычно navigation
+   *  к detail-экрану записи. Для alt-version это критично — юзер хочет
+   *  увидеть полную инфу о другом прессинге. */
+  onCardPress?: () => void;
   /** Активен loading-state на CTA (чтобы юзер не тапнул дважды). */
   buyLoading?: boolean;
   style?: StyleProp<ViewStyle>;
@@ -110,11 +118,20 @@ export function OfferDetailCard({
   data,
   highlighted = false,
   onBuyPress,
+  onCardPress,
   buyLoading = false,
   style,
 }: OfferDetailCardProps) {
+  // Wrap card body в Pressable если есть onCardPress (alt-version навигация).
+  // CTA «Купить» внутри — оба тапа работают независимо благодаря nested Pressable.
+  const CardWrap = onCardPress ? Pressable : View;
+  const cardProps = onCardPress
+    ? { onPress: onCardPress, accessibilityRole: 'button' as const }
+    : {};
+
   return (
-    <View
+    <CardWrap
+      {...cardProps}
       style={[
         styles.card,
         highlighted && styles.cardHighlighted,
@@ -228,7 +245,7 @@ export function OfferDetailCard({
           )}
         </LinearGradient>
       </Pressable>
-    </View>
+    </CardWrap>
   );
 }
 

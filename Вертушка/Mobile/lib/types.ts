@@ -118,6 +118,10 @@ export interface Offer {
   catalog_number?: string | null;
   is_alt_version?: boolean;
   image_url?: string | null;
+  /** discogs_id записи к которой матчен листинг. Может отличаться от
+   * запроса при is_alt_version=true. Используется для navigation
+   * к /record/{record_discogs_id} с alt-карточки в bottom-sheet. */
+  record_discogs_id?: string | null;
 }
 
 // ==================== Market (Phase 1-6 backend wiring) ====================

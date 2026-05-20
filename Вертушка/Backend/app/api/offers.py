@@ -74,7 +74,10 @@ async def get_record_offers(
 
     stmt = (
         select(StoreListing)
-        .options(joinedload(StoreListing.store))
+        .options(
+            joinedload(StoreListing.store),
+            joinedload(StoreListing.matched_record),  # для record_discogs_id в response
+        )
         .where(StoreListing.matched_record_id == record_id)
         .where(StoreListing.status.in_((ListingStatus.IN_STOCK, ListingStatus.PREORDER)))
         .where(StoreListing.last_seen_at >= cutoff)
@@ -129,6 +132,13 @@ def _to_response(listing: StoreListing, *, is_alt_version: bool = False) -> Offe
         catalog_number=_get_payload_str(listing, 'catalog_number'),
         is_alt_version=is_alt_version,
         image_url=_get_payload_str(listing, 'image_url'),
+        # discogs_id записи, к которой матчен листинг (для navigation на
+        # детальную alt-pressing'а). matched_record загружается через relationship.
+        record_discogs_id=(
+            listing.matched_record.discogs_id
+            if listing.matched_record is not None
+            else None
+        ),
     )
 
 
@@ -170,7 +180,10 @@ async def track_offer_click(
     """
     stmt = (
         select(StoreListing)
-        .options(joinedload(StoreListing.store))
+        .options(
+            joinedload(StoreListing.store),
+            joinedload(StoreListing.matched_record),  # для record_discogs_id в response
+        )
         .where(StoreListing.id == listing_id)
     )
     listing = (await db.execute(stmt)).unique().scalar_one_or_none()
@@ -486,7 +499,10 @@ async def get_record_offers_full(
     # Exact offers
     exact_stmt = (
         select(StoreListing)
-        .options(joinedload(StoreListing.store))
+        .options(
+            joinedload(StoreListing.store),
+            joinedload(StoreListing.matched_record),  # для record_discogs_id в response
+        )
         .where(StoreListing.matched_record_id == record_id)
         .where(StoreListing.status.in_((ListingStatus.IN_STOCK, ListingStatus.PREORDER)))
         .where(StoreListing.last_seen_at >= cutoff)
@@ -499,7 +515,10 @@ async def get_record_offers_full(
     if include_master_versions and master_id:
         alt_stmt = (
             select(StoreListing)
-            .options(joinedload(StoreListing.store))
+            .options(
+            joinedload(StoreListing.store),
+            joinedload(StoreListing.matched_record),  # для record_discogs_id в response
+        )
             .join(Record, Record.id == StoreListing.matched_record_id)
             .where(Record.discogs_master_id == master_id)
             .where(Record.id != record_id)

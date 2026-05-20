@@ -47,6 +47,15 @@ class OfferResponse(BaseModel):
     image_url: str | None = Field(
         None, description="Обложка из листинга (fallback для record.cover_image_url)"
     )
+    record_discogs_id: str | None = Field(
+        None,
+        description=(
+            "discogs_id записи, к которой матчен листинг. Может ОТЛИЧАТЬСЯ "
+            "от запроса для is_alt_version=true (другой pressing того же мастера). "
+            "Mobile использует для navigation: тап на alt-карточку в bottom-sheet "
+            "→ /record/{record_discogs_id} → детальная альтернативного прессинга."
+        ),
+    )
 
 
 class OfferClickResponse(BaseModel):

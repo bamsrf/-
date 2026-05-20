@@ -21,7 +21,7 @@ import {
 import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useRouter } from 'expo-router';
+import { useRouter, useLocalSearchParams } from 'expo-router';
 // Reanimated 3 для magic-transition Маркета. NB: импортим под именем
 // `Reanimated` чтобы не конфликтовать с legacy `Animated` из react-native выше.
 import Reanimated, {
@@ -124,6 +124,9 @@ const YEAR_OPTIONS = [
 export default function SearchScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
+  // Query-param focus=market: после navigation из OffersBlock CTA нужно
+  // сразу проскроллить к Маркет-секции, а не показать пустой Поиск.
+  const { focus } = useLocalSearchParams<{ focus?: string }>();
   const { user } = useAuthStore();
   const filtersTarget = useTourTarget('search-filters');
   const [searchInput, setSearchInput] = useState('');
@@ -432,6 +435,10 @@ export default function SearchScreen() {
   // worklet'ом чтобы вызывать runOnJS(setGestureMode) только на СМЕНЕ зоны,
   // а не каждый frame (60+ JS calls в сек — мусор).
   const zoneMarker = useSharedValue(0);
+  // isDragging — palец на экране. Используем как guard для visibility:
+  // в покое prompt не должен висеть, юзер видел артефакт «надписи в куче
+  // сверху сразу после открытия Маркета». Без drag = vis = 0.
+  const isDragging = useSharedValue(0);
 
   // Scroll handler: scrollY + progress в onScroll, триггер на onEndDrag.
   const onScroll = useAnimatedScrollHandler({
@@ -449,41 +456,49 @@ export default function SearchScreen() {
       // Entry zone: scrollY в [marketY-200, marketY-20]. Progress 0→1.
       const entryStart = marketY - 200;
       const entryTarget = marketY - 20;
-      // Exit zone: после того как юзер уже в Маркете (scrollY > marketY+200),
-      // обратный скролл к [marketY+200, marketY+30] заполняет exit-progress.
-      const exitStart = marketY + 200;
-      const exitTarget = marketY + 30;
+      // Exit zone: hysteresis — открывается ТОЛЬКО когда юзер глубоко
+      // в Маркете (scrollY > marketY+250). Иначе при snap'е к marketY
+      // юзер сразу попадает в exit zone с progress=1 и отпускание
+      // пальца триггерит exit обратно. Это был crash-like баг
+      // (юзер думал что приложение вылетает — на деле бесконечная
+      // лента enter→exit→enter→...).
+      const exitStart = marketY + 240;
+      const exitTarget = marketY + 90;
+
+      // dragGuard: visibility = baseVis * isDragging.value. Без drag
+      // prompt в покое не висит.
+      const drag = isDragging.value;
 
       if (y >= entryStart && y < marketY - 5) {
-        // Внутри entry zone
         const p = interpolate(y, [entryStart, entryTarget], [0, 1], {
           extrapolateLeft: 'clamp',
           extrapolateRight: 'clamp',
         });
         gestureProgress.value = p;
-        gestureVisibility.value = interpolate(
+        const baseVis = interpolate(
           y,
           [entryStart - 20, entryStart + 30],
           [0, 1],
           { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' },
         );
+        gestureVisibility.value = baseVis * drag;
         if (zoneMarker.value !== 1) {
           zoneMarker.value = 1;
           runOnJS(setGestureMode)('entry');
         }
-      } else if (y <= exitStart && y > marketY + 5) {
-        // Внутри exit zone (юзер в Маркете и скроллит вверх)
+      } else if (y <= exitStart && y > marketY + 50) {
         const p = interpolate(y, [exitStart, exitTarget], [0, 1], {
           extrapolateLeft: 'clamp',
           extrapolateRight: 'clamp',
         });
         gestureProgress.value = p;
-        gestureVisibility.value = interpolate(
+        const baseVis = interpolate(
           y,
           [exitStart + 20, exitStart - 30],
           [0, 1],
           { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' },
         );
+        gestureVisibility.value = baseVis * drag;
         if (zoneMarker.value !== 2) {
           zoneMarker.value = 2;
           runOnJS(setGestureMode)('exit');
@@ -496,19 +511,27 @@ export default function SearchScreen() {
         }
       }
     },
+    onBeginDrag: () => {
+      isDragging.value = 1;
+    },
     onEndDrag: (e) => {
-      // Триггер действия в момент отпускания пальца. Если progress полный —
-      // делаем snap + heavy haptic. Иначе оставляем как есть (юзер может
-      // продолжить скроллить и не активировать).
+      isDragging.value = 0;
+      // visibility сбросится на следующем onScroll callback'е (он fires
+      // ещё несколько раз пока inertia крутит). На всякий случай явно:
+      gestureVisibility.value = 0;
       const marketY = transitionEndY.value;
       if (marketY > 50000) return;
-      if (gestureProgress.value < 1) return;
-      // gestureMode читается из shared ref — но в worklet'е shared ref
-      // ненадёжен. Решение: смотрим scrollY относительно marketY.
+      // Триггер только если progress >= 1 AND scrollY всё ещё в zone.
+      // Иначе юзер начал скролл, попал в zone, ушёл из неё, отпустил —
+      // и трип не должен сработать.
       const y = e.contentOffset.y;
-      if (y < marketY) {
+      const p = gestureProgress.value;
+      if (p < 1) return;
+      // ENTRY (scrollY ниже marketY на момент release)
+      if (y < marketY - 5) {
         runOnJS(triggerEnterMarket)();
-      } else {
+      } else if (y > marketY + 50) {
+        // EXIT (scrollY выше marketY+50)
         runOnJS(triggerExitMarket)();
       }
     },
@@ -548,6 +571,29 @@ export default function SearchScreen() {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy).catch(() => {});
     scrollToOffsetRef.current?.(0, true);
   }, []);
+
+  // ?focus=market — пришли из OffersBlock «Открыть Маркет» с record-screen.
+  // Скроллим после того как MarketSection отмеряна (onLayout заполнил
+  // marketSectionYRef). Используем интервальный поллинг до 1.5 сек:
+  // layout-event может опоздать после mount.
+  const focusedOnceRef = useRef(false);
+  useEffect(() => {
+    if (focus !== 'market' || focusedOnceRef.current) return;
+    let attempt = 0;
+    const tryScroll = setInterval(() => {
+      attempt++;
+      const y = marketSectionYRef.current;
+      if (y > 50 && scrollToOffsetRef.current) {
+        focusedOnceRef.current = true;
+        scrollToOffsetRef.current(y, true);
+        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+        clearInterval(tryScroll);
+      } else if (attempt > 15) {
+        clearInterval(tryScroll);
+      }
+    }, 100);
+    return () => clearInterval(tryScroll);
+  }, [focus]);
 
   // Sticky-header opacity (independent от gesture-prompt'а): прибит когда
   // юзер ПРОШЁЛ marketY — то есть уже в Маркете.

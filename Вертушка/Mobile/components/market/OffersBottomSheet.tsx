@@ -41,6 +41,10 @@ export interface OffersBottomSheetData {
 interface OffersBottomSheetProps {
   /** Колбэк при тапе «КУПИТЬ» на любой карточке. Родитель делает affiliate-click. */
   onBuyPress: (offer: OfferDetailData) => void;
+  /** Тап на КОРПУС карточки (не «Купить») — обычно navigate к /record/{discogs_id}.
+   *  Для alt-version карточек критично — юзер хочет посмотреть подробности
+   *  другого pressing'а. Если не задан — корпус не нажимается. */
+  onCardPress?: (offer: OfferDetailData) => void;
   /** Loading-флаг для конкретного listingId — на CTA рисуется spinner. */
   buyingListingId?: string;
 }
@@ -52,7 +56,7 @@ export interface OffersBottomSheetRef {
 }
 
 export const OffersBottomSheet = forwardRef<OffersBottomSheetRef, OffersBottomSheetProps>(
-  function OffersBottomSheet({ onBuyPress, buyingListingId }, ref) {
+  function OffersBottomSheet({ onBuyPress, onCardPress, buyingListingId }, ref) {
     const sheetRef = useRef<BottomSheetModal>(null);
     const [data, setData] = React.useState<OffersBottomSheetData | null>(null);
 
@@ -124,6 +128,7 @@ export const OffersBottomSheet = forwardRef<OffersBottomSheetRef, OffersBottomSh
                     data={offer}
                     highlighted={idx === 0} // cheapest подсвечен
                     onBuyPress={() => onBuyPress(offer)}
+                    onCardPress={onCardPress ? () => onCardPress(offer) : undefined}
                     buyLoading={buyingListingId === offer.listingId}
                   />
                 ))}
@@ -143,6 +148,7 @@ export const OffersBottomSheet = forwardRef<OffersBottomSheetRef, OffersBottomSh
                         key={offer.listingId}
                         data={offer}
                         onBuyPress={() => onBuyPress(offer)}
+                        onCardPress={onCardPress ? () => onCardPress(offer) : undefined}
                         buyLoading={buyingListingId === offer.listingId}
                       />
                     ))}

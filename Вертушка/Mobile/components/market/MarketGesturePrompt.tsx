@@ -114,49 +114,62 @@ export function MarketGesturePrompt({
         containerStyle,
       ]}
     >
-      <Svg width={CIRCLE_SIZE} height={CIRCLE_SIZE}>
-        {/* Background track */}
-        <Circle
-          cx={CIRCLE_SIZE / 2}
-          cy={CIRCLE_SIZE / 2}
-          r={RADIUS}
-          stroke="rgba(255,255,255,0.22)"
-          strokeWidth={STROKE_WIDTH}
-          fill="none"
-        />
-        {/* Cobalt progress arc */}
-        <AnimatedCircle
-          cx={CIRCLE_SIZE / 2}
-          cy={CIRCLE_SIZE / 2}
-          r={RADIUS}
-          stroke="#5780F0"
-          strokeWidth={STROKE_WIDTH}
-          strokeDasharray={CIRCUMFERENCE}
-          strokeLinecap="round"
-          fill="none"
-          transform={`rotate(-90 ${CIRCLE_SIZE / 2} ${CIRCLE_SIZE / 2})`}
-          animatedProps={cobaltArcProps}
-        />
-        {/* Ember progress arc */}
-        <AnimatedCircle
-          cx={CIRCLE_SIZE / 2}
-          cy={CIRCLE_SIZE / 2}
-          r={RADIUS}
-          stroke="#FF7A4A"
-          strokeWidth={STROKE_WIDTH}
-          strokeDasharray={CIRCUMFERENCE}
-          strokeLinecap="round"
-          fill="none"
-          transform={`rotate(-90 ${CIRCLE_SIZE / 2} ${CIRCLE_SIZE / 2})`}
-          animatedProps={emberArcProps}
-        />
-      </Svg>
+      {/* SVG arc обёрнут в View с rotation: react-native-svg иногда падает
+          на transform-attribute, особенно когда animatedProps обновляются
+          часто. Поворачиваем сам View на -90deg чтобы дуга стартовала
+          сверху (12 часов), а не справа (3 часа). */}
+      <View style={styles.circleRotated}>
+        <Svg width={CIRCLE_SIZE} height={CIRCLE_SIZE}>
+          {/* Background track */}
+          <Circle
+            cx={CIRCLE_SIZE / 2}
+            cy={CIRCLE_SIZE / 2}
+            r={RADIUS}
+            stroke="rgba(255,255,255,0.22)"
+            strokeWidth={STROKE_WIDTH}
+            fill="none"
+          />
+          {/* Cobalt progress arc */}
+          <AnimatedCircle
+            cx={CIRCLE_SIZE / 2}
+            cy={CIRCLE_SIZE / 2}
+            r={RADIUS}
+            stroke="#5780F0"
+            strokeWidth={STROKE_WIDTH}
+            strokeDasharray={CIRCUMFERENCE}
+            strokeLinecap="round"
+            fill="none"
+            animatedProps={cobaltArcProps}
+          />
+          {/* Ember progress arc */}
+          <AnimatedCircle
+            cx={CIRCLE_SIZE / 2}
+            cy={CIRCLE_SIZE / 2}
+            r={RADIUS}
+            stroke="#FF7A4A"
+            strokeWidth={STROKE_WIDTH}
+            strokeDasharray={CIRCUMFERENCE}
+            strokeLinecap="round"
+            fill="none"
+            animatedProps={emberArcProps}
+          />
+        </Svg>
+      </View>
 
       <View style={styles.labelStack}>
-        <Animated.Text style={[styles.label, styles.labelPending, pendingLabelStyle]}>
+        {/* ОБА текста абсолютные — иначе один занимает место в layout'е,
+            а второй (absolute) накладывается. Юзер видел два налезающих
+            друг на друга текста. */}
+        <Animated.Text
+          numberOfLines={1}
+          style={[styles.label, styles.labelPending, styles.labelAbs, pendingLabelStyle]}
+        >
           {copy.pending}
         </Animated.Text>
-        <Animated.Text style={[styles.label, styles.labelArmed, styles.labelArmedPos, armedLabelStyle]}>
+        <Animated.Text
+          numberOfLines={1}
+          style={[styles.label, styles.labelArmed, styles.labelAbs, armedLabelStyle]}
+        >
           {copy.armed}
         </Animated.Text>
       </View>
@@ -180,18 +193,32 @@ const styles = StyleSheet.create({
   containerTop: {
     top: 80, // под status bar
   },
+  circleRotated: {
+    width: CIRCLE_SIZE,
+    height: CIRCLE_SIZE,
+    transform: [{ rotate: '-90deg' }],
+  },
   labelStack: {
     position: 'relative',
-    minHeight: 20,
+    height: 22,
+    alignSelf: 'stretch',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   label: {
     fontFamily: 'Inter_600SemiBold',
     fontSize: 13.5,
     letterSpacing: 0.1,
     textAlign: 'center',
-    // text-shadow чтобы читалось на любой части magic-transition фона
     textShadowColor: 'rgba(0,0,0,0.50)',
     textShadowRadius: 10,
+  },
+  labelAbs: {
+    position: 'absolute',
+    left: 16,
+    right: 16,
+    top: 2,
+    textAlign: 'center',
   },
   labelPending: {
     color: 'rgba(255,255,255,0.78)',
@@ -200,12 +227,6 @@ const styles = StyleSheet.create({
     color: '#FFD9C8',
     fontFamily: 'Inter_800ExtraBold',
     fontWeight: '800',
-  },
-  labelArmedPos: {
-    position: 'absolute',
-    left: 0,
-    right: 0,
-    top: 0,
   },
 });
 

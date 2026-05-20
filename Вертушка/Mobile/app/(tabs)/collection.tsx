@@ -165,7 +165,7 @@ export default function CollectionScreen() {
       // используем cover_image_url самой пластинки. Без этого в карточке
       // отображается серый квадрат (юзер именно об этом писал).
       const fallbackCover = wi.record.cover_image_url ?? undefined;
-      const mapOffer = (o: typeof offers[number], isAlt: boolean): OfferDetailData => ({
+      const mapOffer = (o: typeof offers[number], isAlt: boolean): OfferDetailData & { recordDiscogsId?: string | null } => ({
         listingId: o.listing_id,
         storeSlug: o.store.slug,
         storeName: o.store.name,
@@ -180,6 +180,9 @@ export default function CollectionScreen() {
         artist: wi.record.artist,
         title: wi.record.title,
         isAlt,
+        // Для onCardPress navigation: для alt-version листинга
+        // record_discogs_id — это discogs_id ДРУГОГО пресса (не из вишлиста).
+        recordDiscogsId: o.record_discogs_id ?? null,
       });
       const exact: OfferDetailData[] = offers
         .filter((o) => !o.is_alt_version)
@@ -1175,6 +1178,15 @@ export default function CollectionScreen() {
       <OffersBottomSheet
         ref={offersSheetRef}
         onBuyPress={handleBuyPress}
+        onCardPress={(offer) => {
+          // Тап на корпус карточки — переход к детальной этого pressing'а.
+          // Для alt-version это другой discogs_id (другой пресс того же мастера).
+          const dst = (offer as OfferDetailData & { recordDiscogsId?: string | null }).recordDiscogsId;
+          if (dst) {
+            offersSheetRef.current?.dismiss();
+            router.push(`/record/${dst}`);
+          }
+        }}
         buyingListingId={buyingListingId}
       />
     </View>

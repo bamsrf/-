@@ -114,7 +114,15 @@ export function OffersBlock({ discogsId }: OffersBlockProps) {
           лишний. Плашка единая: disc-иконка + копи + arrow.
           Routes to /(tabs)/search где живёт раздел Маркет. */}
       <Pressable
-        onPress={() => router.push('/(tabs)/search' as any)}
+        onPress={() =>
+          // ?focus=market — search.tsx прочитает query-param и сразу
+          // проскроллит к секции Маркета (вместо приземления на чистый
+          // Поиск, где Маркет где-то снизу за горизонтом).
+          router.push({
+            pathname: '/(tabs)/search' as any,
+            params: { focus: 'market' },
+          })
+        }
         accessibilityRole="button"
         accessibilityLabel="Открыть Маркет"
         style={({ pressed }) => [styles.marketEntryWrap, pressed && { opacity: 0.85 }]}
