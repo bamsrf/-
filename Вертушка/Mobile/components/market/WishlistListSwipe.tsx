@@ -248,8 +248,11 @@ const styles = StyleSheet.create({
   bannerWrap: {
     position: 'absolute',
     right: 0,
-    top: 4,
-    bottom: 4,
+    // top:0 — выравнен с верхом white card.
+    // bottom:8 — выравнен с низом card (card имеет marginBottom:Spacing.sm=8
+    // внутри rowWrap'а, banner должен заканчиваться вместе с белой плашкой).
+    top: 0,
+    bottom: 8,
     // glow ember чтобы выделялся на любой обложке
     shadowColor: '#FF7A4A',
     shadowOffset: { width: -2, height: 0 },
@@ -308,15 +311,16 @@ const styles = StyleSheet.create({
   },
 
   // PEEK-зона — корешок справа. Фиксированная ширина, всегда видна.
-  // justifyContent:flex-start вместо center — иначе arrow всплывает к
-  // top-edge и подрезается borderRadius:14 right-corner'ом banner'а.
+  // justifyContent:center — content вертикально по середине банера
+  // (=по центру текста карточки слева). Раньше был flex-start +
+  // paddingTop, но banner теперь правильно выравнен по карточке,
+  // правый край square (borderRadius:0) → arrow не клипается.
   peekZone: {
     width: PEEK_WIDTH,
     alignItems: 'center',
-    justifyContent: 'flex-start',
-    paddingTop: 18, // arrow ниже от верхнего borderRadius'а — UX-чище
-    paddingBottom: 10,
-    gap: 7,
+    justifyContent: 'center',
+    paddingVertical: 6,
+    gap: 6,
   },
   peekArrow: {},
   peekStack: {
@@ -324,18 +328,18 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     gap: 0,
   },
-  // Каждая буква в фиксированном 20×14 контейнере. Без этого Cyrillic
+  // Каждая буква в фиксированном 20×12 контейнере. Без этого Cyrillic
   // ExtraBold глифы клипались своим natural-width Text-view'ом.
   peekCharBox: {
     width: 20,
-    height: 13,
+    height: 12,
     alignItems: 'center',
     justifyContent: 'center',
   },
   peekChar: {
     fontFamily: 'Inter_800ExtraBold',
     fontSize: 10,
-    lineHeight: 13,
+    lineHeight: 12,
     fontWeight: '800',
     color: '#FFFFFF',
     letterSpacing: 0,
