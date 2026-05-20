@@ -18,6 +18,8 @@ from datetime import datetime
 from decimal import Decimal
 from typing import Iterable
 
+import re
+
 from rapidfuzz import fuzz
 from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -35,6 +37,22 @@ logger = logging.getLogger(__name__)
 
 FUZZY_THRESHOLD = 0.85
 FUZZY_CANDIDATES_LIMIT = 50
+
+# Аксессуары: магазины ставят их в общий каталог рядом с пластинками
+# (пины-значки, пакеты, щётки, постеры, сертификаты), а парсер по дефолту
+# помечает их `LP`. В Discogs их нет — каждый on-demand fetch заведомо вернёт
+# None и впустую сожжёт квоту DISCOGS_FETCH_HOURLY_LIMIT, не давая дойти до
+# реальных пластинок. Этот паттерн — короткий чёрный список по title.
+_ACCESSORY_TITLE_RE = re.compile(
+    r"\(Pin\)|\(пин\)|\bзначок\b|пакет\b|конверт\b|щётк|щетк|"
+    r"кружк|брелок|постер|poster\b|плакат|сертификат|подарочн|"
+    r"футболк|t[\-\s]?shirt|худи|hoodie|наклейк|sticker",
+    re.IGNORECASE,
+)
+
+
+def _is_accessory(listing: StoreListing) -> bool:
+    return bool(_ACCESSORY_TITLE_RE.search(listing.title_raw or ""))
 
 # Discogs on-demand: верхняя крышка против burst-нагрузки. Per-minute rate-limit
 # (60 req/min) уже выровнен через discogs_limiter (TokenBucketRateLimiter capacity=55,
@@ -375,7 +393,7 @@ async def match_unmatched_batch(batch_size: int = 200) -> dict[str, int]:
     Возвращает счётчики: matched/unmatched/errors + диагностика по сигналам
     (какие из источников ID у листингов вообще есть).
     """
-    counters = {"processed": 0, "matched": 0, "unmatched": 0, "errors": 0}
+    counters = {"processed": 0, "matched": 0, "unmatched": 0, "errors": 0, "skipped_accessory": 0}
     # Диагностика: сколько unmatched листингов вообще имеют сигналы для матчинга.
     # Без неё непонятно, парсер ли не вытаскивает barcode/discogs_url, или
     # matcher не находит. Лог помогает увидеть это сразу в выводе батча.
@@ -392,6 +410,10 @@ async def match_unmatched_batch(batch_size: int = 200) -> dict[str, int]:
 
         for listing in listings:
             counters["processed"] += 1
+            if _is_accessory(listing):
+                counters["skipped_accessory"] += 1
+                counters["unmatched"] += 1
+                continue
             raw = listing.raw_payload or {}
             has_url = bool(raw.get("discogs_release_url"))
             has_bc = bool(raw.get("barcode"))
