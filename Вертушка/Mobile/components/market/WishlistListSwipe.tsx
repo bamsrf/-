@@ -169,21 +169,18 @@ export function WishlistListSwipe({
     // только над карточкой).
     <GestureDetector gesture={panGesture}>
       <View style={[styles.rowWrap, style]}>
-        {/* КАРТОЧКА — двигается влево с пальцем. paddingRight под peek.
-            cardMarginEater: marginBottom:-Spacing.sm ОТНИМАЕТ inner marginBottom
-            listContainer'а из вертикального бюджета rowWrap. Сам margin между
-            строками перенесён на rowWrap.marginBottom. Итог: rowWrap.height
-            ровно равна visible layout-box карточки, top:0/bottom:0 на баннере
-            даёт pixel-perfect height match. */}
+        {/* КАРТОЧКА — двигается влево с пальцем. paddingRight под peek. */}
         <Animated.View style={[{ paddingRight: PEEK_WIDTH }, cardStyle]}>
-          <View style={styles.cardMarginEater}>
-            {children}
-          </View>
+          {children}
         </Animated.View>
 
         {/* ОДИН gradient-баннер. Прибит к right:0. Width растёт leftward.
-            top:0 / bottom:0 — точно равны границам rowWrap'а, которая теперь
-            = visible card layout box (см. cardMarginEater выше).
+            Геометрия чисто декларативная (без onLayout/state, чтобы Fast
+            Refresh не залипал на старом значении):
+              top: 0           — выровнен с верхом layout-box карточки.
+              bottom: Spacing.sm — отрезает marginBottom listContainer'а,
+                                  который попадает в высоту rowWrap'а.
+            Итог: banner.height = rowWrap.height − Spacing.sm = card.height.
             pointerEvents=box-none — тапы на Pressable, drag bubble'ит. */}
         <Animated.View
           pointerEvents="box-none"
@@ -247,16 +244,7 @@ export function WishlistListSwipe({
 const styles = StyleSheet.create({
   rowWrap: {
     position: 'relative',
-    // marginBottom перенесён с listContainer сюда — см. cardMarginEater.
-    // Между строками визуально остаётся тот же gap = Spacing.sm.
-    marginBottom: Spacing.sm,
-  },
-  // Съедает marginBottom:Spacing.sm у listContainer'а внутри RecordCard,
-  // чтобы Animated.View card-wrapper'а имела height = visible card layout box
-  // (БЕЗ нижнего margin'а). rowWrap получает чистую высоту = карточка,
-  // и баннер top:0/bottom:0 = pixel-match.
-  cardMarginEater: {
-    marginBottom: -Spacing.sm,
+    // marginBottom между строками создаёт сам listContainer (Spacing.sm).
   },
 
   // ── ЕДИНЫЙ БАННЕР ────────────────────────────────────────────────
@@ -264,9 +252,7 @@ const styles = StyleSheet.create({
     position: 'absolute',
     right: 0,
     top: 0,
-    bottom: 0,
-    // Halo только горизонтальный (offset.width:-3, radius:0) — никакого
-    // вертикального spread'а, чтобы баннер визуально не казался выше карточки.
+    bottom: Spacing.sm, // = listContainer.marginBottom → отрезается из высоты
     shadowColor: '#FF7A4A',
     shadowOffset: { width: -3, height: 0 },
     shadowOpacity: 0.3,
