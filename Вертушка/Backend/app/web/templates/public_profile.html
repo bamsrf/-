@@ -625,6 +625,114 @@
             font-size: 12px; color: var(--cobalt); text-decoration: none; font-weight: 500;
         }
         .rp-discogs:hover { text-decoration: underline; }
+
+        /* === Маркет (Купить сейчас) — тёмный «островок» с ember-свечением ===
+           Стилистика 1-в-1 с Mobile/components/OffersBlock.tsx + MarketPalette:
+           void-фон #0E0726, hairline-границы белого с низкой альфой, ember-акценты
+           #FF7A4A / #FFD9C8. Текст исключительно белый, без cobalt-оттенка профиля. */
+        .rp-offers {
+            display: flex; flex-direction: column; gap: 8px;
+            margin: 6px 0 16px;
+            padding: 14px;
+            background: linear-gradient(180deg, #150B33 0%, #0E0726 100%);
+            border-radius: 18px;
+            box-shadow:
+                0 14px 36px -10px rgba(255, 122, 74, 0.22),
+                0 0 0 1px rgba(255, 255, 255, 0.06) inset,
+                0 1px 0 rgba(255, 255, 255, 0.05) inset;
+        }
+        .rp-offers-head {
+            display: flex; align-items: baseline; justify-content: space-between;
+            margin-bottom: 6px; padding: 0 2px;
+            gap: 12px;
+        }
+        .rp-offers-head .lbl-title {
+            font-size: 13px; font-weight: 700; letter-spacing: -0.01em;
+            color: #FFFFFF;
+        }
+        .rp-offers-head .lbl-count {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 9px; letter-spacing: 0.12em; text-transform: uppercase;
+            color: rgba(255,255,255,0.55);
+            white-space: nowrap;
+        }
+        .offer-btn {
+            display: flex; align-items: center; gap: 12px;
+            padding: 10px 12px;
+            border-radius: 14px;
+            background: rgba(255,255,255,0.04);
+            border: 1px solid rgba(255,255,255,0.06);
+            text-decoration: none;
+            color: #FFFFFF;
+            transition: background 160ms ease, border-color 160ms ease, opacity 160ms ease, transform 160ms ease;
+            -webkit-tap-highlight-color: transparent;
+        }
+        .offer-btn:hover {
+            background: rgba(255,255,255,0.08);
+            border-color: rgba(255,255,255,0.12);
+        }
+        .offer-btn:active { opacity: 0.85; transform: scale(0.995); }
+        .offer-logo {
+            width: 40px; height: 40px; flex-shrink: 0;
+            /* radius = size * 0.18 ≈ 7px (StoreLogo.tsx) */
+            border-radius: 8px; overflow: hidden;
+            display: flex; align-items: center; justify-content: center;
+            font-weight: 800; font-size: 17px; letter-spacing: -0.02em;
+            color: #fff;
+            background: linear-gradient(135deg, #2D4FDB, #5780F0);
+            box-shadow: 0 2px 8px -2px rgba(0,0,0,0.45);
+        }
+        .offer-logo img { width: 100%; height: 100%; object-fit: cover; display: block; }
+        .offer-logo[data-bordered="1"] {
+            border: 1px solid rgba(255,255,255,0.18);
+            box-sizing: border-box;
+        }
+        .offer-meta {
+            flex: 1; min-width: 0;
+            display: flex; flex-direction: column; gap: 2px;
+        }
+        .offer-store {
+            font-size: 14px; font-weight: 700; letter-spacing: -0.01em;
+            color: #FFFFFF;
+            overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+        }
+        .offer-status {
+            display: inline-flex; align-items: center; gap: 6px;
+            font-size: 11.5px; font-weight: 500;
+            color: rgba(255,255,255,0.62);
+        }
+        .offer-status::before {
+            content: ""; width: 6px; height: 6px; border-radius: 50%;
+            background: #FFD9C8;
+            box-shadow: 0 0 0 2px rgba(255,217,200,0.18);
+        }
+        .offer-price {
+            flex-shrink: 0;
+            font-size: 16px; font-weight: 800; letter-spacing: -0.02em;
+            color: #FFFFFF;
+            font-variant-numeric: tabular-nums;
+        }
+        .offer-arrow {
+            flex-shrink: 0; width: 14px; height: 14px;
+            color: #FFD9C8; opacity: 0.9;
+            margin-left: 2px;
+        }
+        /* Discogs-ссылка, идущая под маркет-блоком, остаётся в светлой палитре
+           профиля. Лёгкий зазор сверху, чтобы не липла к тёмной плашке. */
+        .rp-offers + .rp-discogs { margin-top: -4px; }
+        @media (min-width: 640px) {
+            .rp-offers { gap: 10px; padding: 16px; }
+            .offer-btn { padding: 12px 14px; gap: 14px; }
+            .offer-logo { width: 44px; height: 44px; border-radius: 9px; font-size: 18px; }
+            .offer-store { font-size: 14.5px; }
+            .offer-price { font-size: 17px; }
+        }
+        /* На очень узких экранах (≤340px) — статус прячем, чтобы цена не уезжала */
+        @media (max-width: 340px) {
+            .offer-status { display: none; }
+            .offer-logo { width: 36px; height: 36px; border-radius: 7px; }
+            .offer-price { font-size: 15px; }
+        }
         .bm-note {
             font-size: 12px; color: var(--slate); line-height: 1.55;
             margin-bottom: 16px; padding: 12px 14px;
@@ -877,6 +985,7 @@
                              data-cover="{{ r.cover_image_url or '' }}"
                              data-price="{{ compute_rub(r) or '' }}"
                              data-discogs="{{ r.discogs_id or '' }}"
+                             data-offers="{{ offers_for(r)|tojson|forceescape }}"
                              onclick="openRecordPreview(this)">
                             <div class="rail-cover">
                                 {% if r.cover_image_url %}<img src="{{ r.cover_image_url }}" alt="{{ r.title }}" loading="lazy">{% endif %}
@@ -910,6 +1019,7 @@
                              data-discogs="{{ r.discogs_id or '' }}"
                              data-want="{{ r.discogs_want or '' }}"
                              data-have="{{ r.discogs_have or '' }}"
+                             data-offers="{{ offers_for(r)|tojson|forceescape }}"
                              onclick="openRecordPreview(this)">
                             <div class="rail-cover">
                                 {% if r.cover_image_url %}<img src="{{ r.cover_image_url }}" alt="{{ r.title }}" loading="lazy">{% endif %}
@@ -983,6 +1093,7 @@
                     data-price="{{ compute_rub(item.record) or '' }}"
                     data-catalog="{{ (item.record.catalog_number or '')|e }}"
                     data-discogs="{{ item.record.discogs_id or '' }}"
+                    data-offers="{{ offers_for(item.record)|tojson|forceescape }}"
                     onclick="openRecordPreview(this)">
                     <div class="card-cover">
                         {% if item.record.cover_image_url %}<img src="{{ item.record.cover_image_url }}" alt="{{ item.record.title }}" loading="lazy">{% endif %}
@@ -1062,6 +1173,7 @@
                     data-price="{{ compute_rub(item.record) or '' }}"
                     data-catalog="{{ (item.record.catalog_number or '')|e }}"
                     data-discogs="{{ item.record.discogs_id or '' }}"
+                    data-offers="{{ offers_for(item.record)|tojson|forceescape }}"
                     onclick="openBookingModal(this)"
                 {% endif %}>
                     <div class="card-cover">
@@ -1165,6 +1277,7 @@
                 <div class="rp-artist" id="rpArtist"></div>
                 <div class="rp-title" id="rpTitle"></div>
                 <div id="rpInfoRow" class="rp-info-row" style="display:none"></div>
+                <div id="rpOffers" class="rp-offers" style="display:none"></div>
                 <a id="rpDiscogs" class="rp-discogs" target="_blank" rel="noopener" style="display:none">Открыть на Discogs ↗</a>
             </div>
         </div>
@@ -1189,6 +1302,7 @@
                 <div class="rp-artist" id="bmArtist"></div>
                 <div class="rp-title" id="bmTitle"></div>
                 <div id="bmInfoRow" class="rp-info-row" style="display:none"></div>
+                <div id="bmOffers" class="rp-offers" style="display:none"></div>
                 <a id="bmDiscogs" class="rp-discogs" target="_blank" rel="noopener" style="display:none">Открыть на Discogs ↗</a>
                 <form id="bookingForm">
                     <input type="hidden" id="itemId" name="wishlist_item_id">
@@ -1631,7 +1745,86 @@
         }
 
         // Record preview modal
-        function esc(s) { return s.replace(/&/g,'&amp;').replace(/</g,'&lt;'); }
+        function esc(s) { return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/"/g,'&quot;'); }
+
+        // Реестр магазинов-маркетплейсов: фирменные цвета фолбэк-плашек (когда
+        // PNG-логотипа нет). Должен жить в синхроне с Mobile/components/market/StoreLogo.tsx.
+        var STORE_BRAND = {
+            korobkavinyla:  { bg: '#E85A2A', fg: '#FFFFFF', bordered: false },
+            plastinka_com:  { bg: '#FFFFFF', fg: '#111111', bordered: true  },
+            vinyl_ru:       { bg: '#000000', fg: '#FFFFFF', bordered: false },
+            stoprobotvinyl: { bg: '#1B1B1B', fg: '#FFFFFF', bordered: false }
+        };
+
+        function _pluralRu(n, one, few, many) {
+            var abs = Math.abs(n) % 100;
+            if (abs >= 11 && abs <= 14) return many;
+            var last = abs % 10;
+            if (last === 1) return one;
+            if (last >= 2 && last <= 4) return few;
+            return many;
+        }
+
+        // Формат цены 1-в-1 с мобильной formatPrice (HotStockTag.tsx):
+        // NBSP-разделители тысяч, "1 234 ₽". В мобилке tabular-nums делается
+        // через CSS, в Web — через font-variant-numeric на .offer-price.
+        function _fmtPriceRub(n) {
+            var s = String(Math.round(n));
+            s = s.replace(/\B(?=(\d{3})+(?!\d))/g, ' ');
+            return s + ' ₽';
+        }
+
+        function _statusLabel(s) {
+            // Семантика статусов из Mobile/components/market/OffersBlock.tsx:
+            // in_stock — обычный ряд; preorder — ember-метка; остальные не показываются.
+            if (s === 'preorder')   return 'Предзаказ';
+            if (s === 'on_request') return 'Под заказ';
+            return 'В наличии';
+        }
+
+        // Рендерит блок кнопок-маркетплейсов внутри контейнера id.
+        // offersRaw — JSON-строка из data-offers ([] если магазинов нет).
+        function renderOffers(containerId, offersRaw) {
+            var el = document.getElementById(containerId);
+            if (!el) return;
+            var offers = [];
+            try { offers = JSON.parse(offersRaw || '[]'); } catch (_) { offers = []; }
+            if (!Array.isArray(offers) || offers.length === 0) {
+                el.style.display = 'none';
+                el.innerHTML = '';
+                return;
+            }
+            var word = _pluralRu(offers.length, 'предложение', 'предложения', 'предложений');
+            var head = '<div class="rp-offers-head">' +
+                         '<span class="lbl-title">Купить сейчас</span>' +
+                         '<span class="lbl-count">' + offers.length + ' ' + word + '</span>' +
+                       '</div>';
+            var rows = offers.map(function(o) {
+                var brand = STORE_BRAND[o.store_slug] || { bg: '#2D4FDB', fg: '#FFFFFF', bordered: false };
+                var monogram = (o.store_name || o.store_slug || '?').trim().charAt(0).toUpperCase();
+                var logoStyle = 'background:' + brand.bg + ';color:' + brand.fg + ';';
+                var borderedAttr = brand.bordered ? ' data-bordered="1"' : '';
+                var logoInner = o.store_logo
+                    ? '<img src="' + esc(o.store_logo) + '" alt="' + esc(o.store_name || '') + '" loading="lazy" onerror="this.remove()">'
+                    : esc(monogram);
+                var href = esc(o.url || '#');
+                return '<a class="offer-btn" href="' + href + '" target="_blank" rel="noopener noreferrer nofollow sponsored"' +
+                            ' data-store-slug="' + esc(o.store_slug || '') + '">' +
+                         '<span class="offer-logo" style="' + logoStyle + '"' + borderedAttr + '>' + logoInner + '</span>' +
+                         '<span class="offer-meta">' +
+                            '<span class="offer-store">' + esc(o.store_name || o.store_slug || '') + '</span>' +
+                            '<span class="offer-status">' + _statusLabel(o.status) + '</span>' +
+                         '</span>' +
+                         '<span class="offer-price">' + _fmtPriceRub(o.price_rub) + '</span>' +
+                         '<svg class="offer-arrow" viewBox="0 0 14 14" fill="none">' +
+                            '<path d="M4 2l6 5-6 5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>' +
+                         '</svg>' +
+                       '</a>';
+            }).join('');
+            el.innerHTML = head + rows;
+            el.style.display = '';
+        }
+
         function openRecordPreview(card) {
             var d = card.dataset;
             // Cover — прозрачный 1x1 px как плейсхолдер (CSS-градиент покрывает фон)
@@ -1657,6 +1850,8 @@
                        '<div class="rp-info-val ' + c[2] + '">' + esc(String(c[1])) + '</div></div>';
             }).join('');
             rpInfoRow.style.display = rpInfoCards.length ? '' : 'none';
+
+            renderOffers('rpOffers', d.offers);
 
             var discogsEl = document.getElementById('rpDiscogs');
             if (d.discogs) { discogsEl.href = 'https://www.discogs.com/release/' + d.discogs; discogsEl.style.display = ''; }
@@ -1704,6 +1899,9 @@
                        '<div class="rp-info-val ' + c[2] + '">' + esc(String(c[1])) + '</div></div>';
             }).join('');
             bmInfoRow.style.display = bmCards.length ? '' : 'none';
+
+            renderOffers('bmOffers', d.offers);
+
             var bmDiscogs = document.getElementById('bmDiscogs');
             if (d.discogs) { bmDiscogs.href = 'https://www.discogs.com/release/' + d.discogs; bmDiscogs.style.display = ''; }
             else { bmDiscogs.style.display = 'none'; }

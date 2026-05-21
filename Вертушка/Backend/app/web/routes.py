@@ -22,6 +22,8 @@ from app.models.wishlist import Wishlist, WishlistItem
 from app.models.follow import Follow
 from app.models.profile_share import ProfileShare
 from app.models.gift_booking import GiftBooking, GiftStatus
+from app.models.store import Store
+from app.models.store_listing import StoreListing, ListingStatus
 from app.api.profile import get_public_profile_payload, _get_top_expensive, _get_new_releases
 from app.services.exchange import get_usd_rub_rate
 from app.services.pricing import PricingParams, estimate_rub
@@ -85,6 +87,73 @@ def _genre_label(genre: str, count: int) -> str:
     key = (genre or "").strip().lower()
     template = _GENRE_RU.get(key) or f"{genre}-{{rel}}"
     return template.replace("{rel}", rel)
+
+
+# Локальные логотипы (есть в /static/store-logos/{slug}.png). Если slug не в списке —
+# фронт нарисует monogram-fallback (первая буква в фирменном цвете).
+_LOCAL_STORE_LOGOS = {"korobkavinyla", "plastinka_com", "vinyl_ru", "stoprobotvinyl"}
+
+_MAX_OFFERS_PER_RECORD = 4
+
+
+async def _load_offers_by_record(
+    record_ids: list[UUID],
+    db: AsyncSession,
+) -> dict[UUID, list[dict]]:
+    """Возвращает {record_id: [offer, ...]} — активные in_stock-листинги по магазинам.
+
+    Сортировка внутри записи: по price_rub ASC, до _MAX_OFFERS_PER_RECORD на запись.
+    Каждый offer: store_slug/store_name/store_logo (url или None), price_rub (int),
+    url, status. Цена приведена к целым рублям, чтобы матчилось с подачей в мобилке.
+    """
+    if not record_ids:
+        return {}
+
+    rows = (
+        await db.execute(
+            select(
+                StoreListing.matched_record_id,
+                StoreListing.url,
+                StoreListing.price_rub,
+                StoreListing.status,
+                Store.slug,
+                Store.name,
+                Store.logo_url,
+            )
+            .join(Store, Store.id == StoreListing.store_id)
+            .where(
+                StoreListing.matched_record_id.in_(record_ids),
+                StoreListing.status == ListingStatus.IN_STOCK,
+                StoreListing.price_rub.isnot(None),
+                Store.is_active == True,  # noqa: E712
+            )
+            .order_by(StoreListing.matched_record_id, StoreListing.price_rub.asc())
+        )
+    ).all()
+
+    grouped: dict[UUID, list[dict]] = {}
+    for rid, url, price_rub, status, slug, store_name, logo_url in rows:
+        bucket = grouped.setdefault(rid, [])
+        if len(bucket) >= _MAX_OFFERS_PER_RECORD:
+            continue
+        # Дедуп по магазину: показываем самое дешёвое предложение от каждого магазина.
+        if any(o["store_slug"] == slug for o in bucket):
+            continue
+        # logo: приоритет — локальный PNG в статике (мы их положили из мобилки),
+        # затем external logo_url из БД, иначе None → фронт нарисует monogram.
+        if slug in _LOCAL_STORE_LOGOS:
+            logo = f"/static/store-logos/{slug}.png"
+        else:
+            logo = logo_url or None
+        bucket.append({
+            "store_slug": slug,
+            "store_name": store_name,
+            "store_logo": logo,
+            "price_rub": int(price_rub),
+            "url": url,
+            "status": status,
+        })
+    return grouped
 
 
 @router.get("/privacy", response_class=HTMLResponse)
@@ -557,6 +626,30 @@ async def public_profile_page(
     # поэтому без пересортировки порядок выглядит "вразнобой".
     top_expensive = sorted(top_expensive, key=compute_rub, reverse=True)
 
+    # === Активные офферы магазинов-партнёров ===
+    # Собираем все record_id, которые попадут в любую модалку профиля (карточки в
+    # сетке, рейлы, highlights). Один query вытягивает по каждой записи топ-4
+    # in_stock-листинга — фронт прокинет их через data-offers в JSON.
+    _record_id_set: set[UUID] = set()
+    for it in collection_items:
+        if it.record:
+            _record_id_set.add(it.record.id)
+    for it in wishlist_items:
+        if it.record:
+            _record_id_set.add(it.record.id)
+    for r in top_expensive:
+        _record_id_set.add(r.id)
+    for r in new_releases:
+        _record_id_set.add(r.id)
+    for r in highlights:
+        _record_id_set.add(r.id)
+    offers_by_record = await _load_offers_by_record(list(_record_id_set), db)
+
+    def offers_for(record) -> list[dict]:
+        if not record:
+            return []
+        return offers_by_record.get(record.id, [])
+
     return templates.TemplateResponse("public_profile.html", {
         "request": request,
         "user": user,
@@ -578,6 +671,7 @@ async def public_profile_page(
         "base_url": BASE_URL,
         "usd_rub_rate": float(usd_rub_rate),
         "compute_rub": compute_rub,
+        "offers_for": offers_for,
     })
 
 
