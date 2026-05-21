@@ -278,7 +278,9 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
   },
 
-  // CTA «Купить» — flex:1 (занимает всё пространство left от peek-зоны).
+  // CTA «Купить» — flex:1, занимает ВЕСЬ банер (peekZone теперь absolute,
+  // не отъедает flex-пространство). paddingRight = PEEK_WIDTH удерживает
+  // контент CTA слева от корешка, чтобы текст не уходил под буквы ТЯНИ.
   // overflow:hidden у parent banner'а — текст не торчит при узком rest.
   ctaZone: {
     flex: 1,
@@ -286,7 +288,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 10,
     paddingLeft: 12,
-    paddingRight: 4,
+    paddingRight: PEEK_WIDTH + 4,
     minWidth: 0,
   },
   ctaTextBlock: {
@@ -309,12 +311,17 @@ const styles = StyleSheet.create({
     includeFontPadding: false,
   },
 
-  // PEEK-зона — корешок справа. Фиксированная ширина, всегда видна.
-  // justifyContent:center — content вертикально по середине банера
-  // (=по центру текста карточки слева). Раньше был flex-start +
-  // paddingTop, но banner теперь правильно выравнен по карточке,
-  // правый край square (borderRadius:0) → arrow не клипается.
+  // PEEK-зона — корешок справа. Position absolute right:0 (НЕ в flex-потоке
+  // bannerGradient'а), потому что иначе ctaZone с flex:1 и иконкой size:18
+  // даже с minWidth:0 не схлопывается до нуля и сдвигает peekZone вправо
+  // за пределы visible банера — ТЯНИ визуально «прижимается» к правому краю.
+  // Absolute позиционирование гарантирует, что буквы всегда центрированы
+  // ровно по ширине visible язычка.
   peekZone: {
+    position: 'absolute',
+    top: 0,
+    bottom: 0,
+    right: 0,
     width: PEEK_WIDTH,
     alignItems: 'center',
     justifyContent: 'center',
