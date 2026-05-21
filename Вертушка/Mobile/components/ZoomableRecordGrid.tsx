@@ -126,6 +126,8 @@ interface Props {
    * cardVariant — в tile-режиме без overlay'я нет места для pill'а).
    */
   hotStockMap?: Map<string, { variant: any; price: number } | null>;
+  /** Wishlist tile/list badge-режим — см. RecordCard.useOfferBadge. */
+  useOfferBadge?: boolean;
 }
 
 interface BareCellProps {
@@ -243,6 +245,7 @@ export function ZoomableRecordGrid({
   contentBottomPad = 120,
   rarityContext = 'collection',
   hotStockMap,
+  useOfferBadge = false,
 }: Props) {
   const [level, setLevel] = useState<ZoomLevel>(0);
 
@@ -489,6 +492,7 @@ export function ZoomableRecordGrid({
                         ? hotStockMap.get(item.record.discogs_id) ?? undefined
                         : undefined
                     }
+                    useOfferBadge={useOfferBadge}
                     isSelected={isSelected}
                     rarityContext={rarityContext}
                     noRarityAura={false}

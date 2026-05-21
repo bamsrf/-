@@ -24,6 +24,7 @@ import { getCoverUrl } from '../lib/api';
 import { cleanArtistName } from '../lib/format';
 import { RarityAura, TierCoverEffects, TierLabel, pickRarityTier, RarityContext, RarityFlags, RARITY_TIERS } from './RarityAura';
 import HotStockTag, { type ResolvedHotStock } from './HotStockTag';
+import { OfferBadge, TileFrameGradient } from './OfferBadge';
 
 const { width } = Dimensions.get('window');
 const CARD_WIDTH = (width - Spacing.md * 3) / 2;
@@ -55,6 +56,15 @@ interface RecordCardProps {
    * См. docs/plans/MARKET_AND_PRICE_DRAWER.md §2.4 + OFFERS_UX.md §2.8.
    */
   hotStock?: ResolvedHotStock | null;
+  /**
+   * Wishlist tile/list режим (см. handoff/screens-wishlist-grid-v3):
+   *  - `expanded` variant → corner-плашка «В ПРОДАЖЕ»/«ЕСТЬ АНАЛОГ» в правом
+   *    верхнем углу обложки + gradient-рамка вокруг cover. Bottom HotStockTag
+   *    скрывается. Саб-строка с ценой исчезает.
+   *  - `list` variant → ТОЛЬКО для altVersion заменяет HotStockTag на
+   *    OfferBadge «ЕСТЬ АНАЛОГ». Для in-stock case оставляет HotStockTag.
+   */
+  useOfferBadge?: boolean;
 }
 
 const FORMAT_TRANSLATIONS: Record<string, string> = {
@@ -123,7 +133,18 @@ function RecordCardComponent({
   rarityContext = 'search',
   noRarityAura = false,
   hotStock,
+  useOfferBadge = false,
 }: RecordCardProps) {
+  // ── Wishlist offer-badge режим (handoff/screens-wishlist-grid-v3.jsx) ──
+  // Для tile (expanded) и list — corner/inline-плашка вместо HotStockTag.
+  // 'inStock' для in-stock-листингов (any variant), 'alt' для altVersion.
+  const offerBadgeKind: 'inStock' | 'alt' | null = useOfferBadge && hotStock
+    ? hotStock.variant === 'altVersion'
+      ? 'alt'
+      : hotStock.variant === 'inStock' || hotStock.variant === 'inStockMulti' || hotStock.variant === 'lastOne'
+        ? 'inStock'
+        : null
+    : null;
   const imageUrl = getCoverUrl(record);
   const artistDisplay = cleanArtistName(record.artist);
   const cardWidth = size === 'large' ? width - Spacing.md * 2 : CARD_WIDTH;
@@ -355,8 +376,15 @@ function RecordCardComponent({
         </View>
 
         {/* Hot Stock pill — справа вместо chevron'а. List-row компактный,
-            используем size='sm' без стрелки. MARKET_AND_PRICE_DRAWER.md §2.4.3. */}
-        {hotStock && (
+            используем size='sm' без стрелки. MARKET_AND_PRICE_DRAWER.md §2.4.3.
+            Для wishlist'а с offerBadgeKind='alt' — заменяем pill на OfferBadge
+            «ЕСТЬ АНАЛОГ» (вместо «· альт.» суффикса в HotStockTag). In-stock
+            case остаётся как есть. */}
+        {hotStock && offerBadgeKind === 'alt' ? (
+          <View style={styles.listHotStock} pointerEvents="none">
+            <OfferBadge kind="alt" size="sm" />
+          </View>
+        ) : hotStock ? (
           <View style={styles.listHotStock} pointerEvents="none">
             <HotStockTag
               variant={hotStock.variant}
@@ -366,7 +394,7 @@ function RecordCardComponent({
               showShadow={hotStock.variant !== 'altVersion'}
             />
           </View>
-        )}
+        ) : null}
 
       </AnimatedPressable>
     );
@@ -411,27 +439,49 @@ function RecordCardComponent({
         </View>
       )}
 
-      <View style={[styles.expandedImageContainer, { height: imageHeight }]}>
-        {imageUrl ? (
-          <Image source={imageUrl} style={styles.expandedImage} contentFit="cover" cachePolicy="disk" />
-        ) : (
-          <View style={styles.expandedPlaceholder}>
-            <Icon name="disc-outline" size={48} color={Colors.periwinkle} />
-          </View>
-        )}
-        <TierCoverEffects tier={auraTier} radius={0} />
-        {isBooked && !isSelectionMode && (
-          <LinearGradient
-            colors={[Colors.royalBlue, Colors.periwinkle]}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 0 }}
-            style={styles.bookedBadge}
+      {(() => {
+        // Cover-блок с опциональной gradient-рамкой и corner-плашкой.
+        // Для wishlist tile (offerBadgeKind !== null) оборачиваем cover в
+        // TileFrameGradient (2dp gradient outline) и кладём OfferBadge в
+        // правый верхний угол. Для остальных случаев — обычный контейнер.
+        const coverInner = (
+          <View
+            style={[
+              styles.expandedImageContainer,
+              { height: imageHeight },
+              offerBadgeKind ? styles.expandedImageContainerFramed : null,
+            ]}
           >
-            <Icon name="gift-outline" size={12} color={Colors.background} />
-            <Text style={styles.bookedBadgeText}>Забронировано</Text>
-          </LinearGradient>
-        )}
-      </View>
+            {imageUrl ? (
+              <Image source={imageUrl} style={styles.expandedImage} contentFit="cover" cachePolicy="disk" />
+            ) : (
+              <View style={styles.expandedPlaceholder}>
+                <Icon name="disc-outline" size={48} color={Colors.periwinkle} />
+              </View>
+            )}
+            <TierCoverEffects tier={auraTier} radius={0} />
+            {isBooked && !isSelectionMode && (
+              <LinearGradient
+                colors={[Colors.royalBlue, Colors.periwinkle]}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 0 }}
+                style={styles.bookedBadge}
+              >
+                <Icon name="gift-outline" size={12} color={Colors.background} />
+                <Text style={styles.bookedBadgeText}>Забронировано</Text>
+              </LinearGradient>
+            )}
+            {offerBadgeKind && (
+              <View style={styles.offerCornerBadge} pointerEvents="none">
+                <OfferBadge kind={offerBadgeKind} size="md" />
+              </View>
+            )}
+          </View>
+        );
+        return offerBadgeKind ? (
+          <TileFrameGradient kind={offerBadgeKind}>{coverInner}</TileFrameGradient>
+        ) : coverInner;
+      })()}
 
       <View style={styles.expandedInfo}>
         {onArtistPress ? (
@@ -471,8 +521,10 @@ function RecordCardComponent({
         </View>
         {/* Hot Stock pill — отдельная строка под метой. MARKET_AND_PRICE_DRAWER.md §2.4.2:
             высота карточки не растёт критично, pill добавляет ~24dp. Если место
-            не находится — fallback на compact-стиль решает родитель через variant. */}
-        {hotStock && (
+            не находится — fallback на compact-стиль решает родитель через variant.
+            В wishlist tile-режиме (offerBadgeKind != null) скрываем — сигнал уже
+            даёт corner-плашка на обложке. */}
+        {hotStock && !offerBadgeKind && (
           <View style={styles.expandedHotStock} pointerEvents="none">
             <HotStockTag
               variant={hotStock.variant}
@@ -825,6 +877,17 @@ const styles = StyleSheet.create({
   // краю (alignSelf:'flex-start' через style на pill'е).
   expandedHotStock: {
     marginTop: 6,
+  },
+  // Wishlist tile corner badge: top:8 right:8 поверх обложки (handoff spec).
+  offerCornerBadge: {
+    position: 'absolute',
+    top: 8,
+    right: 8,
+    zIndex: 3,
+  },
+  // Внутренний радиус обложки внутри TileFrameGradient (внешний 14, рамка 2dp).
+  expandedImageContainerFramed: {
+    borderRadius: 12,
   },
 });
 

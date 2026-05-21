@@ -991,6 +991,7 @@ export default function CollectionScreen() {
           ListHeaderComponent={ScrollableHeader}
           rarityContext={activeTab === 'wishlist' ? 'wishlist' : 'collection'}
           hotStockMap={activeTab === 'wishlist' ? hotStockMap : undefined}
+          useOfferBadge={activeTab === 'wishlist'}
         />
       ) : (
         <RecordGrid
@@ -1000,6 +1001,7 @@ export default function CollectionScreen() {
           numColumns={viewMode === 'list' ? 1 : 2}
           rarityContext={activeTab === 'wishlist' ? 'wishlist' : 'collection'}
           hotStockMap={activeTab === 'wishlist' ? hotStockMap : undefined}
+          useOfferBadge={activeTab === 'wishlist'}
           // Swipe-to-offers только в list-mode вишлиста: в grid-mode карточки
           // компактные и swipe конфликтовал бы с горизонтальным скроллом
           // ZoomableRecordGrid'а.

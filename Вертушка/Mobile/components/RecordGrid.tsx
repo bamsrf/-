@@ -65,7 +65,7 @@ interface RecordGridProps<T extends RecordItem = RecordItem> {
   scrollEventThrottle?: number;
   /**
    * Контейнер для функции scrollToTop. Родитель кладёт сюда ref и потом
-   * вызывает `scrollToTopRef.current?.()` — например, из ExitMarketButton.
+   * вызывает `scrollToTopRef.current?.()` — например, из external scroll-to-top affordance.
    * Не используем forwardRef из-за TS-сложностей с дженериками.
    */
   scrollToTopRef?: React.MutableRefObject<(() => void) | null>;
@@ -88,6 +88,12 @@ interface RecordGridProps<T extends RecordItem = RecordItem> {
    * Используется в collection.tsx wishlist+list для swipe-to-offers паттерна.
    */
   rowWrapper?: (item: T, child: React.ReactElement) => React.ReactElement;
+  /**
+   * Wishlist tile/list badge-режим — см. RecordCard.useOfferBadge.
+   * Включает corner-плашку «В ПРОДАЖЕ»/«ЕСТЬ АНАЛОГ» + рамку для expanded
+   * и AltBadge для altVersion в list.
+   */
+  useOfferBadge?: boolean;
 }
 
 function RecordGridComponent<T extends RecordItem = RecordItem>({
@@ -120,8 +126,9 @@ function RecordGridComponent<T extends RecordItem = RecordItem>({
   scrollToOffsetRef,
   hotStockMap,
   rowWrapper,
+  useOfferBadge = false,
 }: RecordGridProps<T>) {
-  // Internal ref для scrollToOffset вызова из ExitMarketButton (search.tsx).
+  // Internal ref для scrollToOffset вызова (search.tsx, market navigation).
   // Populate переданного scrollToTopRef один раз на mount.
   const listRef = useRef<FlatList<T>>(null);
   useEffect(() => {
@@ -191,6 +198,7 @@ function RecordGridComponent<T extends RecordItem = RecordItem>({
             ? hotStockMap.get(record.discogs_id) ?? undefined
             : undefined
         }
+        useOfferBadge={useOfferBadge}
       />
     );
 
