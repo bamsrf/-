@@ -27,6 +27,7 @@ class MatchMethod:
     FUZZY = "fuzzy"
     DISCOGS_FETCH = "discogs_fetch"
     MANUAL = "manual"
+    STORE_NATIVE = "store_native"  # Record создан из данных самого листинга (нет на Discogs)
 
 
 class StoreListing(Base):

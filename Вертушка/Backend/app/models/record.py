@@ -22,12 +22,31 @@ class Record(Base):
         default=uuid.uuid4
     )
     
+    # Источник записи: 'discogs' — пришла из Discogs API; 'store' — создана
+    # из листинга магазина (для релизов которых нет на Discogs, см. матчер,
+    # шаг 6 store-native). На 'store' источники нельзя добавлять в коллекции
+    # и вишлисты в Phase 1 (см. /api/collections, /api/wishlists guards).
+    source: Mapped[str] = mapped_column(
+        String(20),
+        nullable=False,
+        default="discogs",
+        server_default="discogs",
+        index=True,
+    )
+
     # Discogs данные
     discogs_id: Mapped[str | None] = mapped_column(
         String(50),
         unique=True,
         nullable=True,
         index=True
+    )
+    # Заполняется weekly_rematch_store_native: если store-native запись позже
+    # появилась на Discogs, сюда пишется кандидат для будущего merge tool.
+    # Поле read-only для матчера/cron, не используется в боевых запросах.
+    discogs_id_candidate: Mapped[str | None] = mapped_column(
+        String(50),
+        nullable=True,
     )
     discogs_master_id: Mapped[str | None] = mapped_column(
         String(50),

@@ -7,6 +7,9 @@
   3. catalog_number → Record.catalog_number (нормализованный)                     → 0.9
   4. fuzzy(artist + title + year) через pg_trgm + rapidfuzz                       → score
   5. on-demand fetch через Discogs (если есть barcode/catalog но Record нет)      → 0.95
+  6. store-native fallback: если Discogs ничего не знает — создаём Record из     → 1.0
+     данных листинга (source='store', discogs_id=NULL). Только при выполнении
+     anti-noise gate (см. _should_create_store_native).
 
 Пишет: matched_record_id, match_confidence, match_method, matched_at.
 Не падает на единичных ошибках — собирает счётчики, логирует.
@@ -14,7 +17,7 @@
 from __future__ import annotations
 
 import logging
-from datetime import datetime
+from datetime import datetime, timedelta
 from decimal import Decimal
 from typing import Iterable
 
@@ -61,6 +64,20 @@ def _is_accessory(listing: StoreListing) -> bool:
 # вычерпает всю квоту, мешая live-запросам пользовательского поиска (Priority.SEARCH).
 # При 500/час среднее ~8 req/min — спокойно вписывается в 60/min лимит.
 DISCOGS_FETCH_HOURLY_LIMIT = 500
+
+# Store-native gate (см. шаг 6 в match_listing).
+# Listing должен существовать достаточно долго ИЛИ быть подтверждённым из
+# другого магазина, чтобы мы создали под него Record. Защита от опечаток парсера
+# и краткоживущих листингов, которых на следующий день уже нет.
+STORE_NATIVE_MIN_PERSIST_DAYS = 7
+# Threshold для dedup среди уже созданных store-native: сумма similarity(artist) +
+# similarity(title). pg_trgm возвращает [0, 1], так что 1.6 = в среднем 0.8 на поле.
+# Подбирается эмпирически на проде, при ложных мерджах поднять.
+STORE_NATIVE_DEDUP_SCORE = 1.6
+# Cross-shop confirmation: ищем второй unmatched-листинг с похожим artist+title
+# в другом store_id. Threshold по similarity — мягче, чем dedup (там consequences
+# хуже — записи объединятся; здесь только подтверждение существования релиза).
+STORE_NATIVE_CROSS_SHOP_SCORE = 1.4
 
 
 # ---- Поиск Record по идентификаторам ----------------------------------- #
@@ -211,6 +228,19 @@ async def match_listing(listing: StoreListing, db: AsyncSession) -> bool:
         )
         if rec:
             _apply_match(listing, rec, Decimal("0.850"), MatchMethod.DISCOGS_FETCH)
+            return True
+
+    # 6) Store-native fallback: Discogs ничего не знает про этот релиз
+    # (типичный кейс — русский инди вне Discogs). Создаём Record из данных
+    # самого листинга. Под anti-noise gate (см. _should_create_store_native):
+    # листинг должен прожить ≥7д ИЛИ быть подтверждён вторым магазином, и
+    # иметь полный набор данных (artist+title+year+cover). Возвращаемый
+    # объект может быть существующей store-native записью, если другой
+    # магазин уже её создал (дедуп по fuzzy artist+title+year).
+    if await _should_create_store_native(listing, db):
+        rec = await _create_store_native_record(listing, db)
+        if rec:
+            _apply_match(listing, rec, Decimal("1.000"), MatchMethod.STORE_NATIVE)
             return True
 
     return False
@@ -384,6 +414,167 @@ async def _save_discogs_result(
     return rec
 
 
+# ---- Store-native fallback (шаг 6) ------------------------------------- #
+
+
+async def _should_create_store_native(listing: StoreListing, db: AsyncSession) -> bool:
+    """Anti-noise gate перед созданием store-native Record.
+
+    ВСЕ условия должны быть true:
+    1. Не аксессуар.
+    2. Полный набор данных: artist + title + year + cover в raw_payload.
+    3. Подтверждение существования (OR):
+       a. last_seen_at - first_seen_at >= STORE_NATIVE_MIN_PERSIST_DAYS, ИЛИ
+       b. есть второй unmatched листинг с похожим artist+title в другом store_id.
+    """
+    if _is_accessory(listing):
+        return False
+    if not listing.artist_raw or not listing.title_raw or not listing.year_raw:
+        return False
+    if not (listing.raw_payload or {}).get("image_url"):
+        return False
+
+    persisted_long = (
+        listing.last_seen_at
+        and listing.first_seen_at
+        and (listing.last_seen_at - listing.first_seen_at) >= timedelta(days=STORE_NATIVE_MIN_PERSIST_DAYS)
+    )
+    if persisted_long:
+        return True
+
+    return await _has_cross_shop_confirmation(listing, db)
+
+
+async def _has_cross_shop_confirmation(listing: StoreListing, db: AsyncSession) -> bool:
+    """Существует ли второй unmatched-листинг похожего релиза в другом магазине."""
+    sql = text(
+        """
+        SELECT 1
+        FROM store_listings sl
+        WHERE sl.matched_record_id IS NULL
+          AND sl.id <> cast(:listing_id as uuid)
+          AND sl.store_id <> cast(:store_id as uuid)
+          AND sl.artist_raw IS NOT NULL
+          AND sl.title_raw IS NOT NULL
+          AND (similarity(sl.artist_raw, cast(:artist as text)) + similarity(sl.title_raw, cast(:title as text))) >= :thr
+        LIMIT 1
+        """
+    )
+    res = await db.execute(
+        sql,
+        {
+            "listing_id": listing.id,
+            "store_id": listing.store_id,
+            "artist": listing.artist_raw,
+            "title": listing.title_raw,
+            "thr": STORE_NATIVE_CROSS_SHOP_SCORE,
+        },
+    )
+    return res.first() is not None
+
+
+async def _find_store_native_duplicate(
+    db: AsyncSession, *, artist: str, title: str, year: int | None,
+) -> Record | None:
+    """Существующая store-native запись для того же релиза. Дедуп между магазинами."""
+    # NB: явные касты ::text и ::int — asyncpg не определяет тип NULL-параметра,
+    # без них падает AmbiguousParameterError на :year когда year=None.
+    sql = text(
+        """
+        SELECT id, (similarity(artist, cast(:artist as text)) + similarity(title, cast(:title as text))) AS score
+        FROM records
+        WHERE source = 'store'
+          AND (cast(:year as int) IS NULL OR year IS NULL OR ABS(year - cast(:year as int)) <= 1)
+          AND (similarity(artist, cast(:artist as text)) + similarity(title, cast(:title as text))) >= :thr
+        ORDER BY score DESC
+        LIMIT 1
+        """
+    )
+    row = (
+        await db.execute(
+            sql,
+            {
+                "artist": artist,
+                "title": title,
+                "year": year,
+                "thr": STORE_NATIVE_DEDUP_SCORE,
+            },
+        )
+    ).first()
+    if not row:
+        return None
+    return await db.get(Record, row.id)
+
+
+async def _create_store_native_record(
+    listing: StoreListing, db: AsyncSession,
+) -> Record | None:
+    """Создать (или вернуть существующую) store-native запись под этот листинг.
+
+    Перед INSERT проверяет дедуп. На случай конкурентного INSERT — ловит
+    IntegrityError по partial unique index uq_store_native_artist_title_year
+    и повторно ищет дубль.
+    """
+    from sqlalchemy.exc import IntegrityError
+
+    raw = listing.raw_payload or {}
+
+    existing = await _find_store_native_duplicate(
+        db,
+        artist=listing.artist_raw,
+        title=listing.title_raw,
+        year=listing.year_raw,
+    )
+    if existing:
+        return existing
+
+    rec = Record(
+        source="store",
+        discogs_id=None,
+        artist=listing.artist_raw,
+        title=listing.title_raw,
+        year=listing.year_raw,
+        format_type=listing.format_raw,
+        cover_image_url=raw.get("image_url"),
+        label=raw.get("label"),
+        catalog_number=normalize_catalog(raw.get("catalog_number")),
+        barcode=normalize_barcode(raw.get("barcode")),
+    )
+    # NESTED SAVEPOINT — match_listing уже внутри savepoint от batch-матчера;
+    # ещё один уровень нужен, чтобы IntegrityError по partial unique index не
+    # отравил всю outer-транзакцию. После .rollback() этого savepoint outer
+    # остаётся живой, и мы можем продолжить запрос к records.
+    sp = await db.begin_nested()
+    db.add(rec)
+    try:
+        await db.flush()
+        await sp.commit()
+    except IntegrityError:
+        # Параллельный INSERT успел вставить дубль — откатываем nested savepoint
+        # и ищем существующий. Это редкий путь (batch-матчер однопоточен), но
+        # покрывает CLI-вызовы и будущую параллелизацию scraper'ов.
+        await sp.rollback()
+        return await _find_store_native_duplicate(
+            db,
+            artist=listing.artist_raw,
+            title=listing.title_raw,
+            year=listing.year_raw,
+        )
+
+    # Hot-link обложки магазина может протухнуть — копируем к себе в S3/локальный
+    # кэш. fire-and-forget, отдельная сессия БД.
+    image_url = raw.get("image_url")
+    if image_url:
+        from app.services.cover_storage import schedule_store_native_cover_cache
+        schedule_store_native_cover_cache(rec.id, image_url)
+
+    logger.info(
+        "store-native: created Record %s for listing %s (artist=%s title=%s year=%s)",
+        rec.id, listing.id, listing.artist_raw, listing.title_raw, listing.year_raw,
+    )
+    return rec
+
+
 # ---- Batch-матчер для cron --------------------------------------------- #
 
 
@@ -393,7 +584,14 @@ async def match_unmatched_batch(batch_size: int = 200) -> dict[str, int]:
     Возвращает счётчики: matched/unmatched/errors + диагностика по сигналам
     (какие из источников ID у листингов вообще есть).
     """
-    counters = {"processed": 0, "matched": 0, "unmatched": 0, "errors": 0, "skipped_accessory": 0}
+    counters = {
+        "processed": 0,
+        "matched": 0,
+        "unmatched": 0,
+        "errors": 0,
+        "skipped_accessory": 0,
+        "store_native_created": 0,
+    }
     # Диагностика: сколько unmatched листингов вообще имеют сигналы для матчинга.
     # Без неё непонятно, парсер ли не вытаскивает barcode/discogs_url, или
     # matcher не находит. Лог помогает увидеть это сразу в выводе батча.
@@ -434,6 +632,8 @@ async def match_unmatched_batch(batch_size: int = 200) -> dict[str, int]:
                 ok = await match_listing(listing, db)
                 await sp.commit()
                 counters["matched" if ok else "unmatched"] += 1
+                if ok and listing.match_method == MatchMethod.STORE_NATIVE:
+                    counters["store_native_created"] += 1
             except Exception:
                 await sp.rollback()
                 counters["errors"] += 1
@@ -449,4 +649,65 @@ async def match_unmatched_batch(batch_size: int = 200) -> dict[str, int]:
             logger.exception("commit failed in match_unmatched_batch")
 
     logger.info("match batch: %s | signals: %s", counters, signals)
+    return counters
+
+
+# ---- Weekly re-match для store-native записей -------------------------- #
+
+
+async def rematch_store_native_batch(batch_size: int = 200) -> dict[str, int]:
+    """Прогнать store-native записи через Discogs search — может, релиз уже там.
+
+    На совпадение пишем records.discogs_id_candidate (для будущего merge tool).
+    Автоматически не мёрджим — это решает Phase 2 после ручного review.
+
+    Возвращает счётчики: processed, candidates_found, no_match, errors.
+    """
+    counters = {"processed": 0, "candidates_found": 0, "no_match": 0, "errors": 0}
+    async with async_session_maker() as db:
+        res = await db.execute(
+            select(Record)
+            .where(Record.source == "store")
+            .where(Record.discogs_id_candidate.is_(None))
+            .order_by(Record.updated_at.asc())
+            .limit(batch_size)
+        )
+        records = list(res.scalars().all())
+
+        for rec in records:
+            counters["processed"] += 1
+            try:
+                # NB: _try_discogs_fetch_by_text создаёт Record при успехе.
+                # Это побочный эффект: новая Discogs-запись сама по себе ОК
+                # (она пригодится при поиске других листингов), а её
+                # discogs_id мы прикрепляем к store-native через candidate.
+                found = await _try_discogs_fetch_by_text(
+                    db,
+                    artist=rec.artist,
+                    title=rec.title,
+                    year=rec.year,
+                )
+                if found and found.discogs_id and found.id != rec.id:
+                    rec.discogs_id_candidate = found.discogs_id
+                    counters["candidates_found"] += 1
+                    logger.info(
+                        "rematch store-native: %s → discogs_id_candidate=%s "
+                        "(artist=%s title=%s)",
+                        rec.id, found.discogs_id, rec.artist, rec.title,
+                    )
+                else:
+                    counters["no_match"] += 1
+            except Exception:
+                counters["errors"] += 1
+                logger.exception("rematch failed for record %s", rec.id)
+
+        try:
+            await db.commit()
+        except Exception:
+            await db.rollback()
+            counters["errors"] += counters["candidates_found"]
+            counters["candidates_found"] = 0
+            logger.exception("commit failed in rematch_store_native_batch")
+
+    logger.info("rematch store-native batch: %s", counters)
     return counters

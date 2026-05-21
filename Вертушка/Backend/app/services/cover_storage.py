@@ -250,6 +250,83 @@ class CoverStorageService:
         }
 
 
+def schedule_store_native_cover_cache(record_id: "uuid.UUID", image_url: str) -> None:
+    """Фоновое скачивание обложки для store-native Record (нет discogs_id).
+
+    Файл сохраняется как `covers/store/<record_uuid>.jpg`. Используется UUID
+    вместо discogs_id, потому что у store-native записей discogs_id всегда NULL.
+    Вызывается из listing_matcher.match_listing после создания store-native Record.
+    fire-and-forget — ошибки скачивания не блокируют match-flow.
+    """
+    if not image_url:
+        return
+    asyncio.create_task(_download_store_native_cover_background(record_id, image_url))
+
+
+async def _download_store_native_cover_background(
+    record_id: "uuid.UUID", image_url: str,
+) -> None:
+    """Фоновая задача: скачать обложку store-native записи в отдельной DB-сессии."""
+    from app.database import async_session_maker
+    from app.models.record import Record
+
+    rel_subdir = "covers/store"
+    filename = f"{record_id}.jpg"
+
+    service = CoverStorageService()
+    covers_root = service.covers_dir
+    store_dir = covers_root / "store"
+    dest = store_dir / filename
+
+    if dest.exists():
+        return
+
+    tmp_path: Path | None = None
+    try:
+        store_dir.mkdir(parents=True, exist_ok=True)
+        tmp_path = store_dir / f".tmp_{record_id}_{uuid.uuid4().hex}.jpg"
+
+        async with httpx.AsyncClient(timeout=_DOWNLOAD_TIMEOUT, follow_redirects=True) as client:
+            resp = await client.get(image_url)
+            if resp.status_code in (403, 404, 410):
+                logger.info(
+                    "cover_storage: store-native cover unavailable (%d) for %s",
+                    resp.status_code, record_id,
+                )
+                return
+            resp.raise_for_status()
+            raw = resp.content
+
+        img = Image.open(BytesIO(raw)).convert("RGB")
+        if img.width > _MAX_SIDE or img.height > _MAX_SIDE:
+            img.thumbnail((_MAX_SIDE, _MAX_SIDE), Image.LANCZOS)
+        img.save(tmp_path, format="JPEG", quality=_JPEG_QUALITY, optimize=True)
+
+        os.rename(tmp_path, dest)
+        tmp_path = None
+
+        rel_path = f"{rel_subdir}/{filename}"
+        async with async_session_maker() as db:
+            await db.execute(
+                update(Record)
+                .where(Record.id == record_id)
+                .values(cover_local_path=rel_path, cover_cached_at=datetime.utcnow())
+            )
+            await db.commit()
+        logger.info("cover_storage: saved store-native cover for %s", record_id)
+    except Exception as exc:
+        logger.warning(
+            "cover_storage: failed to download store-native cover for %s: %s",
+            record_id, exc,
+        )
+    finally:
+        if tmp_path and tmp_path.exists():
+            try:
+                tmp_path.unlink()
+            except OSError:
+                pass
+
+
 async def ensure_cover_cached(discogs_id: str, image_url: str | None, db: AsyncSession) -> None:
     """
     Проверяет наличие локальной обложки. Если нет — запускает скачивание в фоне.

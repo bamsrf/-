@@ -17,7 +17,7 @@ from app.models.store import Store
 from app.models.store_listing import StoreListing, ListingStatus
 from app.services.scrapers.runner import crawl_store
 from app.services.scrapers.shops import *  # noqa: F401,F403  — auto-register parsers
-from app.services.listing_matcher import match_unmatched_batch
+from app.services.listing_matcher import match_unmatched_batch, rematch_store_native_batch
 from app.api.offers import invalidate_record_offers
 
 logger = logging.getLogger(__name__)
@@ -112,6 +112,16 @@ async def stock_refresh_active(per_store_limit: int = 100) -> dict:
 async def hourly_match_unmatched() -> dict:
     """Раз в час — матчим до 200 unmatched листингов."""
     return await match_unmatched_batch(batch_size=200)
+
+
+async def weekly_rematch_store_native() -> dict:
+    """Раз в неделю — store-native записи прогоняются через Discogs search.
+
+    Если за прошедшую неделю релиз появился на Discogs, в records.discogs_id_candidate
+    запишется кандидат для будущего merge tool (Phase 2). Авто-merge не делаем —
+    нужен ручной review, чтобы не порвать collection/wishlist FK.
+    """
+    return await rematch_store_native_batch(batch_size=200)
 
 
 # ---- Чистка stale ------------------------------------------------------ #

@@ -421,6 +421,15 @@ async def add_record_to_collection(
             detail="Необходимо указать либо discogs_id, либо record_id"
         )
 
+    # Phase 1: store-native записи нельзя добавлять в коллекцию — у них нет
+    # discogs_id, и при будущем merge на Discogs мы потеряем collection_items
+    # через CASCADE FK. Разблокируется после merge tool в Phase 2.
+    if record.source == "store":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Пока эту пластинку нельзя добавить в коллекцию — её ещё нет на Discogs",
+        )
+
     # Проверяем, есть ли эта пластинка в вишлисте текущего пользователя
     from app.models.wishlist import Wishlist, WishlistItem
 
