@@ -19,7 +19,8 @@ from app.models.user import User
 from app.models.record import Record
 from app.api.auth import get_current_user, get_current_user_optional
 from app.services.exchange import get_usd_rub_rate
-from app.services.pricing import PricingParams, estimate_rub, effective_markup
+from app.services.pricing import PricingParams, estimate_rub, effective_markup, is_local_country
+from app.services.marketplace_pricing import marketplace_price_range
 from app.config import get_settings
 from app.schemas.record import (
     RecordCreate,
@@ -95,8 +96,17 @@ async def _enrich_search_results_with_rarity(
 async def _enrich_response_with_rub(
     response: RecordResponse,
     record: Record | None = None,
+    db: AsyncSession | None = None,
 ) -> RecordResponse:
-    """Добавляет рублёвые цены в ответ через компонентную формулу из pricing.py."""
+    """Заполняет рублёвые цены и `price_source` в ответе.
+
+    Для локальных (РФ/СССР) релизов:
+      1. marketplace_active     — активные офферы в RU-магазинах
+      2. marketplace_historical — архивные офферы за 365 дней (только median)
+      3. discogs_raw            — USD × курс ЦБ без коэффициента (fallback)
+
+    Для импорта остаётся компонентная формула из pricing.py (discogs_import_estimate).
+    """
     base_price = response.estimated_price_median or response.estimated_price_min
     if not base_price:
         return response
@@ -104,7 +114,49 @@ async def _enrich_response_with_rub(
         rate = await get_usd_rub_rate()
         params = PricingParams.from_settings(get_settings())
         discogs_data = record.discogs_data if record else None
+        response.usd_rub_rate = rate
 
+        # Локальный релиз — пробуем marketplace, потом fallback на USD × курс
+        if is_local_country(response.country):
+            market = None
+            if record and db is not None:
+                market = await marketplace_price_range(record.id, db)
+
+            if market:
+                response.price_source = market.source
+                response.price_offers_count = market.offers_count
+                response.estimated_price_min_rub = market.min_rub
+                response.estimated_price_median_rub = market.median_rub
+                response.estimated_price_max_rub = market.max_rub
+                # markup относительно "честной" USD × rate — показывает, насколько
+                # реальная RU-цена выше Discogs-оценки
+                median_rub = market.median_rub
+                if median_rub and base_price and rate > 0:
+                    response.ru_markup = round(
+                        median_rub / (float(base_price) * rate), 2
+                    )
+                else:
+                    response.ru_markup = 1.0
+                return response
+
+            # fallback: USD × курс без коэффициента
+            response.price_source = "discogs_raw"
+            response.ru_markup = 1.0
+            response.estimated_price_min_rub = (
+                round(float(response.estimated_price_min) * rate, 0)
+                if response.estimated_price_min else None
+            )
+            response.estimated_price_median_rub = (
+                round(float(response.estimated_price_median) * rate, 0)
+                if response.estimated_price_median else None
+            )
+            response.estimated_price_max_rub = (
+                round(float(response.estimated_price_max) * rate, 0)
+                if response.estimated_price_max else None
+            )
+            return response
+
+        # Импорт — компонентная формула как было
         def _calc(price) -> float | None:
             if price is None:
                 return None
@@ -118,7 +170,7 @@ async def _enrich_response_with_rub(
                 discogs_data=discogs_data,
             )
 
-        response.usd_rub_rate = rate
+        response.price_source = "discogs_import_estimate"
         response.ru_markup = effective_markup(
             float(base_price),
             response.country,
@@ -614,7 +666,7 @@ async def get_record(
     response.artist_id = discogs_data.get("artist_id")
     response.artist_thumb_image_url = discogs_data.get("artist_thumb_image_url")
     response.vinyl_color_raw = discogs_data.get("vinyl_color_raw")
-    return await _enrich_response_with_rub(response, record)
+    return await _enrich_response_with_rub(response, record, db)
 
 
 @router.get("/discogs/{discogs_id}", response_model=RecordResponse)
@@ -651,7 +703,7 @@ async def get_record_by_discogs_id(
         response.artist_id = discogs_data.get("artist_id")
         response.artist_thumb_image_url = discogs_data.get("artist_thumb_image_url")
         response.vinyl_color_raw = discogs_data.get("vinyl_color_raw")
-        return await _enrich_response_with_rub(response, record)
+        return await _enrich_response_with_rub(response, record, db)
 
     # Запрос в Discogs с watchdog: клиент не висит 60 сек.
     # asyncio.shield + create_task — на таймаут отдаём 503, но запрос
@@ -712,7 +764,7 @@ async def get_record_by_discogs_id(
         response.artist_id = record_data.get("artist_id")
         response.artist_thumb_image_url = record_data.get("artist_thumb_image_url")
         response.vinyl_color_raw = record_data.get("vinyl_color_raw")
-        return await _enrich_response_with_rub(response, record)
+        return await _enrich_response_with_rub(response, record, db)
 
     except IntegrityError:
         await db.rollback()
@@ -725,7 +777,7 @@ async def get_record_by_discogs_id(
             response.artist_id = record_data.get("artist_id")
             response.artist_thumb_image_url = record_data.get("artist_thumb_image_url")
             response.vinyl_color_raw = record_data.get("vinyl_color_raw")
-            return await _enrich_response_with_rub(response, record)
+            return await _enrich_response_with_rub(response, record, db)
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Не удалось сохранить запись",

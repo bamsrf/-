@@ -50,6 +50,13 @@ export interface GoogleSignInRequest {
 
 export interface VinylRecord {
   id: string;
+  /**
+   * 'discogs' (default) — обычная запись из Discogs API.
+   * 'store' — store-native: создана из листинга магазина, когда на Discogs нет.
+   *           Виден в Маркете, но добавить в коллекцию/вишлист пока нельзя
+   *           (см. бэкенд-guard в collections/wishlists POST).
+   */
+  source?: 'discogs' | 'store';
   discogs_id?: string;
   discogs_master_id?: string;
   title: string;
@@ -73,6 +80,12 @@ export interface VinylRecord {
   estimated_price_max_rub?: number;
   usd_rub_rate?: number;
   ru_markup?: number;
+  price_source?:
+    | 'marketplace_active'
+    | 'marketplace_historical'
+    | 'discogs_raw'
+    | 'discogs_import_estimate';
+  price_offers_count?: number;
   cover_image_url?: string;
   thumb_image_url?: string;
   cover_url?: string;

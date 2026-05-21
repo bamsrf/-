@@ -660,13 +660,36 @@ export default function RecordDetailScreen() {
                 </View>
               ) : null}
 
-              {usdPrice != null ? (
-                <Text style={styles.priceNote}>
-                  Discogs: ${Number(usdPrice).toFixed(2)}
-                  {record.usd_rub_rate ? ` · курс ${Number(record.usd_rub_rate).toFixed(1)} ₽` : ''}
-                  {record.ru_markup ? ` · × ${Number(record.ru_markup).toFixed(2)}` : ''}
-                </Text>
-              ) : null}
+              {(() => {
+                const src = record.price_source;
+                if (src === 'marketplace_active' || src === 'marketplace_historical') {
+                  const label = src === 'marketplace_active' ? 'по магазинам' : 'по архивным офферам';
+                  const offers = record.price_offers_count;
+                  return (
+                    <Text style={styles.priceNote}>
+                      {label}{offers ? ` · ${offers} ${offers === 1 ? 'оффер' : 'офферов'}` : ''}
+                    </Text>
+                  );
+                }
+                if (src === 'discogs_raw' && usdPrice != null) {
+                  return (
+                    <Text style={styles.priceNote}>
+                      Discogs: ${Number(usdPrice).toFixed(2)}
+                      {record.usd_rub_rate ? ` · курс ${Number(record.usd_rub_rate).toFixed(1)} ₽` : ''}
+                    </Text>
+                  );
+                }
+                if (usdPrice != null) {
+                  return (
+                    <Text style={styles.priceNote}>
+                      Discogs: ${Number(usdPrice).toFixed(2)}
+                      {record.usd_rub_rate ? ` · курс ${Number(record.usd_rub_rate).toFixed(1)} ₽` : ''}
+                      {record.ru_markup ? ` · × ${Number(record.ru_markup).toFixed(2)}` : ''}
+                    </Text>
+                  );
+                }
+                return null;
+              })()}
             </Card>
           );
         })()}
@@ -703,6 +726,25 @@ export default function RecordDetailScreen() {
       {/* Кнопки действий */}
       {(() => {
         const recordStatus = getRecordStatus();
+
+        // ========== STORE-NATIVE (нет на Discogs) ==========
+        // Backend блокирует add-to-collection/wishlist для source='store',
+        // потому что merge tool ещё не готов (Phase 2). Показываем info-pill
+        // вместо кнопок, чтобы не вводить юзера в заблуждение.
+        if (record?.source === 'store') {
+          return (
+            <BlurView intensity={60} tint="light" style={[styles.actionsContainer, { paddingBottom: insets.bottom + Spacing.md }]}>
+              <View style={styles.addedButtonContainer}>
+                <View style={styles.addedButton}>
+                  <Icon name="information-circle" size={20} color={Colors.textSecondary} />
+                  <Text style={styles.addedButtonText}>
+                    Скоро будет на Discogs
+                  </Text>
+                </View>
+              </View>
+            </BlurView>
+          );
+        }
 
         // ========== СТАТУС: В КОЛЛЕКЦИИ ==========
         if (recordStatus.status === 'in_collection') {

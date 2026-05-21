@@ -2,8 +2,10 @@
 
 Компонентная формула: фиксированная доставка с поправкой на формат/вес,
 накладные расходы (процессинг + спред + маржа), таможенная пошлина при
-превышении порога. Для локальных (РФ/СССР) релизов — упрощённая модель
-без импорта.
+превышении порога. Для локальных (РФ/СССР) релизов импортная формула
+не применяется — возвращается чистая USD × курс ЦБ как fallback, когда
+маркетплейсная цена недоступна. Основной путь для локальных — данные
+из `store_listings`, см. `services/marketplace_pricing.py`.
 """
 from __future__ import annotations
 
@@ -87,8 +89,7 @@ def estimate_rub(
         return 0.0
 
     if is_local_country(country):
-        total_usd = usd_price * (1.0 + params.local_overhead_pct)
-        return round(total_usd * rate, 0)
+        return round(usd_price * rate, 0)
 
     weight = format_weight_factor(format_type, format_description, discogs_data)
     shipping = params.base_shipping_usd * weight

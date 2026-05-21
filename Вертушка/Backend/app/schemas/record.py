@@ -41,6 +41,7 @@ class RecordResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: UUID
+    source: str = "discogs"  # 'discogs' | 'store' — store=нет на Discogs, нельзя в коллекцию
     discogs_id: str | None
     discogs_master_id: str | None
     title: str
@@ -64,6 +65,9 @@ class RecordResponse(BaseModel):
     estimated_price_max_rub: float | None = None
     usd_rub_rate: float | None = None
     ru_markup: float | None = None
+    # marketplace_active | marketplace_historical | discogs_raw | discogs_import_estimate
+    price_source: str | None = None
+    price_offers_count: int | None = None
     cover_image_url: str | None
     thumb_image_url: str | None
     cover_url: str | None = None  # локальный URL (/uploads/covers/...) или fallback на Discogs
@@ -92,6 +96,7 @@ class RecordBrief(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: UUID
+    source: str = "discogs"  # 'discogs' | 'store'
     discogs_id: str | None
     title: str
     artist: str
