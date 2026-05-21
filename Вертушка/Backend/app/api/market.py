@@ -105,9 +105,10 @@ async def list_market_stores(
     cutoff = datetime.utcnow() - timedelta(days=STALE_AFTER_DAYS)
     new_cutoff = datetime.utcnow() - timedelta(hours=NEW_TODAY_HOURS)
 
-    # in_stock_count считаем ТОЛЬКО матченные с обложкой — это и есть «реально
-    # доступные в карусели» товары. Иначе шапка магазина обещает 996 пластинок,
-    # а карусель отдаёт 0 (не матчены) → юзер злится.
+    # in_stock_count и new_today_count согласованы с фильтрами /listings и /all:
+    # листинг считается «доступным» только если он matched, имеет обложку И цену.
+    # Без цены тапнуть «Купить» бессмысленно, а карусель/сетка такие пропускают —
+    # шапка обязана показывать ровно столько же.
     sql = text(
         """
         SELECT
@@ -116,6 +117,7 @@ async def list_market_stores(
                 WHERE sl.status = 'in_stock'
                   AND sl.last_seen_at >= :cutoff
                   AND sl.matched_record_id IS NOT NULL
+                  AND sl.price_rub IS NOT NULL
                   AND COALESCE(r.cover_image_url, sl.raw_payload->>'image_url') IS NOT NULL
             ) AS in_stock_count,
             AVG(sl.price_rub) FILTER (
@@ -128,6 +130,8 @@ async def list_market_stores(
                 WHERE sl.status = 'in_stock'
                   AND sl.first_seen_at >= :new_cutoff
                   AND sl.matched_record_id IS NOT NULL
+                  AND sl.price_rub IS NOT NULL
+                  AND COALESCE(r.cover_image_url, sl.raw_payload->>'image_url') IS NOT NULL
             ) AS new_today_count
         FROM stores s
         LEFT JOIN store_listings sl ON sl.store_id = s.id
@@ -138,6 +142,7 @@ async def list_market_stores(
             WHERE sl.status = 'in_stock'
               AND sl.last_seen_at >= :cutoff
               AND sl.matched_record_id IS NOT NULL
+              AND sl.price_rub IS NOT NULL
               AND COALESCE(r.cover_image_url, sl.raw_payload->>'image_url') IS NOT NULL
         ) >= :min_in_stock
         ORDER BY s.rating DESC NULLS LAST, s.name ASC
