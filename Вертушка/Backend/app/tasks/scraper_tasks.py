@@ -110,8 +110,12 @@ async def stock_refresh_active(per_store_limit: int = 100) -> dict:
 
 
 async def hourly_match_unmatched() -> dict:
-    """Раз в час — матчим до 200 unmatched листингов."""
-    return await match_unmatched_batch(batch_size=200)
+    """Раз в час — матчим до 2000 unmatched листингов.
+
+    Cap равен DISCOGS_FETCH_HOURLY_LIMIT — больше за час всё равно не пройдёт
+    через on-demand, а matched-через-existing-records и accessory-skip успеют.
+    """
+    return await match_unmatched_batch(batch_size=2000)
 
 
 async def weekly_rematch_store_native() -> dict:
