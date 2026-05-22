@@ -62,8 +62,9 @@ def _is_accessory(listing: StoreListing) -> bool:
 # refill_rate=0.95 = ~57 req/min). Hourly limit — это анти-DDOS для batch matcher'а:
 # защищает от ситуации когда matcher разом хочет догнать 10к unmatched и за час
 # вычерпает всю квоту, мешая live-запросам пользовательского поиска (Priority.SEARCH).
-# При 500/час среднее ~8 req/min — спокойно вписывается в 60/min лимит.
-DISCOGS_FETCH_HOURLY_LIMIT = 500
+# При 2000/час среднее ~33 req/min — всё ещё в безопасной зоне 60/min.
+# План разрешает (см. PARSING.md §5 «Что делать если хочется быстрее»).
+DISCOGS_FETCH_HOURLY_LIMIT = 2000
 
 # Store-native gate (см. шаг 6 в match_listing).
 # Listing должен существовать достаточно долго ИЛИ быть подтверждённым из
