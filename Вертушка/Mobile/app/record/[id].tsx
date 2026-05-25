@@ -695,7 +695,14 @@ export default function RecordDetailScreen() {
         })()}
 
         {/* Где купить — живые предложения магазинов */}
-        {record.discogs_id ? <OffersBlock discogsId={record.discogs_id} /> : null}
+        {record.discogs_id ? (
+          <OffersBlock discogsId={record.discogs_id} />
+        ) : record.source === 'store' ? (
+          // store-native (нет discogs_id) — берём офферы по record_id через
+          // /records/by-id/{uuid}/offers/full. Без alt-version'ов (нет master_id),
+          // только exact-match листинги магазинов.
+          <OffersBlock recordId={record.id} />
+        ) : null}
 
         {/* Другие версии релиза */}
         {record.discogs_master_id ? (
@@ -728,9 +735,12 @@ export default function RecordDetailScreen() {
         const recordStatus = getRecordStatus();
 
         // ========== STORE-NATIVE (нет на Discogs) ==========
-        // Backend блокирует add-to-collection/wishlist для source='store',
-        // потому что merge tool ещё не готов (Phase 2). Показываем info-pill
-        // вместо кнопок, чтобы не вводить юзера в заблуждение.
+        // Купить можно — офферы магазинов показываются в OffersBlock выше.
+        // Add-to-collection/wishlist пока заблокирован на бэке (collections.py,
+        // wishlists.py): merge с Discogs автоматический (см. cron
+        // daily_rematch_store_native), но запись попадёт в коллекции только
+        // после того как matcher найдёт Discogs-аналог и safe_merge перенесёт
+        // листинги. Пилл объясняет это юзеру.
         if (record?.source === 'store') {
           return (
             <BlurView intensity={60} tint="light" style={[styles.actionsContainer, { paddingBottom: insets.bottom + Spacing.md }]}>
@@ -738,7 +748,7 @@ export default function RecordDetailScreen() {
                 <View style={styles.addedButton}>
                   <Icon name="information-circle" size={20} color={Colors.textSecondary} />
                   <Text style={styles.addedButtonText}>
-                    Скоро будет на Discogs
+                    В коллекцию пока нельзя · скоро будет на Discogs
                   </Text>
                 </View>
               </View>

@@ -614,6 +614,19 @@ class ApiClient {
   }
 
   /**
+   * Полные офферы по record_id (UUID) — для store-native записей,
+   * у которых discogs_id = null. Возвращает только exact-match
+   * (alt-version'ы недоступны без master_id).
+   */
+  async getOfferDetailsFullByRecordId(
+    recordId: string,
+  ): Promise<RecordOffersFullResponse> {
+    return this.deduplicatedGet<RecordOffersFullResponse>(
+      `/records/by-id/${encodeURIComponent(recordId)}/offers/full`,
+    );
+  }
+
+  /**
    * Phase A affiliate — регистрация клика «Купить» и получение финального URL
    * с subid для атрибуции. Если бэк недоступен — клиент использует preview-URL
    * из offer.url (только UTM, без affiliate).

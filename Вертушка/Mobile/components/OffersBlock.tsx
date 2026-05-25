@@ -34,29 +34,37 @@ import { Typography, Spacing, BorderRadius, MarketPalette, Gradients } from '../
 import StoreLogo from './market/StoreLogo';
 
 interface OffersBlockProps {
-  discogsId: string;
+  /** Discogs ID — обычный путь /records/{discogs_id}/offers/full с alt-version'ами. */
+  discogsId?: string;
+  /** Record UUID — для store-native (нет discogs_id), берёт офферы по record_id, без alt-version'ов. */
+  recordId?: string;
 }
 
-export function OffersBlock({ discogsId }: OffersBlockProps) {
+export function OffersBlock({ discogsId, recordId }: OffersBlockProps) {
   const router = useRouter();
   const [offers, setOffers] = useState<Offer[] | null>(null);
   const [error, setError] = useState<string | null>(null);
 
+  // Стабильный ID для analytics/deps — берём что есть, discogsId приоритетнее.
+  const analyticsId = discogsId ?? recordId ?? '';
+
   useEffect(() => {
+    if (!discogsId && !recordId) return;
     let alive = true;
     setOffers(null);
     setError(null);
-    // /offers/full с include_master_versions=true: возвращает и exact-match,
-    // и alt-version листинги (другие прессинги того же мастера). Юзер
-    // жаловался: на детальной alt-pressing'а нет цен — потому что мы тянули
-    // только exact (а exact могло не быть, но alt был).
-    api
-      .getOfferDetailsFull(discogsId, true)
+    // Discogs-запись: /offers/full с include_master_versions=true → exact + alt.
+    // Store-native: /records/by-id/{uuid}/offers/full → только exact, alt нет
+    // (master_id неизвестен).
+    const fetcher = discogsId
+      ? api.getOfferDetailsFull(discogsId, true)
+      : api.getOfferDetailsFullByRecordId(recordId!);
+    fetcher
       .then((data) => {
         if (!alive) return;
         const list = data?.offers ?? [];
         setOffers(list);
-        analytics.viewOffers(discogsId, list.length);
+        analytics.viewOffers(analyticsId, list.length);
       })
       .catch((e) => {
         if (!alive) return;
@@ -65,7 +73,7 @@ export function OffersBlock({ discogsId }: OffersBlockProps) {
     return () => {
       alive = false;
     };
-  }, [discogsId]);
+  }, [discogsId, recordId, analyticsId]);
 
   // Разделяем exact и alt-version для двух блоков с разными заголовками
   const exactOffers = useMemo(
