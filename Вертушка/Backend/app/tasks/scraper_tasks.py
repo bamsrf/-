@@ -13,12 +13,14 @@ from sqlalchemy import select, update
 from sqlalchemy.exc import SQLAlchemyError
 
 from app.database import async_session_maker
+from app.models.record import Record
 from app.models.store import Store
 from app.models.store_listing import StoreListing, ListingStatus
 from app.services.scrapers.runner import crawl_store
 from app.services.scrapers.shops import *  # noqa: F401,F403  — auto-register parsers
 from app.services.listing_matcher import match_unmatched_batch, rematch_store_native_batch
 from app.api.offers import invalidate_record_offers
+from app.api.records import _ensure_record_artist_data
 
 logger = logging.getLogger(__name__)
 
@@ -116,6 +118,56 @@ async def hourly_match_unmatched() -> dict:
     через on-demand, а matched-через-existing-records и accessory-skip успеют.
     """
     return await match_unmatched_batch(batch_size=2000)
+
+
+async def hourly_enrich_artist_thumbs(batch_size: int = 100) -> dict:
+    """Раз в час — догружает artist_thumb_image_url для discogs-записей.
+
+    Сейчас artist_thumb тянется лениво при первом детальном просмотре
+    (_ensure_record_artist_data), а это требует доп. Discogs API запроса к
+    /artists/{id}. Если первый юзер попал на пустую квоту — артист молча
+    остаётся без аватара, и следующие пользователи видят дырку, пока кто-то
+    другой не откроет деталь повторно.
+
+    Эта задача обходит «брошенные» записи фоном: берёт source='discogs' без
+    artist_thumb_image_url в discogs_data, и обогащает их через тот же
+    _ensure_record_artist_data. batch_size=100/час → 2400/сутки, безопасный
+    уровень относительно Discogs rate-limit (60 req/min).
+
+    JSONB-проверка: записи без discogs_data → пропускаем (нечего обогащать).
+    """
+    counters = {"processed": 0, "enriched": 0, "errors": 0, "skipped": 0}
+    async with async_session_maker() as db:
+        # Записи без artist_thumb_image_url в discogs_data. Используем JSONB
+        # оператор `?` через text() — SQLAlchemy не имеет нативной поддержки
+        # для NOT EXISTS-key в JSONB.
+        res = await db.execute(
+            select(Record)
+            .where(Record.source == "discogs")
+            .where(Record.discogs_id.is_not(None))
+            .where(Record.discogs_data.is_not(None))
+            .where(~Record.discogs_data.has_key("artist_thumb_image_url"))  # type: ignore[attr-defined]
+            .order_by(Record.updated_at.asc())
+            .limit(batch_size)
+        )
+        records = list(res.scalars().all())
+
+        for rec in records:
+            counters["processed"] += 1
+            try:
+                before = (rec.discogs_data or {}).get("artist_thumb_image_url")
+                await _ensure_record_artist_data(rec, db)
+                after = (rec.discogs_data or {}).get("artist_thumb_image_url")
+                if after and not before:
+                    counters["enriched"] += 1
+                else:
+                    counters["skipped"] += 1
+            except Exception:
+                counters["errors"] += 1
+                logger.exception("enrich artist thumb failed for record %s", rec.id)
+
+    logger.info("enrich artist thumbs batch: %s", counters)
+    return counters
 
 
 async def daily_rematch_store_native() -> dict:

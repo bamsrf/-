@@ -289,10 +289,22 @@ async def _download_store_native_cover_background(
         async with httpx.AsyncClient(timeout=_DOWNLOAD_TIMEOUT, follow_redirects=True) as client:
             resp = await client.get(image_url)
             if resp.status_code in (403, 404, 410):
+                # Магазин удалил товар → CDN навсегда возвращает 4xx.
+                # Зануляем r.cover_image_url, фильтр /market/* отсеет запись
+                # (COALESCE подставит raw_payload.image_url из листинга — он
+                # обычно тот же мёртвый URL, но это уже не проблема Маркета,
+                # а weekly_cleanup_stale пометит листинг как 'removed').
                 logger.info(
-                    "cover_storage: store-native cover unavailable (%d) for %s",
+                    "cover_storage: store-native cover unavailable (%d) for %s — nulling cover_image_url",
                     resp.status_code, record_id,
                 )
+                async with async_session_maker() as db:
+                    await db.execute(
+                        update(Record)
+                        .where(Record.id == record_id)
+                        .values(cover_image_url=None)
+                    )
+                    await db.commit()
                 return
             resp.raise_for_status()
             raw = resp.content

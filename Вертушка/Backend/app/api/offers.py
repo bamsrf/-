@@ -552,3 +552,62 @@ async def get_record_offers_full(
     )
 
     return RecordOffersFullResponse(summary=summary, offers=offers)
+
+
+# ============================================================================
+# /records/by-id/{record_id}/offers/full
+# ============================================================================
+# Параллельный endpoint для store-native записей (source='store'),
+# у которых discogs_id=NULL → /records/{discogs_id}/offers/full не работает.
+# Принимает UUID Record и возвращает в том же формате, что обычный endpoint.
+# alt-version'ы недоступны (нет master_id), только exact-match.
+
+
+@router.get(
+    "/records/by-id/{record_id}/offers/full",
+    response_model=RecordOffersFullResponse,
+    summary="Полные офферы по record_id (для store-native записей без discogs_id)",
+)
+async def get_record_offers_full_by_id(
+    record_id: UUID,
+    db: AsyncSession = Depends(get_db),
+) -> RecordOffersFullResponse:
+    cutoff = datetime.utcnow() - timedelta(days=STALE_AFTER_DAYS)
+
+    # Проверяем существование записи (по UUID, без фильтра по source —
+    # endpoint можно дёргать и для discogs-записей если уж нашли по id).
+    rec_res = await db.execute(select(Record.id).where(Record.id == record_id))
+    if rec_res.first() is None:
+        return RecordOffersFullResponse(summary=RecordOffersSummary(), offers=[])
+
+    exact_stmt = (
+        select(StoreListing)
+        .options(
+            joinedload(StoreListing.store),
+            joinedload(StoreListing.record),
+        )
+        .where(StoreListing.matched_record_id == record_id)
+        .where(StoreListing.status.in_((ListingStatus.IN_STOCK, ListingStatus.PREORDER)))
+        .where(StoreListing.last_seen_at >= cutoff)
+        .order_by(StoreListing.price_rub.asc().nulls_last())
+    )
+    exact_listings = list((await db.execute(exact_stmt)).unique().scalars().all())
+
+    offers = [
+        _to_response(li) for li in exact_listings if li.store and li.store.is_active
+    ]
+
+    in_stock = [li for li in exact_listings if li.status == ListingStatus.IN_STOCK]
+    preorder = [li for li in exact_listings if li.status == ListingStatus.PREORDER]
+
+    summary = RecordOffersSummary(
+        in_stock_count=len(in_stock),
+        preorder_count=len(preorder),
+        alt_version_count=0,  # store-native: master_id неизвестен, alt'ов нет
+        min_price_rub=min((li.price_rub for li in in_stock if li.price_rub is not None), default=None),
+        min_price_alt_rub=None,
+        has_last_one=False,
+        stores_with_stock=len({li.store_id for li in in_stock}),
+    )
+
+    return RecordOffersFullResponse(summary=summary, offers=offers)

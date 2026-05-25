@@ -17,21 +17,28 @@ Format-mapping (для query-param `format`):
 """
 from __future__ import annotations
 
+import asyncio
 import logging
+import uuid
 from datetime import datetime, timedelta
-from typing import Literal, Optional
+from typing import Iterable, Literal, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import text
+from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.database import get_db
+from app.database import async_session_maker, get_db
+from app.models.record import Record
 from app.schemas.offer import (
     MarketSearchItem,
     MarketStoreInfo,
     MarketCarouselItem,
 )
 from app.services.cache import cache
+from app.services.cover_storage import (
+    _download_cover_background,
+    schedule_store_native_cover_cache,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -55,6 +62,54 @@ CACHE_TTL_SEARCH = 300        # 5 мин — поиск свежее
 # Format-filter — нормализованные значения формата → SQL LIKE pattern.
 # Бэкап если infer_format не нормализовал — ловим самые частые написания.
 # ────────────────────────────────────────────────────────────────────────
+
+
+# ────────────────────────────────────────────────────────────────────────
+# Прелоад обложек: после ответа Маркета сразу пускаем фоновую корутину,
+# которая зеркалит обложки на наш сервер. Эффект:
+#   • при следующем визите nginx найдёт covers/{discogs_id}.jpg → отдаст
+#     без обращения к Discogs (если URL когда-нибудь перейдёт на наш прокси);
+#   • store-native обложки страхуются от 404 со стороны CDN магазина —
+#     даже если он удалит товар, у нас останется зеркало;
+#   • в моменте юзер ничего не теряет: download fire-and-forget,
+#     ответ Маркета не блокируется.
+# Идемпотентно — _download_cover_background / schedule_store_native_cover_cache
+# проверяют существование файла перед скачиванием. Burst-защита: дедупа по
+# record_id нет, но дешёво — повторные вызовы быстро возвращаются.
+# ────────────────────────────────────────────────────────────────────────
+
+
+def schedule_market_cover_preload(record_ids: Iterable[uuid.UUID]) -> None:
+    """fire-and-forget зеркалирование обложек после market-эндпоинтов."""
+    ids = [r for r in record_ids if r is not None]
+    if not ids:
+        return
+    asyncio.create_task(_preload_covers_background(ids))
+
+
+async def _preload_covers_background(record_ids: list[uuid.UUID]) -> None:
+    """Берёт записи одним SELECT и пускает download per-record."""
+    async with async_session_maker() as db:
+        res = await db.execute(
+            select(
+                Record.id, Record.discogs_id, Record.source,
+                Record.cover_image_url, Record.cover_local_path,
+            ).where(Record.id.in_(record_ids))
+        )
+        rows = res.all()
+
+    for row in rows:
+        if row.cover_local_path or not row.cover_image_url:
+            continue
+        try:
+            if row.source == "store":
+                schedule_store_native_cover_cache(row.id, row.cover_image_url)
+            elif row.discogs_id:
+                asyncio.create_task(
+                    _download_cover_background(row.discogs_id, row.cover_image_url)
+                )
+        except Exception:
+            logger.exception("market preload cover failed for record %s", row.id)
 
 
 def _format_clause(fmt: Optional[str]) -> tuple[str, dict]:
@@ -271,6 +326,7 @@ async def get_store_listings(
         [it.model_dump(mode="json") for it in items],
         ttl=CACHE_TTL_LISTINGS,
     )
+    schedule_market_cover_preload(it.record_id for it in items)
     return items
 
 
@@ -349,7 +405,7 @@ async def get_store_all(
     }
     rows = (await db.execute(sql, params)).mappings().all()
 
-    return [
+    items = [
         MarketSearchItem(
             record_id=row["record_id"],
             discogs_id=row["discogs_id"],
@@ -365,6 +421,8 @@ async def get_store_all(
         )
         for row in rows
     ]
+    schedule_market_cover_preload(it.record_id for it in items)
+    return items
 
 
 # ────────────────────────────────────────────────────────────────────────
@@ -469,4 +527,5 @@ async def search_market(
         [it.model_dump(mode="json") for it in items],
         ttl=CACHE_TTL_SEARCH,
     )
+    schedule_market_cover_preload(it.record_id for it in items)
     return items

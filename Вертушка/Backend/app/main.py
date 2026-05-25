@@ -130,6 +130,7 @@ async def lifespan(app: FastAPI):
                     weekly_cleanup_stale,
                     invalidate_offers_for_recently_updated,
                     daily_rematch_store_native,
+                    hourly_enrich_artist_thumbs,
                 )
                 scheduler.add_job(daily_full_crawl_http, 'cron', hour=2, minute=0, id='scrape_full_http')
                 scheduler.add_job(weekly_full_crawl_browser, 'cron', day_of_week='sat', hour=2, minute=0, id='scrape_full_browser')
@@ -139,6 +140,7 @@ async def lifespan(app: FastAPI):
                 scheduler.add_job(weekly_cleanup_stale, 'cron', day_of_week='sun', hour=4, minute=0, id='scrape_cleanup_stale')
                 scheduler.add_job(invalidate_offers_for_recently_updated, 'interval', minutes=15, id='scrape_invalidate_offers')
                 scheduler.add_job(daily_rematch_store_native, 'cron', hour=3, minute=30, id='scrape_rematch_store_native')
+                scheduler.add_job(hourly_enrich_artist_thumbs, 'interval', minutes=60, id='enrich_artist_thumbs')
                 logger.info("✅ Scraper jobs зарегистрированы (SCRAPERS_ENABLED=true)")
 
             scheduler.start()
