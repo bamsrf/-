@@ -118,14 +118,18 @@ async def hourly_match_unmatched() -> dict:
     return await match_unmatched_batch(batch_size=2000)
 
 
-async def weekly_rematch_store_native() -> dict:
-    """Раз в неделю — store-native записи прогоняются через Discogs search.
+async def daily_rematch_store_native() -> dict:
+    """Раз в сутки — store-native записи прогоняются через Discogs search.
 
-    Если за прошедшую неделю релиз появился на Discogs, в records.discogs_id_candidate
-    запишется кандидат для будущего merge tool (Phase 2). Авто-merge не делаем —
-    нужен ручной review, чтобы не порвать collection/wishlist FK.
+    Если релиз появился на Discogs, в records.discogs_id_candidate записывается
+    кандидат + счётчик подтверждений. При 2-м подтверждении подряд срабатывает
+    safe_merge_store_native_into → листинги перепривязываются на Discogs-запись,
+    store-native soft-delete'ится через merged_into_id. См. listing_matcher.
+
+    batch_size 300/день × 7 = 2100/нед, при ~5500 листингов и ~30% store-native
+    полный круг ≤ недели. Discogs API нагрузка ≈ 12 req/час (лимит 2000/час).
     """
-    return await rematch_store_native_batch(batch_size=200)
+    return await rematch_store_native_batch(batch_size=300)
 
 
 # ---- Чистка stale ------------------------------------------------------ #
