@@ -40,9 +40,12 @@ router = APIRouter()
 STALE_AFTER_DAYS = 7
 NEW_TODAY_HOURS = 24
 
-CACHE_NS_STORES = "market_stores"
-CACHE_NS_STORE_LISTINGS = "market_store_listings"
-CACHE_NS_SEARCH = "market_search"
+# Cache-namespace зашит с версией: при изменении формы ответа (например,
+# дедупа по master_id вместо record_id) бампаем суффикс — старые ключи
+# в Redis самотухнут по TTL, а свежие запросы сразу получают новую логику.
+CACHE_NS_STORES = "market_stores:v2"
+CACHE_NS_STORE_LISTINGS = "market_store_listings:v2"
+CACHE_NS_SEARCH = "market_search:v2"
 CACHE_TTL_STORES = 1800       # 30 мин — список магазинов меняется редко
 CACHE_TTL_LISTINGS = 600      # 10 мин — карусели чаще обновляем
 CACHE_TTL_SEARCH = 300        # 5 мин — поиск свежее
@@ -109,6 +112,9 @@ async def list_market_stores(
     # листинг считается «доступным» только если он matched, имеет обложку И цену.
     # Без цены тапнуть «Купить» бессмысленно, а карусель/сетка такие пропускают —
     # шапка обязана показывать ровно столько же.
+    # r.merged_into_id IS NULL — подстраховка от листингов, не перепривязанных
+    # safe_merge_store_native_into (теоретически таких быть не должно, но если
+    # будут — лучше не учитывать, чем выдать кривое число).
     sql = text(
         """
         SELECT
@@ -118,6 +124,7 @@ async def list_market_stores(
                   AND sl.last_seen_at >= :cutoff
                   AND sl.matched_record_id IS NOT NULL
                   AND sl.price_rub IS NOT NULL
+                  AND r.merged_into_id IS NULL
                   AND COALESCE(r.cover_image_url, sl.raw_payload->>'image_url') IS NOT NULL
             ) AS in_stock_count,
             AVG(sl.price_rub) FILTER (
@@ -125,12 +132,14 @@ async def list_market_stores(
                   AND sl.last_seen_at >= :cutoff
                   AND sl.price_rub IS NOT NULL
                   AND sl.matched_record_id IS NOT NULL
+                  AND r.merged_into_id IS NULL
             ) AS avg_price_rub,
             COUNT(sl.id) FILTER (
                 WHERE sl.status = 'in_stock'
                   AND sl.first_seen_at >= :new_cutoff
                   AND sl.matched_record_id IS NOT NULL
                   AND sl.price_rub IS NOT NULL
+                  AND r.merged_into_id IS NULL
                   AND COALESCE(r.cover_image_url, sl.raw_payload->>'image_url') IS NOT NULL
             ) AS new_today_count
         FROM stores s
@@ -143,6 +152,7 @@ async def list_market_stores(
               AND sl.last_seen_at >= :cutoff
               AND sl.matched_record_id IS NOT NULL
               AND sl.price_rub IS NOT NULL
+              AND r.merged_into_id IS NULL
               AND COALESCE(r.cover_image_url, sl.raw_payload->>'image_url') IS NOT NULL
         ) >= :min_in_stock
         ORDER BY s.rating DESC NULLS LAST, s.name ASC
@@ -202,14 +212,17 @@ async def get_store_listings(
         else "price_rub ASC NULLS LAST"
     )
 
-    # DISTINCT ON по matched_record_id — на одну запись отдаём только самую дешёвую
-    # из этого магазина (на случай если в магазине несколько листингов одного release).
-    # Карусель карточек = МАТЧЕННЫЕ листинги С обложкой. Без обложки в гриде
-    # дырки, юзер думает «магазин криво подключили».
+    # DISTINCT ON по дедуп-ключу: discogs_master_id если есть, иначе r.id.
+    # Discogs группирует все пресс-версии (EU/US, разные цвета винила) под
+    # один master_id — карусель магазина без этого показывала бы 3-4 идентичные
+    # карточки RHCP «Californication 2024» (разные пресс-версии одного master).
+    # Внутри master выбираем самый дешёвый листинг и отдаём конкретный record_id —
+    # фронт уже на detail-экране разводит по версиям.
+    # Карточка = МАТЧЕННЫЙ листинг С обложкой; без обложки в гриде дырки.
     sql = text(
         f"""
         WITH ranked AS (
-            SELECT DISTINCT ON (sl.matched_record_id)
+            SELECT DISTINCT ON (COALESCE(r.discogs_master_id, r.id::text))
                 sl.matched_record_id AS record_id,
                 sl.price_rub,
                 sl.first_seen_at,
@@ -226,8 +239,9 @@ async def get_store_listings(
               AND sl.matched_record_id IS NOT NULL
               AND sl.price_rub IS NOT NULL
               AND sl.last_seen_at >= :cutoff
+              AND r.merged_into_id IS NULL
               AND COALESCE(r.cover_image_url, sl.raw_payload->>'image_url') IS NOT NULL
-            ORDER BY sl.matched_record_id, sl.price_rub ASC NULLS LAST
+            ORDER BY COALESCE(r.discogs_master_id, r.id::text), sl.price_rub ASC NULLS LAST
         )
         SELECT * FROM ranked
         ORDER BY {order_clause}
@@ -295,12 +309,12 @@ async def get_store_all(
         q_clause = " AND (r.artist ILIKE :q OR r.title ILIKE :q)"
         q_params["q"] = f"%{q}%"
 
-    # /all — пагинированная витрина. Тот же filter on NULL cover что в /listings:
-    # дырки портят сетку 2-колонок.
+    # /all — пагинированная витрина. Дедуп по master_id (см. /listings),
+    # filter NULL cover — дырки портят сетку 2-колонок.
     sql = text(
         f"""
         WITH ranked AS (
-            SELECT DISTINCT ON (sl.matched_record_id)
+            SELECT DISTINCT ON (COALESCE(r.discogs_master_id, r.id::text))
                 sl.matched_record_id AS record_id,
                 sl.price_rub,
                 sl.first_seen_at,
@@ -317,10 +331,11 @@ async def get_store_all(
               AND sl.matched_record_id IS NOT NULL
               AND sl.price_rub IS NOT NULL
               AND sl.last_seen_at >= :cutoff
+              AND r.merged_into_id IS NULL
               AND COALESCE(r.cover_image_url, sl.raw_payload->>'image_url') IS NOT NULL
               {fmt_sql}
               {q_clause}
-            ORDER BY sl.matched_record_id, sl.price_rub ASC NULLS LAST
+            ORDER BY COALESCE(r.discogs_master_id, r.id::text), sl.price_rub ASC NULLS LAST
         )
         SELECT * FROM ranked
         ORDER BY {order_clause}
@@ -394,15 +409,20 @@ async def search_market(
     if cached is not None:
         return [MarketSearchItem.model_validate(item) for item in cached]
 
+    # Дедуп: группируем по master_id (с fallback на r.id), чтобы разные
+    # пресс-версии одного альбома не выдавались как идентичные карточки.
+    # Внутри группы выбираем самый дешёвый record для отображения через
+    # ARRAY_AGG ORDER BY price → [1].
     sql = text(
         f"""
         WITH agg AS (
             SELECT
-                sl.matched_record_id AS record_id,
+                COALESCE(r.discogs_master_id, r.id::text) AS dedup_key,
                 MIN(sl.price_rub) AS min_price,
                 COUNT(DISTINCT sl.store_id) AS stores_with_stock,
                 MAX(sl.first_seen_at) AS first_seen_at,
-                (ARRAY_AGG(s.slug ORDER BY sl.price_rub ASC NULLS LAST))[1] AS cheapest_store_slug
+                (ARRAY_AGG(s.slug ORDER BY sl.price_rub ASC NULLS LAST))[1] AS cheapest_store_slug,
+                (ARRAY_AGG(r.id ORDER BY sl.price_rub ASC NULLS LAST))[1] AS chosen_record_id
             FROM store_listings sl
             JOIN stores s ON s.id = sl.store_id
             JOIN records r ON r.id = sl.matched_record_id
@@ -411,17 +431,18 @@ async def search_market(
               AND sl.matched_record_id IS NOT NULL
               AND sl.price_rub IS NOT NULL
               AND sl.last_seen_at >= :cutoff
+              AND r.merged_into_id IS NULL
               AND COALESCE(r.cover_image_url, sl.raw_payload->>'image_url') IS NOT NULL
               {fmt_sql}
               {q_clause}
-            GROUP BY sl.matched_record_id
+            GROUP BY COALESCE(r.discogs_master_id, r.id::text)
         )
         SELECT
-            agg.record_id, agg.min_price, agg.stores_with_stock,
+            agg.chosen_record_id AS record_id, agg.min_price, agg.stores_with_stock,
             agg.first_seen_at, agg.cheapest_store_slug,
             r.discogs_id, r.artist, r.title, r.year, r.format_type, r.cover_image_url
         FROM agg
-        JOIN records r ON r.id = agg.record_id
+        JOIN records r ON r.id = agg.chosen_record_id
         ORDER BY {order_clause}
         LIMIT :limit
         """

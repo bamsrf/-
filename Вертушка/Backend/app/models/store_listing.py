@@ -28,6 +28,7 @@ class MatchMethod:
     DISCOGS_FETCH = "discogs_fetch"
     MANUAL = "manual"
     STORE_NATIVE = "store_native"  # Record создан из данных самого листинга (нет на Discogs)
+    MERGED_FROM_STORE_NATIVE = "merged_from_store_native"  # перепривязан safe_merge_store_native_into
 
 
 class StoreListing(Base):

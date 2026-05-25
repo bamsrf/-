@@ -80,6 +80,12 @@ STORE_NATIVE_DEDUP_SCORE = 1.6
 # хуже — записи объединятся; здесь только подтверждение существования релиза).
 STORE_NATIVE_CROSS_SHOP_SCORE = 1.4
 
+# Авто-merge store-native → discogs: сколько раз подряд rematch должен
+# подтвердить candidate, чтобы запустить safe-merge. 2 = две недели подряд
+# weekly_rematch_store_native находит тот же discogs_id → объединяем.
+# При смене candidate счётчик сбрасывается до 1.
+STORE_NATIVE_MERGE_MIN_CONFIRMATIONS = 2
+
 
 # ---- Поиск Record по идентификаторам ----------------------------------- #
 
@@ -659,17 +665,32 @@ async def match_unmatched_batch(batch_size: int = 200) -> dict[str, int]:
 async def rematch_store_native_batch(batch_size: int = 200) -> dict[str, int]:
     """Прогнать store-native записи через Discogs search — может, релиз уже там.
 
-    На совпадение пишем records.discogs_id_candidate (для будущего merge tool).
-    Автоматически не мёрджим — это решает Phase 2 после ручного review.
+    На совпадение пишем records.discogs_id_candidate и инкрементируем счётчик
+    подтверждений. Когда тот же candidate подтверждается ≥ STORE_NATIVE_MERGE_MIN_CONFIRMATIONS
+    раз подряд (обычно через 2 запуска weekly cron'а — две недели), запускаем
+    safe_merge_store_native_into → переносим листинги, soft-delete'аем store-native.
 
-    Возвращает счётчики: processed, candidates_found, no_match, errors.
+    Берём записи source='store' с merged_into_id IS NULL: и новых кандидатов,
+    и повторное подтверждение существующих. Сортируем по updated_at ASC —
+    давно нетронутые попадают первыми.
+
+    Возвращает счётчики: processed, candidates_found, candidates_confirmed,
+    candidates_changed, merged, no_match, errors.
     """
-    counters = {"processed": 0, "candidates_found": 0, "no_match": 0, "errors": 0}
+    counters = {
+        "processed": 0,
+        "candidates_found": 0,       # новый candidate появился впервые
+        "candidates_confirmed": 0,   # тот же candidate — счётчик++
+        "candidates_changed": 0,     # другой candidate — сбрасываем
+        "merged": 0,                 # auto-merge сработал
+        "no_match": 0,
+        "errors": 0,
+    }
     async with async_session_maker() as db:
         res = await db.execute(
             select(Record)
             .where(Record.source == "store")
-            .where(Record.discogs_id_candidate.is_(None))
+            .where(Record.merged_into_id.is_(None))
             .order_by(Record.updated_at.asc())
             .limit(batch_size)
         )
@@ -677,6 +698,7 @@ async def rematch_store_native_batch(batch_size: int = 200) -> dict[str, int]:
 
         for rec in records:
             counters["processed"] += 1
+            sp = await db.begin_nested()
             try:
                 # NB: _try_discogs_fetch_by_text создаёт Record при успехе.
                 # Это побочный эффект: новая Discogs-запись сама по себе ОК
@@ -688,17 +710,50 @@ async def rematch_store_native_batch(batch_size: int = 200) -> dict[str, int]:
                     title=rec.title,
                     year=rec.year,
                 )
-                if found and found.discogs_id and found.id != rec.id:
+                if not (found and found.discogs_id and found.id != rec.id):
+                    counters["no_match"] += 1
+                    await sp.commit()
+                    continue
+
+                now = datetime.utcnow()
+                if rec.discogs_id_candidate == found.discogs_id:
+                    rec.discogs_id_candidate_confirmations += 1
+                    counters["candidates_confirmed"] += 1
+                elif rec.discogs_id_candidate is None:
                     rec.discogs_id_candidate = found.discogs_id
+                    rec.discogs_id_candidate_first_seen_at = now
+                    rec.discogs_id_candidate_confirmations = 1
                     counters["candidates_found"] += 1
+                else:
+                    # candidate сменился — это может быть и шум, и более точный
+                    # match (Discogs обновил indexing). Сбрасываем счётчик: ждём
+                    # повторного подтверждения нового кандидата.
+                    rec.discogs_id_candidate = found.discogs_id
+                    rec.discogs_id_candidate_first_seen_at = now
+                    rec.discogs_id_candidate_confirmations = 1
+                    counters["candidates_changed"] += 1
                     logger.info(
-                        "rematch store-native: %s → discogs_id_candidate=%s "
+                        "rematch store-native: %s candidate changed → %s "
                         "(artist=%s title=%s)",
                         rec.id, found.discogs_id, rec.artist, rec.title,
                     )
-                else:
-                    counters["no_match"] += 1
+
+                if rec.discogs_id_candidate_confirmations >= STORE_NATIVE_MERGE_MIN_CONFIRMATIONS:
+                    merge_res = await safe_merge_store_native_into(
+                        rec, rec.discogs_id_candidate, db, merged_by="cron",
+                    )
+                    if merge_res["target_found"]:
+                        counters["merged"] += 1
+                        logger.info(
+                            "rematch store-native: AUTO-MERGED %s → discogs_id=%s "
+                            "(remapped %d listings, artist=%s title=%s)",
+                            rec.id, rec.discogs_id_candidate,
+                            merge_res["listings_remapped"], rec.artist, rec.title,
+                        )
+
+                await sp.commit()
             except Exception:
+                await sp.rollback()
                 counters["errors"] += 1
                 logger.exception("rematch failed for record %s", rec.id)
 
@@ -706,9 +761,88 @@ async def rematch_store_native_batch(batch_size: int = 200) -> dict[str, int]:
             await db.commit()
         except Exception:
             await db.rollback()
-            counters["errors"] += counters["candidates_found"]
+            counters["errors"] += counters["candidates_found"] + counters["merged"]
             counters["candidates_found"] = 0
+            counters["merged"] = 0
             logger.exception("commit failed in rematch_store_native_batch")
 
     logger.info("rematch store-native batch: %s", counters)
+    return counters
+
+
+# ---- Safe merge store-native → discogs ---------------------------------- #
+
+
+async def safe_merge_store_native_into(
+    source: Record,
+    target_discogs_id: str,
+    db: AsyncSession,
+    *,
+    merged_by: str,
+) -> dict[str, int]:
+    """Объединить store-native Record в существующий Discogs Record.
+
+    Шаги (внутри savepoint в вызывающем коде — мы не открываем свой):
+      1. Найти/создать target Record по discogs_id (без on-demand Discogs API —
+         только локальный SELECT, чтобы не зависеть от 60 req/min при batch'е).
+      2. Перепривязать все store_listings.matched_record_id с source.id на target.id,
+         выставить match_method = MERGED_FROM_STORE_NATIVE.
+      3. Записать в record_merge_history snapshot полей source.
+      4. Soft-delete source: записать merged_into_id = target.id.
+         Физически НЕ удаляем — старые deep-link на uuid должны редиректить.
+
+    Возвращает счётчики: listings_remapped + флаг target_found.
+    Если target Record в локальной БД не нашёлся — возвращает {target_found: 0}
+    и НИЧЕГО не меняет (caller волен сделать get_or_create через Discogs API).
+    """
+    counters = {"listings_remapped": 0, "target_found": 0}
+
+    target_res = await db.execute(
+        select(Record).where(Record.discogs_id == target_discogs_id)
+    )
+    target = target_res.scalar_one_or_none()
+    if target is None:
+        return counters
+    if target.id == source.id:
+        return counters
+
+    counters["target_found"] = 1
+
+    remap_res = await db.execute(
+        text(
+            "UPDATE store_listings "
+            "SET matched_record_id = :tgt, "
+            "    match_method = :method, "
+            "    matched_at = :ts "
+            "WHERE matched_record_id = :src"
+        ),
+        {
+            "tgt": target.id,
+            "src": source.id,
+            "method": MatchMethod.MERGED_FROM_STORE_NATIVE,
+            "ts": datetime.utcnow(),
+        },
+    )
+    counters["listings_remapped"] = remap_res.rowcount or 0
+
+    await db.execute(
+        text(
+            "INSERT INTO record_merge_history "
+            "(source_record_id, target_record_id, source_artist, source_title, "
+            " source_year, source_discogs_id_candidate, listings_remapped, merged_by) "
+            "VALUES (:src, :tgt, :artist, :title, :year, :cand, :remapped, :merged_by)"
+        ),
+        {
+            "src": source.id,
+            "tgt": target.id,
+            "artist": source.artist,
+            "title": source.title,
+            "year": source.year,
+            "cand": source.discogs_id_candidate,
+            "remapped": counters["listings_remapped"],
+            "merged_by": merged_by,
+        },
+    )
+
+    source.merged_into_id = target.id
     return counters

@@ -4,7 +4,7 @@
 import uuid
 from datetime import datetime
 from decimal import Decimal
-from sqlalchemy import String, DateTime, Integer, Text, Numeric, Boolean
+from sqlalchemy import String, DateTime, Integer, Text, Numeric, Boolean, ForeignKey
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.dialects.postgresql import UUID, JSONB
 
@@ -42,10 +42,28 @@ class Record(Base):
         index=True
     )
     # Заполняется weekly_rematch_store_native: если store-native запись позже
-    # появилась на Discogs, сюда пишется кандидат для будущего merge tool.
-    # Поле read-only для матчера/cron, не используется в боевых запросах.
+    # появилась на Discogs, сюда пишется кандидат. Авто-merge срабатывает,
+    # когда тот же candidate подтверждается ≥ 2 раза подряд (см. confirmations).
     discogs_id_candidate: Mapped[str | None] = mapped_column(
         String(50),
+        nullable=True,
+    )
+    discogs_id_candidate_first_seen_at: Mapped[datetime | None] = mapped_column(
+        DateTime,
+        nullable=True,
+    )
+    discogs_id_candidate_confirmations: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        default=0,
+        server_default="0",
+    )
+    # Soft-delete для merge'нутых store-native: запись остаётся в БД, но во всех
+    # эндпоинтах маркета/коллекций фильтруется по merged_into_id IS NULL.
+    # Старые ссылки на uuid (push, share-link) могут редиректить на актуальный.
+    merged_into_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("records.id", ondelete="SET NULL"),
         nullable=True,
     )
     discogs_master_id: Mapped[str | None] = mapped_column(
