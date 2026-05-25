@@ -12,6 +12,7 @@
  * чтобы понять как фича выглядит и ведёт себя в приложении.
  */
 import { ReactElement } from 'react';
+import { Image, ImageSourcePropType } from 'react-native';
 import Svg, {
   Circle,
   Defs,
@@ -447,6 +448,43 @@ export function SceneDefault({ accent, accentDark, ink, locked, label }: ScenePr
   );
 }
 
+// ─── PNG-based scenes (финальные пины от дизайнера) ───────────────────────
+//
+// Когда дизайнер отдаёт готовый PNG-пин с прозрачным фоном — оборачиваем
+// его через `makeImageScene(src)` и регистрируем в REGISTRY как обычную
+// SVG-сцену. Helper держит API совместимым с `SceneRenderer`.
+//
+// Для locked-стейта PNG приглушается через opacity (точная desaturation —
+// отдельная задача, см. PLAN_ACHIEVEMENTS_PINS_PROMPT.md §Verification).
+
+function makeImageScene(src: ImageSourcePropType): SceneRendererImpl {
+  return function SceneImage({ size, locked }: SceneProps): ReactElement {
+    return (
+      <Image
+        source={src}
+        style={{
+          width: size,
+          height: size,
+          opacity: locked ? 0.32 : 1,
+        }}
+        resizeMode="contain"
+      />
+    );
+  };
+}
+
+// `SceneRenderer` объявлен ниже, но TS требует тип для makeImageScene выше —
+// дублируем сигнатуру локально, чтобы избежать forward-reference в типах.
+type SceneRendererImpl = (p: SceneProps) => ReactElement;
+
+// D3 «Кругосветка» — финальный пин (PNG, 256×256, прозрачный фон).
+// Источник 256 выбран как баланс памяти и резкости: на гриде 64 px
+// downscale выглядит чисто, в unlock-overlay 256 px — нативно.
+// Для share-card 700 px переключим источник через size-aware helper позже.
+export const SceneCircumnavigation: SceneRendererImpl = makeImageScene(
+  require('../../assets/achievements/256/circumnavigation.png'),
+);
+
 // ─── Mapping code → scene renderer ────────────────────────────────────────
 
 export type SceneRenderer = (p: SceneProps) => ReactElement;
@@ -501,7 +539,7 @@ const REGISTRY: Record<string, SceneRenderer> = {
   // Geography (D)
   D1_country_x5: SceneOpenWindow,
   D2_country_x15: SceneOpenWindow,
-  D3_country_x30: SceneOpenWindow,
+  D3_country_x30: SceneCircumnavigation, // финальный PNG-пин
   D4_japanese_x10: SceneOpenWindow,
   D5_melodiya_x10: SceneOpenWindow,
   D6_uk_collectible_x3: SceneOpenWindow,
