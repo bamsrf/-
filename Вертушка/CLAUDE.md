@@ -30,7 +30,8 @@
 ### Команды Backend
 ```bash
 cd Backend && uvicorn app.main:app --reload  # локально
-git push && ssh deploy@85.198.85.12 'cd ~/vertushka && bash Backend/scripts/deploy.sh'  # деплой
+# Деплой: скрипт сам делает git pull → docker build → alembic upgrade head → up + healthcheck
+git push && ssh deploy@85.198.85.12 'bash ~/vertushka/Вертушка/Backend/scripts/deploy.sh'
 ```
 **Prod API**: `https://api.vinyl-vertushka.ru/api`
 

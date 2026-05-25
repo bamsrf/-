@@ -212,17 +212,16 @@ async def get_store_listings(
         else "price_rub ASC NULLS LAST"
     )
 
-    # DISTINCT ON по дедуп-ключу: discogs_master_id если есть, иначе r.id.
-    # Discogs группирует все пресс-версии (EU/US, разные цвета винила) под
-    # один master_id — карусель магазина без этого показывала бы 3-4 идентичные
-    # карточки RHCP «Californication 2024» (разные пресс-версии одного master).
-    # Внутри master выбираем самый дешёвый листинг и отдаём конкретный record_id —
-    # фронт уже на detail-экране разводит по версиям.
+    # DISTINCT ON по matched_record_id — одна запись = одна карточка (самая
+    # дешёвая в магазине). Master-дедуп между пресс-версиями временно отключён
+    # до создания функционального индекса CREATE INDEX CONCURRENTLY
+    # ON records ((COALESCE(discogs_master_id, id::text))) — без него
+    # GROUP BY COALESCE заставлял Postgres делать sort-by-all-rows.
     # Карточка = МАТЧЕННЫЙ листинг С обложкой; без обложки в гриде дырки.
     sql = text(
         f"""
         WITH ranked AS (
-            SELECT DISTINCT ON (COALESCE(r.discogs_master_id, r.id::text))
+            SELECT DISTINCT ON (sl.matched_record_id)
                 sl.matched_record_id AS record_id,
                 sl.price_rub,
                 sl.first_seen_at,
@@ -241,7 +240,7 @@ async def get_store_listings(
               AND sl.last_seen_at >= :cutoff
               AND r.merged_into_id IS NULL
               AND COALESCE(r.cover_image_url, sl.raw_payload->>'image_url') IS NOT NULL
-            ORDER BY COALESCE(r.discogs_master_id, r.id::text), sl.price_rub ASC NULLS LAST
+            ORDER BY sl.matched_record_id, sl.price_rub ASC NULLS LAST
         )
         SELECT * FROM ranked
         ORDER BY {order_clause}
@@ -309,12 +308,12 @@ async def get_store_all(
         q_clause = " AND (r.artist ILIKE :q OR r.title ILIKE :q)"
         q_params["q"] = f"%{q}%"
 
-    # /all — пагинированная витрина. Дедуп по master_id (см. /listings),
+    # /all — пагинированная витрина. Master-дедуп временно отключён (см. /listings).
     # filter NULL cover — дырки портят сетку 2-колонок.
     sql = text(
         f"""
         WITH ranked AS (
-            SELECT DISTINCT ON (COALESCE(r.discogs_master_id, r.id::text))
+            SELECT DISTINCT ON (sl.matched_record_id)
                 sl.matched_record_id AS record_id,
                 sl.price_rub,
                 sl.first_seen_at,
@@ -335,7 +334,7 @@ async def get_store_all(
               AND COALESCE(r.cover_image_url, sl.raw_payload->>'image_url') IS NOT NULL
               {fmt_sql}
               {q_clause}
-            ORDER BY COALESCE(r.discogs_master_id, r.id::text), sl.price_rub ASC NULLS LAST
+            ORDER BY sl.matched_record_id, sl.price_rub ASC NULLS LAST
         )
         SELECT * FROM ranked
         ORDER BY {order_clause}
@@ -409,20 +408,16 @@ async def search_market(
     if cached is not None:
         return [MarketSearchItem.model_validate(item) for item in cached]
 
-    # Дедуп: группируем по master_id (с fallback на r.id), чтобы разные
-    # пресс-версии одного альбома не выдавались как идентичные карточки.
-    # Внутри группы выбираем самый дешёвый record для отображения через
-    # ARRAY_AGG ORDER BY price → [1].
+    # Дедуп по matched_record_id (master-дедуп временно отключён, см. /listings).
     sql = text(
         f"""
         WITH agg AS (
             SELECT
-                COALESCE(r.discogs_master_id, r.id::text) AS dedup_key,
+                sl.matched_record_id AS record_id,
                 MIN(sl.price_rub) AS min_price,
                 COUNT(DISTINCT sl.store_id) AS stores_with_stock,
                 MAX(sl.first_seen_at) AS first_seen_at,
-                (ARRAY_AGG(s.slug ORDER BY sl.price_rub ASC NULLS LAST))[1] AS cheapest_store_slug,
-                (ARRAY_AGG(r.id ORDER BY sl.price_rub ASC NULLS LAST))[1] AS chosen_record_id
+                (ARRAY_AGG(s.slug ORDER BY sl.price_rub ASC NULLS LAST))[1] AS cheapest_store_slug
             FROM store_listings sl
             JOIN stores s ON s.id = sl.store_id
             JOIN records r ON r.id = sl.matched_record_id
@@ -435,14 +430,14 @@ async def search_market(
               AND COALESCE(r.cover_image_url, sl.raw_payload->>'image_url') IS NOT NULL
               {fmt_sql}
               {q_clause}
-            GROUP BY COALESCE(r.discogs_master_id, r.id::text)
+            GROUP BY sl.matched_record_id
         )
         SELECT
-            agg.chosen_record_id AS record_id, agg.min_price, agg.stores_with_stock,
+            agg.record_id, agg.min_price, agg.stores_with_stock,
             agg.first_seen_at, agg.cheapest_store_slug,
             r.discogs_id, r.artist, r.title, r.year, r.format_type, r.cover_image_url
         FROM agg
-        JOIN records r ON r.id = agg.chosen_record_id
+        JOIN records r ON r.id = agg.record_id
         ORDER BY {order_clause}
         LIMIT :limit
         """
