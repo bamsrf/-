@@ -16,20 +16,22 @@ import {
   KeyboardAvoidingView,
   Platform,
   LayoutAnimation,
-  type LayoutChangeEvent,
+  Dimensions,
 } from 'react-native';
 import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useRouter, useLocalSearchParams } from 'expo-router';
-// Reanimated 3 для magic-transition Маркета. NB: импортим под именем
-// `Reanimated` чтобы не конфликтовать с legacy `Animated` из react-native выше.
+import { useRouter, useLocalSearchParams, useFocusEffect } from 'expo-router';
 import Reanimated, {
+  Extrapolation,
   interpolate,
+  runOnJS,
   useAnimatedScrollHandler,
+  useAnimatedStyle,
   useDerivedValue,
   useSharedValue,
-  runOnJS,
+  withSpring,
+  withTiming,
 } from 'react-native-reanimated';
 import * as Haptics from 'expo-haptics';
 import { Icon } from '@/components/ui';
@@ -41,15 +43,11 @@ import { useSearchStore, useCollectionStore, useUserSearchStore, useAuthStore, u
 import { useTourTarget } from '../../lib/useTourTarget';
 import { analytics } from '../../lib/analytics';
 import { api, resolveMediaUrl } from '../../lib/api';
-import { MasterSearchResult, ReleaseSearchResult, ArtistSearchResult, UserWithStats, PublicProfileRecord, MarketCarouselItem, MarketStoreInfo, MarketFormatFilter } from '../../lib/types';
+import { MasterSearchResult, ReleaseSearchResult, ArtistSearchResult, UserWithStats, PublicProfileRecord, MarketCarouselItem } from '../../lib/types';
 import { MiniPriceBadge } from '../../components/MiniPriceBadge';
 import MarketBackground from '../../components/market/MarketBackground';
-import MarketSection, { type MarketStoreData } from '../../components/market/MarketSection';
-import MarketSearchResults from '../../components/market/MarketSearchResults';
-import MarketGesturePrompt, { type GesturePromptMode } from '../../components/market/MarketGesturePrompt';
-import ExitMarketButton from '../../components/market/ExitMarketButton';
+import MarketMain from '../../components/market/MarketMain';
 import { useMarketStore } from '../../lib/marketStore';
-import type { MarketSearchItem } from '../../lib/types';
 import { Colors, Typography, Spacing, BorderRadius, Gradients } from '../../constants/theme';
 import { toast } from '../../lib/toast';
 import { cleanArtistName } from '../../lib/format';
@@ -299,340 +297,219 @@ export default function SearchScreen() {
   // (docs/plans/MARKET_AND_PRICE_DRAWER.md §1).
   // ──────────────────────────────────────────────────────────────────
 
-  // Sticky persist: searchScrollY читается на mount, write throttle при скролле.
-  // persistedScrollY оставлен для будущей фичи «вернись где был», сейчас НЕ
-  // используем как initial — иначе на mount фон Маркета уже частично виден
-  // (юзер видит peach/cobalt на чистом экране Поиска).
-  const persistedScrollY = useMarketStore((s) => s.searchScrollY);
-  const setPersistedScrollY = useMarketStore((s) => s.setSearchScrollY);
-
-  // ВАЖНО: всегда стартуем с 0 — иначе background-layer сразу частично market.
-  const scrollY = useSharedValue(0);
-  // Динамический threshold transition фона. parent обновляет эти SharedValue'и
-  // когда меняется layout (история раскрылась → MarketSection сдвинулся).
-  // НАЧАЛЬНОЕ значение 99999 (off-screen) — если MarketSection не отрендерен
-  // (юзер в режиме поиска, marketStores пуст), onLayout НИКОГДА не сработает
-  // и thresholds останутся «выключенными». Без этого: market-bg может
-  // зажечься в обычных поисковых результатах при scrollY > 400.
-  const transitionStartY = useSharedValue(99999);
-  const transitionEndY = useSharedValue(99999);
-  // (StickyMarketHeader удалён по запросу юзера — был дубль «МАРКЕТ» сверху)
   const scrollToTopRef = useRef<(() => void) | null>(null);
-  // scrollToOffsetRef нужен для прыжка к Маркету из «Смотреть все →»
-  // в карусели «В наличии сейчас». Прокидываем в RecordGrid → FlatList.
   const scrollToOffsetRef = useRef<((offset: number, animated?: boolean) => void) | null>(null);
-  // y-координата начала MarketSection внутри FlatList'а. Меряем через
-  // onLayout родительского View — тапa «Смотреть все» проскролл к этому y.
-  const marketSectionYRef = useRef<number>(0);
-  const [marketFormatFilter, setMarketFormatFilter] = useState<MarketFormatFilter | 'all'>('all');
-  const [marketSearch, setMarketSearch] = useState('');
-  const [exitVisible, setExitVisible] = useState(false);
 
-  // Витрины магазинов — 3-4 carousels по top магазинам.
-  // Загружаем один раз на mount; данные на бэке cache'ируются на 30 мин.
-  const [marketStores, setMarketStores] = useState<MarketStoreData[]>([]);
+  // committed — Маркет-слой сейчас активен (in-place layer composition,
+  // без навигации). Меняется через onCommit/onExit overdrag-жеста.
+  //
+  // Initial value читается из persisted marketStore: если юзер закрыл
+  // приложение или ушёл с таба, будучи в Маркете — сюда же и возвращается.
+  // Сброс происходит ТОЛЬКО через явный exit-жест (pull-down сверху Маркета).
+  const initialCommitted = useMarketStore.getState().committed;
+  const [committed, setCommitted] = useState(initialCommitted);
+  const committedSv = useSharedValue(initialCommitted ? 1 : 0);
   useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      try {
-        // min_in_stock=1 — даже только что подключённый магазин с одним
-        // матчем попадает в витрину. Иначе юзер думает «всего один магазин?»
-        const stores = await api.getMarketStores(1);
-        // Параллельно тянем top-N карточек для каждой витрины.
-        const carousels: (MarketStoreData | null)[] = await Promise.all(
-          stores.map(async (store) => {
-            try {
-              const items = await api.getStoreListings(store.slug, { limit: 15, sort: 'newest' });
-              const carouselData: MarketStoreData = {
-                slug: store.slug,
-                name: store.name,
-                totalCount: store.in_stock_count,
-                items: items.map((it) => ({
-                  id: it.record_id,
-                  artist: it.artist,
-                  title: it.title,
-                  year: it.year ?? null,
-                  format: it.format_type ?? null,
-                  coverUrl: it.cover_image_url ?? null,
-                  priceRub: Number(it.min_price_rub),
-                })),
-              };
-              return carouselData;
-            } catch {
-              return null;
-            }
-          }),
-        );
-        if (!cancelled) {
-          setMarketStores(carousels.filter((c): c is MarketStoreData => c !== null && c.items.length > 0));
-        }
-      } catch {
-        /* silent — Маркет просто не покажется при отсутствии данных */
-      }
-    })();
-    return () => { cancelled = true; };
+    committedSv.value = committed ? 1 : 0;
+  }, [committed, committedSv]);
+
+  const setMarketCommitted = useMarketStore((s) => s.setCommitted);
+
+  // committedAnim 0..1 — ЕДИНСТВЕННЫЙ параметр визуальной анимации перехода.
+  // НЕ управляется жестом напрямую: жест только триггерит spring до 0 или 1
+  // на release. Так слой не «прокручивается пальцем», а сам приезжает.
+  const committedAnim = useSharedValue(initialCommitted ? 1 : 0);
+  // pullFraction 0..1 — текущее «насколько глубоко юзер тянет ПРЯМО СЕЙЧАС».
+  // Используется только для haptic-лесенки и фейда CTA-лейбла. К слою не
+  // привязан вообще: лейбл фейдится по pullFraction, слой движется по
+  // committedAnim. Это и даёт «жест триггерит, страница автоматом встаёт».
+  const pullFraction = useSharedValue(0);
+  const dragging = useSharedValue(0);
+  const lastHapticStep = useSharedValue(-1);
+  const committingRef = useRef(false);
+
+  useFocusEffect(
+    useCallback(() => {
+      // На focus сбрасываем ТОЛЬКО transient gesture-state (палец+haptic).
+      // Persistent committed-режим НЕ трогаем: юзер должен оставаться в
+      // Маркете после возврата с /market/store/[slug], с другого таба или
+      // после reopen'а приложения. Выход из Маркета — только через явный
+      // exit-жест (pull-down).
+      pullFraction.value = 0;
+      lastHapticStep.value = -1;
+      committingRef.current = false;
+    }, [pullFraction, lastHapticStep]),
+  );
+
+  // ?focus=market — auto-commit (slide-up без жеста).
+  useEffect(() => {
+    if (focus !== 'market') return;
+    setCommitted(true);
+    committedAnim.value = withSpring(1, {
+      damping: 22, stiffness: 200, mass: 0.7, overshootClamping: true,
+    });
+  }, [focus, committedAnim]);
+
+  useEffect(() => {
+    setMarketCommitted(committed);
+  }, [committed, setMarketCommitted]);
+
+  // ─── Haptic ramp ────────────────────────────────────────────────────
+  const fireTick = useCallback(() => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+  }, []);
+  const fireCommitHaptic = useCallback(() => {
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
+  }, []);
+  const fireMiss = useCallback(() => {
+    Haptics.selectionAsync().catch(() => {});
   }, []);
 
-  // ──────────────────────────────────────────────────────────────────
-  // Market search/filter режим. Если юзер написал что-то (>=2 chars) или
-  // выбрал ненулевой format-чип — рендерим результаты `api.searchMarket`
-  // ВМЕСТО per-store carousels. Debounce 350ms на ввод текста чтобы не
-  // долбить /api/market/search на каждую букву.
-  // MARKET_AND_PRICE_DRAWER.md §1.8.
-  // ──────────────────────────────────────────────────────────────────
-  const [marketSearchItems, setMarketSearchItems] = useState<MarketSearchItem[]>([]);
-  const [marketSearchLoading, setMarketSearchLoading] = useState(false);
-  const marketSearchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  const isMarketSearchActive = useMemo(() => {
-    return marketSearch.trim().length >= 2 || marketFormatFilter !== 'all';
-  }, [marketSearch, marketFormatFilter]);
-
-  useEffect(() => {
-    if (!isMarketSearchActive) {
-      setMarketSearchItems([]);
-      setMarketSearchLoading(false);
-      return;
+  useDerivedValue(() => {
+    if (dragging.value === 0) return;
+    const p = pullFraction.value;
+    let step = 0;
+    if (p >= 1) step = 3;
+    else if (p >= 0.66) step = 2;
+    else if (p >= 0.33) step = 1;
+    if (step > lastHapticStep.value) {
+      lastHapticStep.value = step;
+      if (step === 3) runOnJS(fireCommitHaptic)();
+      else if (step > 0) runOnJS(fireTick)();
+    } else if (step < lastHapticStep.value) {
+      lastHapticStep.value = step;
     }
-    if (marketSearchTimer.current) clearTimeout(marketSearchTimer.current);
-    setMarketSearchLoading(true);
-    let cancelled = false;
-    marketSearchTimer.current = setTimeout(() => {
-      api.searchMarket({
-        q: marketSearch.trim().length >= 2 ? marketSearch.trim() : undefined,
-        format: marketFormatFilter === 'all' ? null : marketFormatFilter,
-        sort: 'price_asc',
-        limit: 50,
-      })
-        .then((res) => {
-          if (!cancelled) setMarketSearchItems(res);
-        })
-        .catch(() => {
-          if (!cancelled) setMarketSearchItems([]);
-        })
-        .finally(() => {
-          if (!cancelled) setMarketSearchLoading(false);
-        });
-    }, 350);
-    return () => {
-      cancelled = true;
-      if (marketSearchTimer.current) clearTimeout(marketSearchTimer.current);
-    };
-  }, [isMarketSearchActive, marketSearch, marketFormatFilter]);
+  });
 
-  // ────────────────────────────────────────────────────────────────
-  // Gesture-progress поля для silent-messages-стиль перехода.
-  // - gestureProgress: 0..1 насколько юзер «вошёл» в transition-zone
-  // - gestureVisibility: 0..1 видимость promp'а (fade in/out)
-  // - gestureMode: 'entry' (идёт в Маркет) или 'exit' (выходит)
-  // ────────────────────────────────────────────────────────────────
-  const gestureProgress = useSharedValue(0);
-  const gestureVisibility = useSharedValue(0);
-  const [gestureMode, setGestureMode] = useState<GesturePromptMode>('entry');
-  // zone-marker SharedValue: 0=outside, 1=entry, 2=exit. Используется
-  // worklet'ом чтобы вызывать runOnJS(setGestureMode) только на СМЕНЕ зоны,
-  // а не каждый frame (60+ JS calls в сек — мусор).
-  const zoneMarker = useSharedValue(0);
-  // isDragging — palец на экране. Используем как guard для visibility:
-  // в покое prompt не должен висеть, юзер видел артефакт «надписи в куче
-  // сверху сразу после открытия Маркета». Без drag = vis = 0.
-  const isDragging = useSharedValue(0);
+  // ─── Commit / Exit (JS-only, вызываются из worklet через runOnJS) ───
+  const triggerCommit = useCallback(() => {
+    if (committingRef.current) return;
+    committingRef.current = true;
+    setCommitted(true);
+    setTimeout(() => { committingRef.current = false; }, 500);
+  }, []);
+  const triggerExit = useCallback(() => {
+    if (committingRef.current) return;
+    committingRef.current = true;
+    setCommitted(false);
+    setTimeout(() => { committingRef.current = false; }, 500);
+  }, []);
 
-  // Scroll handler: scrollY + progress в onScroll, триггер на onEndDrag.
-  const onScroll = useAnimatedScrollHandler({
+  // Сброс скролла Поиска при выходе из Маркета. Делаем через useEffect
+  // (а не внутри triggerExit), потому что:
+  //   • triggerExit зовётся через runOnJS из worklet'а — иногда scrollToOffset
+  //     не успевает приклеиться, если FlatList в этот момент перерисовывается.
+  //   • useEffect гарантированно срабатывает ПОСЛЕ React commit'а
+  //     setCommitted(false), когда дерево уже стабильно.
+  //   • requestAnimationFrame даёт ещё один кадр на устаканивание layout'а.
+  //   • Используем И scrollToOffsetRef И scrollToTopRef для надёжности —
+  //     если один не подцепился, другой сработает.
+  const prevCommittedRef = useRef(initialCommitted);
+  useEffect(() => {
+    const wasCommitted = prevCommittedRef.current;
+    prevCommittedRef.current = committed;
+    if (wasCommitted && !committed) {
+      requestAnimationFrame(() => {
+        scrollToOffsetRef.current?.(0, false);
+        scrollToTopRef.current?.();
+      });
+    }
+  }, [committed]);
+
+  const COMMIT_DISTANCE = 110;
+  const EXIT_COMMIT_DISTANCE = 110;
+  const SPRING_CONFIG = { damping: 22, stiffness: 200, mass: 0.7, overshootClamping: true };
+  const homeGate = useSharedValue(0);
+
+  // Search-side: overdrag в самом низу → pullFraction. На release при ≥1
+  // флипаем committed=true и стартуем spring committedAnim → 1. СЛОЙ САМ
+  // приезжает; жест его не двигает.
+  const onScrollSearch = useAnimatedScrollHandler({
     onScroll: (e) => {
+      if (homeGate.value === 0) return;
+      if (committedSv.value === 1) return;
+      if (dragging.value === 0) return;
       const y = e.contentOffset.y;
-      scrollY.value = y;
-      const marketY = transitionEndY.value;
-      if (marketY > 50000) {
-        // MarketSection не отмерян → выключаем progress
-        gestureVisibility.value = 0;
-        gestureProgress.value = 0;
-        return;
-      }
-
-      // Entry zone: scrollY в [marketY-200, marketY-20]. Progress 0→1.
-      const entryStart = marketY - 200;
-      const entryTarget = marketY - 20;
-      // Exit zone: hysteresis — открывается ТОЛЬКО когда юзер глубоко
-      // в Маркете (scrollY > marketY+250). Иначе при snap'е к marketY
-      // юзер сразу попадает в exit zone с progress=1 и отпускание
-      // пальца триггерит exit обратно. Это был crash-like баг
-      // (юзер думал что приложение вылетает — на деле бесконечная
-      // лента enter→exit→enter→...).
-      const exitStart = marketY + 240;
-      const exitTarget = marketY + 90;
-
-      // dragGuard: visibility = baseVis * isDragging.value. Без drag
-      // prompt в покое не висит.
-      const drag = isDragging.value;
-
-      if (y >= entryStart && y < marketY - 5) {
-        const p = interpolate(y, [entryStart, entryTarget], [0, 1], {
-          extrapolateLeft: 'clamp',
-          extrapolateRight: 'clamp',
-        });
-        gestureProgress.value = p;
-        const baseVis = interpolate(
-          y,
-          [entryStart - 20, entryStart + 30],
-          [0, 1],
-          { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' },
-        );
-        gestureVisibility.value = baseVis * drag;
-        if (zoneMarker.value !== 1) {
-          zoneMarker.value = 1;
-          runOnJS(setGestureMode)('entry');
-        }
-      } else if (y <= exitStart && y > marketY + 50) {
-        const p = interpolate(y, [exitStart, exitTarget], [0, 1], {
-          extrapolateLeft: 'clamp',
-          extrapolateRight: 'clamp',
-        });
-        gestureProgress.value = p;
-        const baseVis = interpolate(
-          y,
-          [exitStart + 20, exitStart - 30],
-          [0, 1],
-          { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' },
-        );
-        gestureVisibility.value = baseVis * drag;
-        if (zoneMarker.value !== 2) {
-          zoneMarker.value = 2;
-          runOnJS(setGestureMode)('exit');
-        }
-      } else {
-        gestureVisibility.value = 0;
-        gestureProgress.value = 0;
-        if (zoneMarker.value !== 0) {
-          zoneMarker.value = 0;
-        }
-      }
+      const maxY = Math.max(0, e.contentSize.height - e.layoutMeasurement.height);
+      const overdrag = Math.max(0, y - maxY);
+      pullFraction.value = Math.min(1.25, overdrag / COMMIT_DISTANCE);
     },
     onBeginDrag: () => {
-      isDragging.value = 1;
+      if (homeGate.value === 0 || committedSv.value === 1) return;
+      dragging.value = 1;
+      lastHapticStep.value = -1;
     },
-    onEndDrag: (e) => {
-      isDragging.value = 0;
-      // visibility сбросится на следующем onScroll callback'е (он fires
-      // ещё несколько раз пока inertia крутит). На всякий случай явно:
-      gestureVisibility.value = 0;
-      const marketY = transitionEndY.value;
-      if (marketY > 50000) return;
-      // Триггер только если progress >= 1 AND scrollY всё ещё в zone.
-      // Иначе юзер начал скролл, попал в zone, ушёл из неё, отпустил —
-      // и трип не должен сработать.
-      const y = e.contentOffset.y;
-      const p = gestureProgress.value;
-      if (p < 1) return;
-      // ENTRY (scrollY ниже marketY на момент release)
-      if (y < marketY - 5) {
-        runOnJS(triggerEnterMarket)();
-      } else if (y > marketY + 50) {
-        // EXIT (scrollY выше marketY+50)
-        runOnJS(triggerExitMarket)();
+    onEndDrag: () => {
+      if (homeGate.value === 0 || committedSv.value === 1) return;
+      dragging.value = 0;
+      if (pullFraction.value >= 1) {
+        // Threshold crossed → flip state + start auto-slide.
+        runOnJS(triggerCommit)();
+        committedAnim.value = withSpring(1, SPRING_CONFIG);
+        pullFraction.value = withTiming(0, { duration: 260 });
+      } else {
+        if (pullFraction.value > 0.2) runOnJS(fireMiss)();
+        pullFraction.value = withTiming(0, { duration: 260 });
       }
     },
   });
 
-  // Throttle save: запускаем JS-функцию не чаще раз в 800 ms.
-  // useDerivedValue + runOnJS — стандартный паттерн Reanimated.
-  useDerivedValue(() => {
-    // Threshold для exit-button: показываем когда юзер ≥1200 px вниз
-    const shouldShowExit = scrollY.value > 1200;
-    runOnJS(setExitVisible)(shouldShowExit);
-  }, []);
-
-  // ──────────────────────────────────────────────────────────────────
-  // Speed-bump: реальное «сопротивление» переходу в Маркет.
-  // Когда юзер пересекает RESISTANCE_BUMP_Y (~340 px) ПЕРВЫЙ раз за сессию —
-  // делаем 1 раз: heavy haptic + scrollTo обратно на BUMP_Y - 60.
-  // Эффект: контент чуть дёрнулся вниз, юзер чувствует «следующий уровень»
-  // и должен ещё раз свайпнуть, чтобы переехать в маркет.
-  // Идея: silent messages в Instagram (надо тянуть с усилием).
-  // Без повторов: bumpedRef.current флаг ставится после первого срабатывания.
-  // ──────────────────────────────────────────────────────────────────
-  // ──────────────────────────────────────────────────────────────────
-  // Silent-messages-стиль переход «Поиск ⇄ Маркет».
-  // - В transition-зоне снизу/сверху появляется MarketGesturePrompt
-  //   (круг прогресса + копи). progress.value = насколько глубоко вошёл.
-  // - При отпускании пальца (onScrollEndDrag в onScroll handler выше):
-  //   если progress >= 1 → snap (enterMarket / exitMarket) + heavy haptic.
-  // - Если меньше — overshoot затухает естественно, prompt скрывается.
-  // ──────────────────────────────────────────────────────────────────
-  const triggerEnterMarket = useCallback(() => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy).catch(() => {});
-    scrollToOffsetRef.current?.(marketSectionYRef.current, true);
-  }, []);
-
-  const triggerExitMarket = useCallback(() => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy).catch(() => {});
-    scrollToOffsetRef.current?.(0, true);
-  }, []);
-
-  // ?focus=market — пришли из OffersBlock «Открыть Маркет» с record-screen.
-  // Скроллим после того как MarketSection отмеряна (onLayout заполнил
-  // marketSectionYRef). Используем интервальный поллинг до 1.5 сек:
-  // layout-event может опоздать после mount.
-  const focusedOnceRef = useRef(false);
-  useEffect(() => {
-    if (focus !== 'market' || focusedOnceRef.current) return;
-    let attempt = 0;
-    const tryScroll = setInterval(() => {
-      attempt++;
-      const y = marketSectionYRef.current;
-      if (y > 50 && scrollToOffsetRef.current) {
-        focusedOnceRef.current = true;
-        scrollToOffsetRef.current(y, true);
-        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
-        clearInterval(tryScroll);
-      } else if (attempt > 15) {
-        clearInterval(tryScroll);
+  // Market-side: overdrag в самом верху → pullFraction. На release при ≥1
+  // флипаем committed=false и стартуем spring committedAnim → 0.
+  const onScrollMarket = useAnimatedScrollHandler({
+    onScroll: (e) => {
+      if (committedSv.value === 0) return;
+      if (dragging.value === 0) return;
+      const overdrag = Math.max(0, -e.contentOffset.y);
+      pullFraction.value = Math.min(1.25, overdrag / EXIT_COMMIT_DISTANCE);
+    },
+    onBeginDrag: () => {
+      if (committedSv.value === 0) return;
+      dragging.value = 1;
+      lastHapticStep.value = -1;
+    },
+    onEndDrag: () => {
+      if (committedSv.value === 0) return;
+      dragging.value = 0;
+      if (pullFraction.value >= 1) {
+        runOnJS(triggerExit)();
+        committedAnim.value = withSpring(0, SPRING_CONFIG);
+        pullFraction.value = withTiming(0, { duration: 260 });
+      } else {
+        if (pullFraction.value > 0.2) runOnJS(fireMiss)();
+        pullFraction.value = withTiming(0, { duration: 260 });
       }
-    }, 100);
-    return () => clearInterval(tryScroll);
-  }, [focus]);
+    },
+  });
 
-  // (sticky-header useDerivedValue удалён вместе с overlay'ем)
+  // ─── Layer animated style: только Market layer движется ────────────
+  const SCREEN_H = Dimensions.get('window').height;
 
-  // Debounced save scrollY → Zustand persist. Запускаем через ref'ный timer.
-  const savePosTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  useDerivedValue(() => {
-    const y = scrollY.value;
-    runOnJS(scheduleSaveScrollY)(y);
-  }, []);
-  function scheduleSaveScrollY(y: number) {
-    if (savePosTimer.current) clearTimeout(savePosTimer.current);
-    savePosTimer.current = setTimeout(() => {
-      setPersistedScrollY(y);
-    }, 800);
-  }
-  useEffect(() => () => {
-    if (savePosTimer.current) clearTimeout(savePosTimer.current);
-  }, []);
+  const marketLayerStyle = useAnimatedStyle(() => {
+    const c = committedAnim.value;
+    return {
+      transform: [{ translateY: (1 - c) * SCREEN_H }],
+    };
+  });
 
-  // На mount — если sticky position > 0, scrollTo сразу без анимации
-  // (юзер должен оказаться там же где был).
-  useEffect(() => {
-    if (persistedScrollY > 0 && scrollToTopRef.current === null) {
-      // scrollToTopRef ещё null — RecordGrid не смонтировался.
-      // Поднимем флаг и попробуем после первого render через requestAnimationFrame.
-    }
-    // Реальный restore — отдельный effect ниже когда ref готов
-  }, []);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  useEffect(() => {
-    const t = setTimeout(() => {
-      if (persistedScrollY > 0) {
-        // Восстановление через scrollToTopRef работает только если переданная
-        // функция = scrollToOffset(0). Для restored позиции нужен прямой
-        // FlatList ref — оставим improvement на следующий заход.
-        // Сейчас: если sticky был, фон уже знает (scrollY.value initialized
-        // как persistedScrollY), но контент покажется со скроллом 0.
-      }
-    }, 50);
-    return () => clearTimeout(t);
-  }, [persistedScrollY]);
+  // CTA-блок — больше не фейдится. Юзер видит как прогресс-бар внутри
+  // блока наполняется по мере pull'а. Subtle scale-up на 100% — тактильный
+  // отклик «готово, можно отпускать».
+  const curtainLabelStyle = useAnimatedStyle(() => {
+    const p = Math.min(1, pullFraction.value);
+    return {
+      transform: [
+        { scale: interpolate(p, [0, 1], [1, 1.02], Extrapolation.CLAMP) },
+      ],
+    };
+  });
+
+  // Fill-полоска: scaleX от 0 (нет pull'а) до 1 (commit-порог).
+  const ctaProgressFillStyle = useAnimatedStyle(() => {
+    return {
+      transform: [{ scaleX: Math.min(1, pullFraction.value) }],
+    };
+  });
 
   const handleNewReleasePick = useCallback((r: PublicProfileRecord) => {
     router.push(`/record/${r.id}`);
@@ -644,22 +521,13 @@ export default function SearchScreen() {
   }, [router]);
 
   const handleMarketShowAll = useCallback(() => {
-    // «Смотреть все →» — то же что отпустить палец с полным progress'ом:
-    // auto-scroll прямо к MarketSection + heavy haptic.
-    triggerEnterMarket();
-  }, [triggerEnterMarket]);
-
-  const handleMarketSectionLayout = useCallback((e: LayoutChangeEvent) => {
-    // y относительно FlatList'а. ListHeaderComponent рендерится внутри
-    // FlatList → onLayout даёт корректный absolute y от начала контента.
-    const y = e.nativeEvent.layout.y;
-    marketSectionYRef.current = y;
-    // Transition zone узкая (180 px) и привязана к РЕАЛЬНОЙ позиции Маркета.
-    // Раньше [400, 700] (static) — фон зажигался когда юзер скроллил длинную
-    // историю/новинки, ещё до Маркета.
-    transitionStartY.value = Math.max(0, y - 200);
-    transitionEndY.value = y - 20;
-  }, [transitionStartY, transitionEndY]);
+    // «Смотреть все →» — тот же auto-slide что и при overdrag-commit'е.
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
+    setCommitted(true);
+    committedAnim.value = withSpring(1, {
+      damping: 22, stiffness: 200, mass: 0.7, overshootClamping: true,
+    });
+  }, [committedAnim]);
 
   const handleSearch = useCallback(async () => {
     const trimmed = searchInput.trim();
@@ -915,6 +783,12 @@ export default function SearchScreen() {
 
   // Домашний экран Поиска: ввод пустой, результатов нет — рендерим секции (история + новинки)
   const isHomeView = searchInput === '' && results.length === 0 && artistResults.length === 0;
+  // Синхронизируем JS-флаг с worklet-gate, чтобы overdrag-commit срабатывал
+  // только в home-view (не в результатах поиска).
+  useEffect(() => {
+    homeGate.value = isHomeView ? 1 : 0;
+    if (!isHomeView) pullFraction.value = 0;
+  }, [isHomeView, homeGate, pullFraction]);
   // История появляется только после взаимодействия с полем (showHistory выставляется в onFocus)
   const shouldShowHistory = isHomeView && showHistory && searchHistory.length > 0;
 
@@ -1018,50 +892,21 @@ export default function SearchScreen() {
         </Section>
       )}
 
-      {/*
-        МАРКЕТ — раздел «потайной двери».
-        Spacer 280dp перед секцией физически удерживает юзера в transition-zone
-        ([400, 700] scrollY). Без него Маркет начинается сразу после Discogs-
-        секций — на светлом фоне без magic-transition.
-        MARKET_AND_PRICE_DRAWER.md §1.3.
-      */}
-      {/* Placeholder «Введите название» — раньше жил в самом низу контента
-          (за tab-bar'ом, не виден). Теперь между «Новинками» и Маркетом —
-          юзер видит подсказку до того, как провалится в Маркет. */}
-      <View style={styles.searchHintBlock}>
-        <Icon name="search" size={20} color={Colors.royalBlue} />
-        <Text style={styles.searchHintText}>
-          Введите название альбома, артиста или @username — поиск ищет по Discogs и каталогу.
-        </Text>
-      </View>
-
-      {marketStores.length > 0 && <View style={styles.marketSpacer} />}
-      {marketStores.length > 0 && (
-        <View onLayout={handleMarketSectionLayout}>
-          <MarketSection
-            stores={isMarketSearchActive ? [] : marketStores}
-            searchValue={marketSearch}
-            onSearchChange={setMarketSearch}
-            formatFilter={marketFormatFilter}
-            onFormatChange={setMarketFormatFilter}
-            totalStores={marketStores.length}
-            totalItems={marketStores.reduce((sum, s) => sum + s.totalCount, 0)}
-            onStorePress={(slug) => router.push(`/market/store/${slug}` as any)}
-            onItemPress={(item) => router.push(`/record/${item.id}` as any)}
-            headerPaddingTop={20}
-          />
-          {isMarketSearchActive && (
-            <MarketSearchResults
-              loading={marketSearchLoading}
-              query={marketSearch}
-              items={marketSearchItems}
-              onItemPress={(item) =>
-                router.push(`/record/${item.discogs_id ?? item.record_id}` as any)
-              }
-            />
-          )}
+      {/* Curtain CTA — юзер прокручивает сюда, видит подсказку с
+          progress-баром, продолжая тянуть → bar заполняется → на 100%
+          haptic-success → release → auto-slide-in. */}
+      <Reanimated.View style={[styles.searchHintBlock, curtainLabelStyle]}>
+        <View style={styles.searchHintRow}>
+          <Icon name="chevron-down" size={20} color={Colors.royalBlue} />
+          <Text style={styles.searchHintText}>
+            Прокрути вниз, чтобы попасть в <Text style={styles.searchHintBrand}>Маркет</Text>
+          </Text>
         </View>
-      )}
+        {/* Progress-бар внизу CTA. Полностью заполнен на 100% pull'а. */}
+        <View style={styles.searchHintProgressTrack} pointerEvents="none">
+          <Reanimated.View style={[styles.searchHintProgressFill, ctaProgressFillStyle]} />
+        </View>
+      </Reanimated.View>
     </View>
   ) : null;
 
@@ -1510,62 +1355,59 @@ export default function SearchScreen() {
 
   return (
     <View style={styles.container}>
-      {/* Magic-transition фон — двухслойный, driven by scrollY SharedValue.
-          Виден через прозрачные участки RecordGrid (фон у container — Colors.background
-          ниже, но он переопределяется absolute MarketBackground'ом для magic-transition).
-          MARKET_AND_PRICE_DRAWER.md §1.3. */}
-      <MarketBackground
-        scrollY={scrollY}
-        transitionStartY={transitionStartY}
-        transitionEndY={transitionEndY}
-      />
-
-      <KeyboardAvoidingView
-        style={[styles.flex, { paddingTop: insets.top, backgroundColor: 'transparent' }]}
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      {/* Слой Поиска (нижний). Не движется — статичен. Полностью покрывается
+          Маркет-слоем когда тот наезжает сверху. */}
+      <View
+        pointerEvents={committed ? 'none' : 'auto'}
+        style={StyleSheet.absoluteFill}
       >
-        <RecordGrid
-          data={isUserSearch ? [] : results}
-          onRecordPress={handleRecordPress}
-          onArtistPress={handleArtistNamePress}
-          onAddToCollection={handleAddToCollection}
-          onAddToWishlist={handleAddToWishlist}
-          showActions
-          isLoading={isUserSearch ? false : isLoading}
-          onEndReached={!isUserSearch && hasMore ? () => {
-            if (loadMoreTimer.current) clearTimeout(loadMoreTimer.current);
-            loadMoreTimer.current = setTimeout(loadMore, 300);
-          } : undefined}
-          emptyMessage=""
-          ListHeaderComponent={HeaderContent}
-          cardVariant="compact"
-          onScroll={onScroll}
-          scrollToTopRef={scrollToTopRef}
-          scrollToOffsetRef={scrollToOffsetRef}
+        {/* Фон Поиска */}
+        <MarketBackground forcedMode="search" />
+
+        <KeyboardAvoidingView
+          style={[styles.flex, { paddingTop: insets.top, backgroundColor: 'transparent' }]}
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        >
+          <RecordGrid
+            data={isUserSearch ? [] : results}
+            onRecordPress={handleRecordPress}
+            onArtistPress={handleArtistNamePress}
+            onAddToCollection={handleAddToCollection}
+            onAddToWishlist={handleAddToWishlist}
+            showActions
+            isLoading={isUserSearch ? false : isLoading}
+            onEndReached={!isUserSearch && hasMore ? () => {
+              if (loadMoreTimer.current) clearTimeout(loadMoreTimer.current);
+              loadMoreTimer.current = setTimeout(loadMore, 300);
+            } : undefined}
+            emptyMessage=""
+            ListHeaderComponent={HeaderContent}
+            cardVariant="compact"
+            onScroll={onScrollSearch}
+            scrollToTopRef={scrollToTopRef}
+            scrollToOffsetRef={scrollToOffsetRef}
+          />
+
+          {FilterModal}
+        </KeyboardAvoidingView>
+      </View>
+
+      {/* Слой Маркета (верхний). При committedAnim=0 целиком под экраном
+          (translateY=SCREEN_H). На commit'е сам spring'ом приезжает к 0,
+          накрывая Поиск. У слоя свой собственный MarketBackground — никакого
+          cross-fade с Поиском, чистый slide-up. */}
+      <Reanimated.View
+        pointerEvents={committed ? 'auto' : 'none'}
+        style={[StyleSheet.absoluteFill, marketLayerStyle]}
+      >
+        <MarketBackground forcedMode="market" />
+        <MarketMain
+          onScroll={onScrollMarket}
+          scrollEnabled={committed}
+          paddingTop={insets.top + 8}
+          pullFraction={pullFraction}
         />
-
-        {FilterModal}
-      </KeyboardAvoidingView>
-
-      {/* Silent-messages-стиль gesture-prompt с круговым прогресс-индикатором.
-          Появляется в transition-zone, фейдится по visibility, копи
-          переключается по progress (pending→armed). Триггер действия —
-          в onEndDrag scroll-handler выше. */}
-      {marketStores.length > 0 && !isUserSearch && (
-        <MarketGesturePrompt
-          progress={gestureProgress}
-          visibility={gestureVisibility}
-          mode={gestureMode}
-          position={gestureMode === 'exit' ? 'top' : 'bottom'}
-        />
-      )}
-
-      {/* Floating «↑ Выйти из Маркета» — появляется когда scrollY > 1200.
-          MARKET_AND_PRICE_DRAWER.md §1.5. */}
-      <ExitMarketButton
-        visible={exitVisible}
-        onPress={() => scrollToTopRef.current?.()}
-      />
+      </Reanimated.View>
     </View>
   );
 }
@@ -1580,31 +1422,55 @@ const styles = StyleSheet.create({
   flex: {
     flex: 1,
   },
-  // Spacer перед Маркет-секцией: вытягивает MarketSection в transition-zone
-  // (scrollY > 400), иначе magic-transition фона не успевает сработать —
-  // юзер сразу видит Маркет на светлом Discogs-фоне.
-  marketSpacer: {
-    height: 280,
-  },
+  // Curtain CTA — юзер скроллит сюда, продолжает тянуть → progress внизу
+  // блока наполняется до 100% → commit запускает in-place slide-up Маркет-
+  // слоя. overflow:hidden — чтобы fill-bar не вылезал из rounded corners.
   searchHintBlock: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
     marginHorizontal: Spacing.md,
     marginTop: Spacing.lg,
-    marginBottom: Spacing.sm,
+    marginBottom: Spacing.md,
     paddingVertical: 14,
     paddingHorizontal: 14,
     backgroundColor: 'rgba(59, 75, 245, 0.06)',
     borderRadius: BorderRadius.md,
     borderWidth: 1,
     borderColor: 'rgba(59, 75, 245, 0.10)',
+    overflow: 'hidden',
+  },
+  searchHintRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 10,
   },
   searchHintText: {
     ...Typography.caption,
     color: Colors.textSecondary,
-    flex: 1,
     lineHeight: 16,
+  },
+  searchHintBrand: {
+    fontFamily: 'Inter_700Bold',
+    color: Colors.royalBlue,
+    fontWeight: '700',
+  },
+  // Тонкий progress track внизу CTA, absolute — без влияния на layout.
+  searchHintProgressTrack: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    height: 3,
+    backgroundColor: 'rgba(59, 75, 245, 0.10)',
+  },
+  searchHintProgressFill: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    bottom: 0,
+    width: '100%',
+    backgroundColor: Colors.royalBlue,
+    // @ts-ignore transformOrigin поддерживается RN 0.71+
+    transformOrigin: 'left',
   },
   searchContainer: {
     paddingBottom: Spacing.md,

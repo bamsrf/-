@@ -68,6 +68,13 @@ interface MarketBackgroundProps {
    */
   transitionStartY?: SharedValue<number>;
   transitionEndY?: SharedValue<number>;
+  /**
+   * Альтернатива scrollY: прогресс curtain'а 0..1 (0=поиск, 1=маркет).
+   * Когда передан — переопределяет scrollY-логику. Используется в (tabs)/search
+   * после перехода на commit-жест: фон Маркета зажигается по progress'у самого
+   * жеста, а не по scroll-позиции FlatList'а.
+   */
+  progress?: SharedValue<number>;
 }
 
 /**
@@ -79,6 +86,7 @@ export function MarketBackground({
   forcedMode,
   transitionStartY,
   transitionEndY,
+  progress,
 }: MarketBackgroundProps) {
   // Если scrollY не передан — создаём фейковый SharedValue,
   // чтобы хуки выше не нарушали правил React.
@@ -88,11 +96,22 @@ export function MarketBackground({
   const fallbackEndY = useSharedValue(TRANSITION_END_Y);
   const startY = transitionStartY ?? fallbackStartY;
   const endY = transitionEndY ?? fallbackEndY;
+  const fallbackProgress = useSharedValue(0);
+  const progressSv = progress ?? fallbackProgress;
+  const useProgress = progress !== undefined;
 
   const searchAnimStyle = useAnimatedStyle(() => {
     if (forcedMode === 'search') return { opacity: 1 };
     if (forcedMode === 'market') return { opacity: 0 };
     if (forcedMode === 'mid') return { opacity: 0.5 };
+    if (useProgress) {
+      return {
+        opacity: interpolate(progressSv.value, [0, 1], [1, 0], {
+          extrapolateLeft: 'clamp',
+          extrapolateRight: 'clamp',
+        }),
+      };
+    }
     return {
       opacity: interpolate(
         scrollY.value,
@@ -107,6 +126,14 @@ export function MarketBackground({
     if (forcedMode === 'search') return { opacity: 0 };
     if (forcedMode === 'market') return { opacity: 1 };
     if (forcedMode === 'mid') return { opacity: 0.5 };
+    if (useProgress) {
+      return {
+        opacity: interpolate(progressSv.value, [0, 1], [0, 1], {
+          extrapolateLeft: 'clamp',
+          extrapolateRight: 'clamp',
+        }),
+      };
+    }
     return {
       opacity: interpolate(
         scrollY.value,
@@ -123,6 +150,17 @@ export function MarketBackground({
   const softOverlayStyle = useAnimatedStyle(() => {
     if (forcedMode === 'mid') return { opacity: 1 };
     if (forcedMode) return { opacity: 0 };
+    if (useProgress) {
+      // Cobalt-tint peak в середине жеста — добавляет глубины commit'у.
+      return {
+        opacity: interpolate(
+          progressSv.value,
+          [0, 0.5, 1],
+          [0, 0.30, 0],
+          { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' },
+        ),
+      };
+    }
     // Soft cobalt-overlay видим только в transition-zone, peak в середине.
     const midY = (startY.value + endY.value) / 2;
     return {

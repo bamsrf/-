@@ -16,6 +16,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   FlatList,
   Image,
+  Keyboard,
   Pressable,
   StyleSheet,
   Text,
@@ -186,6 +187,7 @@ export default function StorePage() {
           value={searchValue}
           onChangeText={setSearchValue}
           placeholder={`Найти в ${displayName}…`}
+          onSubmit={Keyboard.dismiss}
         />
         <FormatChips value={format} onChange={setFormat} />
       </View>
@@ -254,13 +256,13 @@ export default function StorePage() {
         contentContainerStyle={styles.listContent}
         ListEmptyComponent={
           loading ? null : (
-            <View style={styles.empty}>
+            <Pressable style={styles.empty} onPress={Keyboard.dismiss}>
               <Text style={styles.emptyText}>
                 {searchValue.length >= 2
                   ? `Ничего не найдено по «${searchValue}»`
                   : 'В магазине пока нет товаров с выбранным фильтром'}
               </Text>
-            </View>
+            </Pressable>
           )
         }
         ListFooterComponent={
@@ -269,10 +271,13 @@ export default function StorePage() {
         onEndReached={loadMore}
         onEndReachedThreshold={0.4}
         showsVerticalScrollIndicator={false}
-        // Без этого: data меняется на каждый refetch → FlatList re-render
-        // → input теряет focus → клавиатура дисмиссит при каждой букве.
+        // keyboardShouldPersistTaps="always" — иначе тап по карточке при
+        // открытой клавиатуре сначала её закрывает, а только потом срабатывает.
+        // keyboardDismissMode="on-drag" — драг списка прячет клавиатуру.
+        // Re-render списка на refetch не дисмиссит focus, потому что debouncedQuery
+        // обновляется только через 400ms тишины (см. useEffect выше).
         keyboardShouldPersistTaps="always"
-        keyboardDismissMode="none"
+        keyboardDismissMode="on-drag"
       />
     </View>
   );

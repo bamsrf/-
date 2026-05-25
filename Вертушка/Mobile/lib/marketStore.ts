@@ -2,17 +2,20 @@
  * Zustand-store для UX-состояний Маркета (раздел в (tabs)/search.tsx).
  *
  * Persisted через AsyncStorage:
- *   - searchScrollY — последняя Y-позиция скролла на экране поиска.
- *     Решает требование «потайная дверь остаётся открытой»: если юзер один
- *     раз опустил Маркет, при следующем заходе он сразу попадает туда
- *     (фон + sticky-header применяются на mount без flicker'а).
+ *   - committed — флаг «юзер сейчас в Маркете» (после curtain-commit'а).
+ *     Используется для:
+ *       a) тинта tab-иконки Search;
+ *       b) восстановления режима при reopen экрана — если юзер закрыл
+ *          приложение в Маркете, при следующем mount'е (tabs)/search
+ *          сразу рендерит Маркет-слой без curtain-анимации.
  *
  *   - hasSeenSwipeHint — флаг, что юзер уже видел pulse-подсказку на язычке
  *     вишлиста (Фича 5 swipe-сравнения). Pulse анимация играет один раз
  *     при первом открытии вишлиста с offers, потом не повторяется.
  *
- * isInMarket — derived selector (не персистится, вычисляется из scrollY).
- * Используется для тинта tab-иконки Search когда юзер «в Маркете».
+ *   - hasSeenCurtainHint — флаг, что юзер уже один раз успешно потянул
+ *     curtain'у. Используется чтобы первая сессия показывала чуть более
+ *     яркий tab-affordance, последующие — компактный.
  *
  * Источник: docs/plans/MARKET_AND_PRICE_DRAWER.md §1.4 + §2.1.
  */
@@ -20,59 +23,64 @@ import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
-// Порог в Y-px, выше которого считаем что юзер «в Маркете».
-// Соответствует tail magic-transition (≈ 700 + первый разворот витрины ≈ 200).
-export const MARKET_THRESHOLD_Y = 900;
-
-// Порог сброса: если юзер вернулся выше — sticky обнуляется. Защита от
-// «один раз случайно опустил — теперь всегда открыто». Чуть ниже верха
-// Discogs-секций, чтобы случайные микро-скроллы не сбрасывали.
-const RESET_THRESHOLD_Y = 100;
-
 interface MarketState {
-  /** Последняя Y-позиция на (tabs)/search.tsx (persisted). */
-  searchScrollY: number;
-  setSearchScrollY: (y: number) => void;
+  /** Юзер сейчас «в Маркете» (после успешного curtain-commit'а). */
+  committed: boolean;
+  setCommitted: (v: boolean) => void;
 
   /** Юзер уже видел pulse-анимацию язычка swipe-сравнения. */
   hasSeenSwipeHint: boolean;
   markSwipeHintSeen: () => void;
 
-  /** Derived: считаем что юзер прямо сейчас в маркет-разделе. */
+  /** Юзер уже хоть раз дёргал curtain'у — affordance можно сделать компактнее. */
+  hasSeenCurtainHint: boolean;
+  markCurtainHintSeen: () => void;
+
+  /** Derived: alias для committed (сохраняем имя для существующих call-site'ов). */
   isInMarket: () => boolean;
 }
 
 export const useMarketStore = create<MarketState>()(
   persist(
     (set, get) => ({
-      searchScrollY: 0,
+      committed: false,
       hasSeenSwipeHint: false,
+      hasSeenCurtainHint: false,
 
-      setSearchScrollY: (y: number) => {
-        // Защита: если юзер ушёл выше RESET_THRESHOLD — обнуляем sticky.
-        // Иначе сохраняем последнюю позицию.
-        if (y <= RESET_THRESHOLD_Y) {
-          if (get().searchScrollY !== 0) set({ searchScrollY: 0 });
-        } else {
-          // Не пишем на каждый микро-скролл — throttle на стороне вызывающего
-          // (debounced в MarketBackground через useDerivedValue + runOnJS).
-          set({ searchScrollY: y });
+      setCommitted: (v: boolean) => {
+        if (get().committed !== v) {
+          set({ committed: v });
+          if (v && !get().hasSeenCurtainHint) set({ hasSeenCurtainHint: true });
         }
       },
 
       markSwipeHintSeen: () => set({ hasSeenSwipeHint: true }),
+      markCurtainHintSeen: () => set({ hasSeenCurtainHint: true }),
 
-      isInMarket: () => get().searchScrollY >= MARKET_THRESHOLD_Y,
+      isInMarket: () => get().committed,
     }),
     {
       name: 'vertushka-market',
       storage: createJSONStorage(() => AsyncStorage),
-      // Версия для miграций — поднимать при breaking-изменении схемы.
-      version: 1,
-      // hasSeenSwipeHint достаточно сериализовать вместе с searchScrollY.
+      // v2 — переход с searchScrollY-coupled модели на committed-флаг.
+      // Старое поле searchScrollY больше не нужно, migrate его в committed:
+      // если scrollY >= 900 → юзер был в Маркете → committed=true.
+      version: 2,
+      migrate: (persistedState: any, fromVersion) => {
+        if (fromVersion < 2 && persistedState) {
+          const oldScrollY = Number(persistedState.searchScrollY ?? 0);
+          return {
+            committed: oldScrollY >= 900,
+            hasSeenSwipeHint: !!persistedState.hasSeenSwipeHint,
+            hasSeenCurtainHint: false,
+          };
+        }
+        return persistedState as MarketState;
+      },
       partialize: (state) => ({
-        searchScrollY: state.searchScrollY,
+        committed: state.committed,
         hasSeenSwipeHint: state.hasSeenSwipeHint,
+        hasSeenCurtainHint: state.hasSeenCurtainHint,
       }),
     },
   ),

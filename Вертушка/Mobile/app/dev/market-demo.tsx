@@ -5,7 +5,7 @@
  *   - magic-transition фона при скролле (Discogs-мир → market-мир)
  *   - Hot Stock pill во всех 6 состояниях (на верхнем секшене как showcase)
  *   - MarketSection полностью (header + поиск + чипы + витрины 3 магазинов)
- *   - ExitMarketButton который появляется на scrollY > 1200
+ *   - Curtain-affordance больше не на этом demo-стенде
  *   - Sticky compact header который кросс-фейдится поверх hero
  *
  * Ссылка для открытия (после релоада Metro):
@@ -18,9 +18,7 @@ import React, { useMemo, useRef, useState } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import Animated, {
   useAnimatedScrollHandler,
-  useDerivedValue,
   useSharedValue,
-  runOnJS,
 } from 'react-native-reanimated';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
@@ -30,7 +28,6 @@ import MarketBackground, {
 import MarketSection, {
   type MarketStoreData,
 } from '../../components/market/MarketSection';
-import ExitMarketButton from '../../components/market/ExitMarketButton';
 import HotStockTag from '../../components/HotStockTag';
 import { type MarketFormat } from '../../components/market/FormatChips';
 import { type MarketCarouselCardData } from '../../components/market/MarketCarouselCard';
@@ -74,25 +71,11 @@ export default function MarketDemoScreen() {
 
   const [searchValue, setSearchValue] = useState('');
   const [format, setFormat] = useState<MarketFormat>('all');
-  const [exitVisible, setExitVisible] = useState(false);
-
   const onScroll = useAnimatedScrollHandler({
     onScroll: (e) => {
       scrollY.value = e.contentOffset.y;
     },
   });
-
-  // Threshold для exit-button (scrollY > 1200, см. MarketBackground spec).
-  // useDerivedValue + runOnJS — стандартный паттерн Reanimated для bridging
-  // shared-state → React-state без на каждый frame setState.
-  useDerivedValue(() => {
-    const shouldShow = scrollY.value > 1200;
-    runOnJS(setExitVisible)(shouldShow);
-  }, []);
-
-  const handleExit = () => {
-    scrollRef.current?.scrollTo({ y: 0, animated: true });
-  };
 
   const hotStockShowcase = useMemo(
     () => (
@@ -170,8 +153,6 @@ export default function MarketDemoScreen() {
         <View style={{ height: 200 }} />
       </Animated.ScrollView>
 
-      {/* Floating exit-button (показывается на scrollY > 1200) */}
-      <ExitMarketButton visible={exitVisible} onPress={handleExit} />
     </View>
   );
 }

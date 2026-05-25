@@ -82,7 +82,17 @@ export function MarketHeader({
     >
       <View style={styles.titleRow}>
         <Text style={styles.heroTitle}>МАРКЕТ</Text>
-        <Icon name="disc" size={30} color="accent" weight="duotone" />
+        {/* RubikMonoOne line-box выше визуальных глифов: cap-height ≈75% от
+            lineHeight, поэтому видимый центр текста сидит ВЫШЕ центра flex-
+            контейнера. Приподнимаем иконку на ~7px, чтобы оптически легла
+            на одну линию с текстом. */}
+        <Icon
+          name="disc"
+          size={30}
+          color="accent"
+          weight="duotone"
+          style={styles.heroDiscIcon}
+        />
       </View>
       <View style={styles.underline} />
       {subtitle && (
@@ -110,6 +120,10 @@ const styles = StyleSheet.create({
     textShadowColor: 'rgba(0,0,0,0.30)',
     textShadowOffset: { width: 0, height: 2 },
     textShadowRadius: 24,
+  },
+  heroDiscIcon: {
+    // Оптическая коррекция: визуально выровнять disc-иконку с глифами «МАРКЕТ».
+    transform: [{ translateY: -7 }],
   },
   underline: {
     width: 56,
