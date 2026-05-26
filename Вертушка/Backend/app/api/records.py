@@ -3,6 +3,7 @@ API для работы с пластинками
 """
 import asyncio
 import logging
+from datetime import datetime
 from uuid import UUID
 
 logger = logging.getLogger(__name__)
@@ -40,6 +41,7 @@ from app.services.discogs import DiscogsService
 from app.services.rate_limiter import Priority
 from app.services.artist_name import clean_artist_name
 from app.services.openai_vision import OpenAIVisionService, CoverRecognitionError
+from app.database import async_session_maker
 
 router = APIRouter()
 
@@ -215,10 +217,9 @@ async def _ensure_record_artist_data(record: Record, db: AsyncSession) -> None:
     """
     Обогащает запись данными артиста (artist_id, artist_thumb_image_url),
     если они отсутствуют в discogs_data. Обновляет запись в БД для кэширования.
+    Для store-native (нет discogs_id) пробует найти артиста через text-search.
     """
-    discogs_data = record.discogs_data
-    if not discogs_data:
-        return
+    discogs_data = record.discogs_data or {}
 
     # Уже есть данные артиста — ничего не делаем
     if discogs_data.get("artist_thumb_image_url"):
@@ -239,6 +240,24 @@ async def _ensure_record_artist_data(record: Record, db: AsyncSession) -> None:
         except Exception:
             logger.exception("Failed to fetch artist_id from Discogs for record %s", record.discogs_id)
             return
+
+    # Store-native fallback: ищем артиста по имени через /database/search?type=artist.
+    # Берём первый результат только если имя совпадает после нормализации,
+    # иначе можем подцепить рандомного однофамильца.
+    if not artist_id and record.artist:
+        try:
+            discogs = DiscogsService()
+            search_resp = await discogs.search_artists(record.artist, per_page=5)
+            wanted = record.artist.strip().lower()
+            for r in search_resp.results:
+                if r.name.strip().lower() == wanted:
+                    artist_id = r.artist_id
+                    break
+        except Exception:
+            logger.exception(
+                "Failed to search artist for store-native record %s (artist=%s)",
+                record.id, record.artist,
+            )
 
     if not artist_id:
         return
@@ -635,6 +654,75 @@ async def suggest(
         )
 
 
+async def _schedule_store_native_discogs_match(record_id: UUID) -> None:
+    """fire-and-forget: ищет Discogs match для store-native записи и сразу
+    safe_merge'ит при удаче. После — следующий просмотр /records/{id} вернёт
+    данные полноценной Discogs-записи (через follow merged_into_id).
+
+    Стратегия:
+      • запускается из get_record для source='store' без discogs_id_candidate;
+      • открывает свою DB-session чтобы не зависеть от scope endpoint'а;
+      • _try_discogs_fetch_by_text сам создаст Discogs Record при успехе;
+      • safe_merge_store_native_into перепривяжет листинги, soft-delete'ит
+        store-native через merged_into_id, пишет audit в record_merge_history;
+      • при rate-limit/ошибке тихо выходит — повтор через сутки в
+        daily_rematch_store_native (cron).
+    Защита от повторов: проверяем discogs_id_candidate IS NULL прямо перед
+    поиском (запрос мог отработать между моментом запуска и стартом задачи).
+    """
+    # Импорты внутри функции — listing_matcher импортирует из records.py
+    # косвенно, выносим во избежание потенциальных circular imports.
+    from app.services.listing_matcher import (
+        _try_discogs_fetch_by_text,
+        safe_merge_store_native_into,
+    )
+
+    try:
+        async with async_session_maker() as db:
+            res = await db.execute(select(Record).where(Record.id == record_id))
+            rec = res.scalar_one_or_none()
+            if rec is None or rec.source != "store":
+                return
+            if rec.merged_into_id is not None:
+                return
+            if rec.discogs_id_candidate:
+                return  # уже искали в предыдущий раз
+
+            found = await _try_discogs_fetch_by_text(
+                db,
+                artist=rec.artist,
+                title=rec.title,
+                year=rec.year,
+            )
+            if not (found and found.discogs_id and found.id != rec.id):
+                # Записываем «искали — не нашли», чтобы не долбить Discogs
+                # при каждом просмотре. discogs_id_candidate остаётся NULL,
+                # но first_seen_at = now становится маркером попытки.
+                rec.discogs_id_candidate_first_seen_at = datetime.utcnow()
+                await db.commit()
+                return
+
+            rec.discogs_id_candidate = found.discogs_id
+            rec.discogs_id_candidate_first_seen_at = datetime.utcnow()
+            rec.discogs_id_candidate_confirmations = 1
+
+            # On-demand merge: один confirmation достаточен, потому что юзер
+            # уже смотрит карточку — задержки в 2 дня для cron'а здесь нет смысла.
+            merge_res = await safe_merge_store_native_into(
+                rec, found.discogs_id, db, merged_by="on_demand_detail",
+            )
+            await db.commit()
+            if merge_res["target_found"]:
+                logger.info(
+                    "on-demand merge store-native %s → discogs_id=%s "
+                    "(remapped %d listings, artist=%s title=%s)",
+                    record_id, found.discogs_id,
+                    merge_res["listings_remapped"], rec.artist, rec.title,
+                )
+    except Exception:
+        logger.exception("on-demand store-native enrichment failed for %s", record_id)
+
+
 @router.get("/{record_id}", response_model=RecordResponse)
 async def get_record(
     record_id: UUID,
@@ -650,6 +738,27 @@ async def get_record(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Пластинка не найдена"
         )
+
+    # Follow merged_into_id: если эту запись уже слили в Discogs-аналог,
+    # отдаём данные целевой записи. Старые ссылки/push'и на исходный uuid
+    # продолжают работать прозрачно для юзера.
+    if record.merged_into_id is not None:
+        target_res = await db.execute(
+            select(Record).where(Record.id == record.merged_into_id)
+        )
+        target = target_res.scalar_one_or_none()
+        if target is not None:
+            record = target
+
+    # Store-native без попытки матчинга — пускаем фоновый enrichment.
+    # При удаче следующий просмотр (~секунды) уже вернёт полную Discogs-карточку.
+    # asyncio.create_task — не блокируем ответ, юзер не ждёт Discogs API.
+    if (
+        record.source == "store"
+        and record.merged_into_id is None
+        and record.discogs_id_candidate is None
+    ):
+        asyncio.create_task(_schedule_store_native_discogs_match(record.id))
 
     # Порядок важен: payload ПЕРЕД artist_data.
     # _ensure_record_discogs_payload может догрузить полный Discogs release
