@@ -82,6 +82,8 @@ export const messagesApi = {
     clientNonce: string,
     replyToMessageId?: string | null,
     attachedRecordId?: string | null,
+    mediaUrl?: string | null,
+    mediaType?: string | null,
   ): Promise<Message> {
     const r = await getClient().post(
       `/messages/conversations/${conversationId}/messages/`,
@@ -90,8 +92,25 @@ export const messagesApi = {
         client_nonce: clientNonce,
         reply_to_message_id: replyToMessageId ?? null,
         attached_record_id: attachedRecordId ?? null,
+        media_url: mediaUrl ?? null,
+        media_type: mediaType ?? null,
       },
     );
+    return r.data;
+  },
+
+  async uploadMedia(
+    uri: string,
+    name: string = 'photo.jpg',
+    mimeType: string = 'image/jpeg',
+  ): Promise<{ media_url: string; media_type: string }> {
+    const form = new FormData();
+    // @ts-expect-error — RN FormData принимает {uri, name, type}
+    form.append('file', { uri, name, type: mimeType });
+    const r = await getClient().post('/messages/upload-media/', form, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+      timeout: 60000,
+    });
     return r.data;
   },
 

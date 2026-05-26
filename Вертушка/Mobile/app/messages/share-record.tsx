@@ -27,6 +27,7 @@ import { Colors, Spacing, BorderRadius } from '../../constants/theme';
 import { api, getCoverUrl } from '../../lib/api';
 import { useAuthStore, useCollectionStore } from '../../lib/store';
 import { toast } from '../../lib/toast';
+import { cleanArtistName } from '../../lib/format';
 import type {
   CollectionItem,
   PublicProfileRecord,
@@ -124,7 +125,7 @@ export default function ShareRecordScreen() {
         params: {
           attach_record_id: record.id,
           attach_title: record.title,
-          attach_artist: record.artist,
+          attach_artist: cleanArtistName(record.artist) || record.artist,
           attach_year: record.year ? String(record.year) : '',
           attach_cover: record.cover_image_url ?? '',
         },
@@ -331,7 +332,7 @@ function RecordRow({
           {title}
         </Text>
         <Text style={styles.rowSub} numberOfLines={1}>
-          {artist}
+          {cleanArtistName(artist) || artist}
           {year ? ` · ${year}` : ''}
         </Text>
       </View>

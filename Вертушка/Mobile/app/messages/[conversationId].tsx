@@ -33,6 +33,7 @@ import {
 } from 'react-native';
 import * as Clipboard from 'expo-clipboard';
 import * as Haptics from 'expo-haptics';
+import * as ImagePicker from 'expo-image-picker';
 import Animated, {
   useSharedValue,
   useAnimatedStyle,
@@ -57,6 +58,8 @@ import { useAuthStore } from '../../lib/store';
 import { useMessagesStore } from '../../lib/messagesStore';
 import { resolveMediaUrl } from '../../lib/api';
 import { messagesApi } from '../../lib/messagesApi';
+import { toast } from '../../lib/toast';
+import { cleanArtistName } from '../../lib/format';
 import { messagesSocket } from '../../lib/messagesWs';
 import type {
   AttachedRecord,
@@ -363,7 +366,7 @@ function MessageBubble({
           ]}
           numberOfLines={1}
         >
-          {message.attached_record.artist}
+          {cleanArtistName(message.attached_record.artist) || message.attached_record.artist}
           {message.attached_record.year ? ` · ${message.attached_record.year}` : ''}
         </Text>
       </View>
@@ -418,6 +421,17 @@ function MessageBubble({
           </TouchableOpacity>
         ) : null}
         {recordCard}
+        {message.media_url ? (
+          <Image
+            source={resolveMediaUrl(message.media_url)}
+            style={[
+              styles.bubbleMedia,
+              !hasBody && !message.edited_at ? { marginBottom: 4 } : null,
+            ]}
+            contentFit="cover"
+            cachePolicy="disk"
+          />
+        ) : null}
         {hasBody ? (
           <Text style={[styles.bubbleBody, isMine && styles.bubbleBodyMine]}>
             {message.body}
@@ -644,6 +658,15 @@ export default function ConversationScreen() {
   const [presence, setPresence] = useState<PresenceInfo | null>(null);
   const [replyTo, setReplyTo] = useState<Message | null>(null);
   const [attachedRecord, setAttachedRecord] = useState<AttachedRecord | null>(null);
+  // Локальное превью выбранного фото до отправки. localUri для немедленного
+  // отображения; remoteUrl заполнится после успешного upload; uploading —
+  // флаг для блокировки send-кнопки во время загрузки.
+  const [pendingMedia, setPendingMedia] = useState<{
+    localUri: string;
+    remoteUrl: string | null;
+    remoteType: string | null;
+    uploading: boolean;
+  } | null>(null);
   const [partnerTyping, setPartnerTyping] = useState(false);
   const [keyboardVisible, setKeyboardVisible] = useState(false);
   const [highlightedMessageId, setHighlightedMessageId] = useState<string | null>(null);
@@ -956,16 +979,62 @@ export default function ConversationScreen() {
       await editMessageAction(conversationId, tgt.id, text).catch(() => {});
       return;
     }
-    const text = draft.trim() || (attachedRecord ? '📀 пластинка' : '');
-    if (!text && !attachedRecord) return;
-    const rt = replyTo?.id ?? null;
+    if (pendingMedia && (pendingMedia.uploading || !pendingMedia.remoteUrl)) return;
+    const text = draft.trim();
     const ar = attachedRecord;
+    const media = pendingMedia?.remoteUrl
+      ? { url: pendingMedia.remoteUrl, type: pendingMedia.remoteType || 'image' }
+      : null;
+    if (!text && !ar && !media) return;
+    const rt = replyTo?.id ?? null;
     setDraft('');
     setReplyTo(null);
     setAttachedRecord(null);
-    await sendMessage(conversationId, text, rt, ar);
+    setPendingMedia(null);
+    await sendMessage(conversationId, text, rt, ar, media);
     setTimeout(() => listRef.current?.scrollToEnd({ animated: true }), 50);
-  }, [conversationId, draft, replyTo, attachedRecord, editTarget, sendMessage, editMessageAction]);
+  }, [conversationId, draft, replyTo, attachedRecord, pendingMedia, editTarget, sendMessage, editMessageAction]);
+
+  const handlePickMedia = useCallback(async () => {
+    try {
+      const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (!perm.granted) {
+        toast.error('Нет доступа', 'Разрешите доступ к фото в настройках');
+        return;
+      }
+      const res = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        quality: 0.9,
+        allowsEditing: false,
+      });
+      if (res.canceled || !res.assets?.[0]) return;
+      const asset = res.assets[0];
+      const localUri = asset.uri;
+      const mime = asset.mimeType || 'image/jpeg';
+      const name = asset.fileName || `photo-${Date.now()}.jpg`;
+      setPendingMedia({
+        localUri,
+        remoteUrl: null,
+        remoteType: null,
+        uploading: true,
+      });
+      try {
+        const up = await messagesApi.uploadMedia(localUri, name, mime);
+        setPendingMedia({
+          localUri,
+          remoteUrl: up.media_url,
+          remoteType: up.media_type,
+          uploading: false,
+        });
+      } catch (e: any) {
+        setPendingMedia(null);
+        const detail = e?.response?.data?.detail;
+        toast.error('Не удалось загрузить', detail ? String(detail) : 'Попробуйте позже');
+      }
+    } catch {
+      toast.error('Не удалось открыть галерею', 'Попробуйте позже');
+    }
+  }, []);
 
   const handleRetry = useCallback(
     (msg: Message) => {
@@ -1063,7 +1132,7 @@ export default function ConversationScreen() {
         const text = m.body
           ? m.body
           : m.attached_record
-          ? `${m.attached_record.title} — ${m.attached_record.artist}`
+          ? `${m.attached_record.title} — ${cleanArtistName(m.attached_record.artist) || m.attached_record.artist}`
           : '';
         if (text) Share.share({ message: text }).catch(() => {});
       },
@@ -1247,7 +1316,10 @@ export default function ConversationScreen() {
   }, [partner]);
 
   const partnerInitials = (partner?.username ?? '').slice(0, 2).toUpperCase();
-  const canSend = !!draft.trim();
+  const canSend =
+    !!draft.trim() ||
+    !!attachedRecord ||
+    !!(pendingMedia && pendingMedia.remoteUrl && !pendingMedia.uploading);
   const isMuted = !!conversation?.muted;
 
   const setMuteDurationAction = useMessagesStore((s) => s.setMuteDuration);
@@ -1502,7 +1574,7 @@ export default function ConversationScreen() {
               onPress={scrollToBottom}
               style={[
                 styles.scrollFab,
-                { bottom: Spacing.sm + (attachedRecord || replyTo ? 70 : 0) },
+                { bottom: Spacing.sm + (attachedRecord || replyTo || pendingMedia ? 70 : 0) },
               ]}
             >
               <Icon name="arrow-down" size={20} color={Colors.text} />
@@ -1516,6 +1588,47 @@ export default function ConversationScreen() {
             </TouchableOpacity>
           ) : null}
         </View>
+
+        {pendingMedia ? (
+          <View style={styles.attachBar}>
+            <Image
+              source={{ uri: pendingMedia.localUri }}
+              style={styles.attachCover}
+              cachePolicy="memory"
+            />
+            <View style={{ flex: 1, minWidth: 0 }}>
+              <Text style={styles.attachTitle} numberOfLines={1}>
+                {pendingMedia.uploading ? 'Загружаем фото…' : 'Фото готово'}
+              </Text>
+              <Text style={styles.attachSub} numberOfLines={1}>
+                {pendingMedia.uploading ? 'Подождите' : 'Можно отправить'}
+              </Text>
+            </View>
+            <TouchableOpacity
+              onPress={handleSend}
+              disabled={!pendingMedia.remoteUrl || pendingMedia.uploading}
+              style={[
+                styles.attachSendBtn,
+                (!pendingMedia.remoteUrl || pendingMedia.uploading) && styles.sendBtnDisabled,
+              ]}
+              activeOpacity={0.85}
+              accessibilityLabel="Отправить фото"
+            >
+              {pendingMedia.uploading ? (
+                <ActivityIndicator size="small" color="#fff" />
+              ) : (
+                <Icon name="arrow-up" size={18} color="#fff" />
+              )}
+            </TouchableOpacity>
+            <TouchableOpacity
+              onPress={() => setPendingMedia(null)}
+              style={styles.replyClose}
+              accessibilityLabel="Убрать фото"
+            >
+              <Icon name="close" size={16} color={Colors.textMuted} />
+            </TouchableOpacity>
+          </View>
+        ) : null}
 
         {attachedRecord ? (
           <View style={styles.attachBar}>
@@ -1535,7 +1648,7 @@ export default function ConversationScreen() {
                 {attachedRecord.title}
               </Text>
               <Text style={styles.attachSub} numberOfLines={1}>
-                {attachedRecord.artist}
+                {cleanArtistName(attachedRecord.artist) || attachedRecord.artist}
                 {attachedRecord.year ? ` · ${attachedRecord.year}` : ''}
               </Text>
             </View>
@@ -1599,6 +1712,14 @@ export default function ConversationScreen() {
           <TouchableOpacity
             style={styles.attachBtn}
             activeOpacity={0.7}
+            onPress={handlePickMedia}
+            accessibilityLabel="Прикрепить фото"
+          >
+            <Icon name="paperclip" size={20} color={Colors.textMuted} />
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.attachBtn}
+            activeOpacity={0.7}
             onPress={() => {
               if (!conversationId) return;
               router.push({
@@ -1609,6 +1730,7 @@ export default function ConversationScreen() {
                 },
               });
             }}
+            accessibilityLabel="Прикрепить пластинку"
           >
             <Icon name="disc" size={20} color={Colors.textMuted} />
           </TouchableOpacity>
@@ -1898,6 +2020,13 @@ const styles = StyleSheet.create({
   },
   bubbleBody: { fontSize: 14, color: Colors.text, lineHeight: 19 },
   bubbleBodyMine: { color: '#fff' },
+  bubbleMedia: {
+    width: 240,
+    height: 240,
+    borderRadius: 12,
+    marginBottom: 6,
+    backgroundColor: 'rgba(0,0,0,0.04)',
+  },
   bubbleDeletedTxt: {
     fontSize: 12,
     color: Colors.textMuted,
@@ -2100,5 +2229,14 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.surface,
     borderWidth: 1,
     borderColor: Colors.border,
+  },
+  attachSendBtn: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: Colors.royalBlue,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginLeft: 4,
   },
 });

@@ -12,9 +12,11 @@ from uuid import UUID
 from fastapi import (
     APIRouter,
     Depends,
+    File,
     HTTPException,
     Query,
     Request,
+    UploadFile,
     WebSocket,
     WebSocketDisconnect,
     status,
@@ -84,6 +86,7 @@ async def _hydrate_message_previews(
     """Догружает ReplyPreview, AttachedRecord и реакции для batch-отдачи."""
     from app.models.record import Record
     from app.models.message_reaction import MessageReaction
+    from app.services.artist_name import clean_artist_name
 
     reply_ids = {m.reply_to_message_id for m in messages if m.reply_to_message_id}
     targets: dict = {}
@@ -122,7 +125,7 @@ async def _hydrate_message_previews(
             mr.attached_record = AttachedRecord(
                 id=r.id,
                 title=r.title,
-                artist=r.artist,
+                artist=clean_artist_name(r.artist) or r.artist,
                 year=r.year,
                 cover_image_url=r.cover_image_url,
                 cover_url=getattr(r, "cover_url", None),
@@ -390,6 +393,76 @@ async def list_messages(
     return await _hydrate_message_previews(db, messages)
 
 
+@router.post("/upload-media/")
+@limiter.limit("30/minute")
+async def upload_media(
+    request: Request,
+    file: UploadFile = File(...),
+    current_user: User = Depends(get_current_user),
+):
+    """Загрузка фото-вложения для DM. Возвращает {media_url, media_type}.
+
+    Контент-тайпы: image/jpeg | image/png | image/webp. Размер: ≤8 МБ.
+    Файл сжимается через Pillow (long-edge 1600px, JPEG q=85). Хранится в
+    `uploads/messages/<user_id>/<uuid>.jpg` и отдаётся через статик-mount
+    `/uploads/...` (см. `app/main.py`).
+    """
+    import io
+    import uuid as _uuid
+    from pathlib import Path
+    from PIL import Image as PILImage
+
+    allowed = {"image/jpeg", "image/png", "image/webp"}
+    if file.content_type not in allowed:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Только JPEG/PNG/WebP",
+        )
+
+    contents = await file.read()
+    if len(contents) > 8 * 1024 * 1024:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Максимальный размер — 8 МБ",
+        )
+
+    MAGIC = {
+        "image/jpeg": (b"\xff\xd8\xff",),
+        "image/png":  (b"\x89PNG",),
+        "image/webp": (b"RIFF",),
+    }
+    if not any(contents[: len(m)] == m for m in MAGIC[file.content_type]):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Файл не является допустимым изображением",
+        )
+
+    try:
+        img = PILImage.open(io.BytesIO(contents))
+        img = img.convert("RGB")
+    except Exception:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Не удалось прочитать изображение",
+        )
+
+    max_edge = 1600
+    w, h = img.size
+    if max(w, h) > max_edge:
+        ratio = max_edge / max(w, h)
+        img = img.resize((int(w * ratio), int(h * ratio)), PILImage.LANCZOS)
+
+    user_dir = Path("uploads/messages") / str(current_user.id)
+    user_dir.mkdir(parents=True, exist_ok=True)
+
+    filename = f"{_uuid.uuid4().hex}.jpg"
+    filepath = user_dir / filename
+    img.save(filepath, "JPEG", quality=85, optimize=True)
+
+    media_url = f"/uploads/messages/{current_user.id}/{filename}"
+    return {"media_url": media_url, "media_type": "image"}
+
+
 @router.post(
     "/conversations/{conversation_id}/messages/",
     response_model=MessageRead,
@@ -421,6 +494,8 @@ async def send_message(
         client_nonce=data.client_nonce,
         reply_to_message_id=data.reply_to_message_id,
         attached_record_id=data.attached_record_id,
+        media_url=data.media_url,
+        media_type=data.media_type,
     )
 
     # Если у меня тред был в pending (необычно — я инициатор), сбросить на accepted

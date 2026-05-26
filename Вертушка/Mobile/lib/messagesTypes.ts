@@ -75,6 +75,10 @@ export interface Message {
   reply_to?: ReplyPreview | null;
   attached_record_id?: string | null;
   attached_record?: AttachedRecord | null;
+  /** Медиа-вложение (фото). Относительный путь /uploads/messages/... */
+  media_url?: string | null;
+  /** 'image' | 'video' и т.п. */
+  media_type?: string | null;
   reactions?: MessageReaction[];
   /** Локальный клиентский статус. На сервере не хранится. */
   _local_status?: 'sending' | 'sent' | 'failed';

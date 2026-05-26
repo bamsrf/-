@@ -190,12 +190,22 @@ async def post_message(
     client_nonce: str | None,
     reply_to_message_id: UUID | None = None,
     attached_record_id: UUID | None = None,
+    media_url: str | None = None,
+    media_type: str | None = None,
 ) -> Message:
     """Сохраняет сообщение и обновляет агрегаты на conversation."""
     if client_nonce:
         existing = await find_existing_message_by_nonce(db, sender_id, client_nonce)
         if existing and existing.conversation_id == conversation.id:
             return existing
+
+    # Тело может быть пустым, если есть вложение (пластинка или медиа).
+    body = (body or "").strip()
+    if not body and not attached_record_id and not media_url:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Пустое сообщение",
+        )
 
     # Валидация reply: цель должна быть в этом же диалоге, иначе ignore (None)
     valid_reply: UUID | None = None
@@ -212,22 +222,40 @@ async def post_message(
         if rec is not None:
             valid_record = attached_record_id
 
+    # Валидация media_url — только наш /uploads/messages/ префикс, ничего стороннего.
+    valid_media_url: str | None = None
+    valid_media_type: str | None = None
+    if media_url:
+        if media_url.startswith("/uploads/messages/"):
+            valid_media_url = media_url
+            valid_media_type = (media_type or "image").lower()
+
     now = datetime.utcnow()
     message = Message(
         conversation_id=conversation.id,
         sender_id=sender_id,
-        body=body,
+        body=body or None,
         client_nonce=client_nonce,
         created_at=now,
         reply_to_message_id=valid_reply,
         attached_record_id=valid_record,
+        media_url=valid_media_url,
+        media_type=valid_media_type,
     )
     db.add(message)
 
+    if valid_media_url and not body:
+        preview = "🖼 фото"
+    elif valid_record and not body:
+        preview = "📀 пластинка"
+    elif valid_record:
+        preview = f"📀 {body}"
+    elif valid_media_url:
+        preview = f"🖼 {body}"
+    else:
+        preview = body
     conversation.last_message_at = now
-    conversation.last_message_preview = (
-        f"📀 {body}" if valid_record else body
-    )[:160]
+    conversation.last_message_preview = preview[:160]
     conversation.last_message_sender_id = sender_id
     await db.flush()
     return message

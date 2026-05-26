@@ -38,6 +38,7 @@ interface MessagesState {
     body: string,
     replyToMessageId?: string | null,
     attachedRecord?: { id: string; title: string; artist: string; year: number | null; cover_image_url: string | null; cover_url: string | null } | null,
+    media?: { url: string; type: string } | null,
   ) => Promise<Message | null>;
   retrySend: (conversationId: string, localId: string) => Promise<void>;
   markRead: (conversationId: string) => Promise<void>;
@@ -163,9 +164,9 @@ export const useMessagesStore = create<MessagesState>((set, get) => ({
     }
   },
 
-  send: async (conversationId, body, replyToMessageId, attachedRecord) => {
+  send: async (conversationId, body, replyToMessageId, attachedRecord, media) => {
     const text = body.trim();
-    if (!text && !attachedRecord) return null;
+    if (!text && !attachedRecord && !media) return null;
     const me = useAuthStore.getState().user;
     if (!me) return null;
 
@@ -194,6 +195,8 @@ export const useMessagesStore = create<MessagesState>((set, get) => ({
         : null,
       attached_record_id: attachedRecord?.id ?? null,
       attached_record: attachedRecord ?? null,
+      media_url: media?.url ?? null,
+      media_type: media?.type ?? null,
       _local_status: 'sending',
     };
     set((s) => ({
@@ -210,6 +213,8 @@ export const useMessagesStore = create<MessagesState>((set, get) => ({
         nonce,
         replyToMessageId,
         attachedRecord?.id ?? null,
+        media?.url ?? null,
+        media?.type ?? null,
       );
       set((s) => ({
         threads: {

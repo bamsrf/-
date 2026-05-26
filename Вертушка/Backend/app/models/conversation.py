@@ -185,6 +185,10 @@ class Message(Base):
         nullable=True,
     )
 
+    # Медиа-вложение (фото). media_url — относительный путь /uploads/messages/...
+    media_url: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    media_type: Mapped[str | None] = mapped_column(String(32), nullable=True)
+
     __table_args__ = (
         Index("ix_messages_conv_created", "conversation_id", "created_at"),
         UniqueConstraint("sender_id", "client_nonce", name="uq_message_idempotency"),

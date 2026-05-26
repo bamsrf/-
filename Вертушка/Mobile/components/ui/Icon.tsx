@@ -87,6 +87,8 @@ import {
   ArrowsDownUpIcon,
   ClockIcon,
   TrashIcon,
+  PaperclipIcon,
+  ImageIcon,
   type Icon as PhosphorIcon,
 } from 'phosphor-react-native';
 
@@ -173,6 +175,8 @@ const REGISTRY = {
   'pencil':              PencilIcon,
   'trash':               TrashIcon,
   'camera':              CameraIcon,
+  'paperclip':           PaperclipIcon,
+  'image':               ImageIcon,
   'envelope':            EnvelopeIcon,
   'download':            DownloadSimpleIcon,
   'share':               ShareNetworkIcon,

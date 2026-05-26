@@ -69,6 +69,8 @@ class MessageRead(BaseModel):
     reply_to: ReplyPreview | None = None
     attached_record_id: UUID | None = None
     attached_record: AttachedRecord | None = None
+    media_url: str | None = None
+    media_type: str | None = None
     reactions: list[ReactionRead] = Field(default_factory=list)
 
 
@@ -123,10 +125,13 @@ class ConversationCreate(BaseModel):
 
 class MessageCreate(BaseModel):
     """Новое сообщение в диалоге."""
-    body: str = Field(..., min_length=1, max_length=4000)
+    # Тело может быть пустым, если задано вложение (attached_record_id или media_url).
+    body: str = Field("", max_length=4000)
     client_nonce: str | None = Field(None, max_length=64)
     reply_to_message_id: UUID | None = None
     attached_record_id: UUID | None = None
+    media_url: str | None = Field(None, max_length=512)
+    media_type: str | None = Field(None, max_length=32)
 
 
 class MessageEdit(BaseModel):
