@@ -199,10 +199,12 @@ def _cover_image(elem) -> str | None:
 
 
 def _parse_release(elem, dump_date: date) -> dict[str, Any] | None:
-    """Парсит один <release>. Возвращает dict для COPY или None если skip."""
-    if elem.get("status") != "Accepted":
-        return None
+    """Парсит один <release>. Возвращает dict для COPY или None если skip.
 
+    NB: с 2025 г. Discogs убрали атрибут status="Accepted" из дампов —
+    раньше отсеивали через него Draft/Rejected, теперь принимаем все
+    записи. Если в будущем появится — добавить обратно как allowlist.
+    """
     discogs_id_attr = elem.get("id")
     if not discogs_id_attr:
         return None
