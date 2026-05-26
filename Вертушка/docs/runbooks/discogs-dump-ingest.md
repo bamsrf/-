@@ -40,15 +40,30 @@ ssh deploy@85.198.85.12 'docker compose -f ~/vertushka/Вертушка/Backend/
 
 ### 1. Скачать дамп
 
-Discogs выпускает дампы ~1 числа каждого месяца, лежат на S3.
+Discogs выпускает дампы ~1 числа каждого месяца. **Старый bucket
+`discogs-data-dumps.s3...amazonaws.com` с 2025 г. возвращает 403**.
+Новый публичный URL — `https://data.discogs.com/`. Файлы скачиваются
+через query-string `?download=data/YEAR/file.xml.gz`.
 
 ```bash
 ssh deploy@85.198.85.12 'cd /tmp && \
-  wget --progress=dot:giga \
-  https://discogs-data-dumps.s3-us-west-2.amazonaws.com/data/2026/discogs_20260501_releases.xml.gz'
+  wget -O discogs_20260501_releases.xml.gz --progress=dot:giga --continue \
+  "https://data.discogs.com/?download=data%2F2026%2Fdiscogs_20260501_releases.xml.gz"'
 ```
 
-~7–8 GB, на 100 Мбит/с — 10–15 минут.
+Важные флаги:
+- `-O` — wget сам не угадает имя из query-string.
+- Кавычки вокруг URL — обязательны (`&` в URL без них ломает shell).
+- `--continue` — если упадёт, повторный запуск докачивает.
+
+Размер: **~11 GB** (растёт ~10% в год; в 2024 было 8 GB). На 100 Мбит/с
+— 15–20 минут.
+
+Чтобы узнать что есть в bucket'e за конкретный год:
+```bash
+curl -sS 'https://data.discogs.com/?prefix=data%2F2026%2F' | \
+  grep -oE 'discogs_[0-9]+_releases\.xml\.gz' | sort -u
+```
 
 ### 2. Скопировать дамп в контейнер api
 
