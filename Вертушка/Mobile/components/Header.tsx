@@ -2,15 +2,18 @@
  * Хедер приложения — Editorial Gradient Edition
  * Huge left-aligned GradientText, аватар справа
  */
-import React from 'react';
+import React, { useEffect, useRef } from 'react';
 import {
   View,
+  Text,
   TouchableOpacity,
   StyleSheet,
+  Animated,
 } from 'react-native';
 import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import * as Haptics from 'expo-haptics';
 import { Icon } from '@/components/ui';
 import { useRouter } from 'expo-router';
 import { GradientText } from './GradientText';
@@ -35,7 +38,20 @@ export function Header({
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const { user } = useAuthStore();
-  const hasUnread = useNotificationsStore((s) => s.unreadCount > 0 || s.pendingNew > 0);
+  const unreadCount = useNotificationsStore((s) => s.unreadCount);
+  const badgeScale = useRef(new Animated.Value(1)).current;
+  const prevUnreadRef = useRef(unreadCount);
+
+  useEffect(() => {
+    if (unreadCount > prevUnreadRef.current) {
+      Animated.sequence([
+        Animated.spring(badgeScale, { toValue: 1.25, useNativeDriver: true, friction: 5, tension: 100 }),
+        Animated.spring(badgeScale, { toValue: 1, useNativeDriver: true, friction: 5, tension: 100 }),
+      ]).start();
+      Haptics.selectionAsync().catch(() => {});
+    }
+    prevUnreadRef.current = unreadCount;
+  }, [unreadCount, badgeScale]);
 
   const handleProfilePress = () => {
     router.push('/profile');
@@ -74,7 +90,11 @@ export function Header({
                     <Icon name="disc" size={20} color={Colors.background} />
                   </LinearGradient>
                 )}
-                {hasUnread ? <View style={styles.unreadDot} /> : null}
+                {unreadCount > 0 ? (
+                  <Animated.View style={[styles.badge, { transform: [{ scale: badgeScale }] }]}>
+                    <Text style={styles.badgeText}>{unreadCount > 9 ? '9+' : unreadCount}</Text>
+                  </Animated.View>
+                ) : null}
               </TouchableOpacity>
             )
           )}
@@ -123,16 +143,26 @@ const styles = StyleSheet.create({
     borderColor: Colors.lavender,
     position: 'relative',
   },
-  unreadDot: {
+  badge: {
     position: 'absolute',
-    top: -2,
-    right: -2,
-    width: 10,
-    height: 10,
-    borderRadius: 5,
+    top: -6,
+    right: -6,
+    minWidth: 20,
+    height: 20,
+    borderRadius: 10,
+    paddingHorizontal: 5,
     backgroundColor: Colors.error,
     borderWidth: 2,
     borderColor: Colors.background,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  badgeText: {
+    color: Colors.background,
+    fontSize: 11,
+    lineHeight: 13,
+    fontFamily: 'Inter_700Bold',
+    textAlign: 'center',
   },
   avatar: {
     width: '100%',

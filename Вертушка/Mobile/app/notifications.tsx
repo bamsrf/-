@@ -68,6 +68,7 @@ export default function NotificationsScreen() {
     markAllRead,
     mutatePersonal,
     removePersonal,
+    snoozePersonal,
     pendingNew,
     clearPending,
     fetchUnreadCount,
@@ -180,9 +181,25 @@ export default function NotificationsScreen() {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
       const unread = !item.read_at;
       const muteOption = MUTE_KEY_BY_TYPE[item.type] ? 'Отключить тип уведомлений' : null;
+      // Snooze — точечный «не напоминать про эту пластинку», без отключения типа
+      // целиком. Применим только к wishlist-семейству, где dedup_key привязан к записи.
+      const snoozable =
+        item.type === 'wishlist_in_stock' ||
+        item.type === 'wishlist_in_stock_alt' ||
+        item.type === 'wishlist_price_drop';
+      const recordTitle = (item.data?.record_title as string | undefined) ?? null;
+      const snoozeLabel = snoozable
+        ? recordTitle
+          ? `Не напоминать про «${recordTitle}» 30 дней`
+          : 'Не напоминать про эту пластинку 30 дней'
+        : null;
+
       const actions: { label: string; destructive?: boolean; run: () => void }[] = [];
       if (unread) {
         actions.push({ label: 'Отметить прочитанным', run: () => markRead(item.id) });
+      }
+      if (snoozeLabel) {
+        actions.push({ label: snoozeLabel, run: () => snoozePersonal(item.id, 30) });
       }
       actions.push({ label: 'Удалить', destructive: true, run: () => removePersonal(item.id) });
       if (muteOption) {
@@ -212,7 +229,7 @@ export default function NotificationsScreen() {
         );
       }
     },
-    [markRead, removePersonal, muteType],
+    [markRead, removePersonal, snoozePersonal, muteType],
   );
 
   const handleRefresh = useCallback(() => {

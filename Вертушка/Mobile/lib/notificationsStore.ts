@@ -36,6 +36,7 @@ interface NotificationsState {
   markAllRead: () => Promise<void>;
   mutatePersonal: (id: string, patch: Partial<NotificationItem>) => void;
   removePersonal: (id: string) => Promise<void>;
+  snoozePersonal: (id: string, days: number) => Promise<void>;
   bumpPending: () => void;
   clearPending: () => void;
   reset: () => void;
@@ -196,6 +197,24 @@ export const useNotificationsStore = create<NotificationsState>((set, get) => ({
       await api.deleteNotification(id);
     } catch {
       // revert при ошибке
+      set({ personalItems: prev.personalItems, unreadCount: prev.unreadCount });
+    }
+  },
+
+  async snoozePersonal(id, days) {
+    // Snooze = «не напоминать про эту сущность N дней». Помечаем прочитанной и убираем
+    // из ленты оптимистично. На бэкенде запись остаётся, но новые повторы по dedup_key
+    // блокируются до snoozed_until.
+    const prev = get();
+    const target = prev.personalItems.find((it) => it.id === id);
+    if (!target) return;
+    set((s) => ({
+      personalItems: s.personalItems.filter((it) => it.id !== id),
+      unreadCount: target.read_at ? s.unreadCount : Math.max(0, s.unreadCount - 1),
+    }));
+    try {
+      await api.snoozeNotification(id, days);
+    } catch {
       set({ personalItems: prev.personalItems, unreadCount: prev.unreadCount });
     }
   },

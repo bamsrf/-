@@ -28,8 +28,21 @@ class NotificationResponse(BaseModel):
     entity_id: str | None = None
     data: dict[str, Any] = Field(default_factory=dict)
     created_at: datetime
+    bumped_at: datetime
+    occurrences: int = 1
+    snoozed_until: datetime | None = None
     read_at: datetime | None = None
     actor: NotificationActor | None = None
+
+
+class SnoozeRequest(BaseModel):
+    """Откладываем повторы по этому dedup_key на N дней."""
+    days: int = Field(ge=1, le=365)
+
+
+class SnoozeResponse(BaseModel):
+    """Подтверждение snooze."""
+    snoozed_until: datetime
 
 
 class NotificationListResponse(BaseModel):

@@ -424,6 +424,15 @@ class ApiClient {
     await this.client.delete(`/notifications/${id}`);
   }
 
+  /** Отложить повторы по dedup_key этой нотификации на N дней. */
+  async snoozeNotification(id: string, days: number): Promise<{ snoozed_until: string }> {
+    const response = await this.client.post<{ snoozed_until: string }>(
+      `/notifications/${id}/snooze`,
+      { days },
+    );
+    return response.data;
+  }
+
   async getSocialFeed(
     cursor?: string | null,
     limit = 20,

@@ -702,15 +702,30 @@ export type NotificationType =
   | 'gift_booked'
   | 'gift_confirmed'
   | 'wishlist_in_stock'
+  | 'wishlist_in_stock_alt'
   | 'wishlist_price_drop'
   | 'achievement_unlocked'
-  | 'milestone_unlocked';
+  | 'milestone_unlocked'
+  | 'digest_wishlist_in_stock';
 
 export interface NotificationActor {
   id: string;
   username: string;
   display_name?: string | null;
   avatar_url?: string | null;
+}
+
+/**
+ * data-полезная нагрузка для wishlist_in_stock после bump'а:
+ * stores[] — все магазины, у которых пластинка появилась за окно дедупа,
+ * store_count и min_price_rub пересчитываются на каждый bump.
+ */
+export interface WishlistInStockStore {
+  slug?: string | null;
+  name?: string | null;
+  price_rub?: number | null;
+  url?: string | null;
+  listing_id?: string | null;
 }
 
 export interface NotificationItem {
@@ -720,6 +735,12 @@ export interface NotificationItem {
   entity_id?: string | null;
   data: Record<string, unknown>;
   created_at: string;
+  /** Когда событие повторилось последний раз (на bump поднимается). */
+  bumped_at: string;
+  /** Сколько раз было свёрнуто. 1 = одиночное. */
+  occurrences: number;
+  /** Если задано — следующие алерты по тому же dedup_key не создаются до этой даты. */
+  snoozed_until?: string | null;
   read_at?: string | null;
   actor?: NotificationActor | null;
 }

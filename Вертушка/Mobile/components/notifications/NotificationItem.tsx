@@ -50,7 +50,10 @@ function iconForType(type: NotificationType): { name: string; tint: string } {
     case 'gift_confirmed':
       return { name: 'gift', tint: Colors.royalBlue };
     case 'wishlist_in_stock':
+    case 'digest_wishlist_in_stock':
       return { name: 'disc', tint: Colors.success };
+    case 'wishlist_in_stock_alt':
+      return { name: 'disc', tint: Colors.royalBlue };
     case 'wishlist_price_drop':
       return { name: 'pricetag', tint: Colors.success };
     case 'achievement_unlocked':
@@ -63,7 +66,36 @@ function iconForType(type: NotificationType): { name: string; tint: string } {
 
 /** Системные уведомления без actor (триггерятся бэкендом, а не другим юзером). */
 function isSystemType(type: NotificationType): boolean {
-  return type === 'wishlist_in_stock' || type === 'wishlist_price_drop' || type === 'milestone_unlocked';
+  return (
+    type === 'wishlist_in_stock' ||
+    type === 'wishlist_in_stock_alt' ||
+    type === 'wishlist_price_drop' ||
+    type === 'milestone_unlocked' ||
+    type === 'digest_wishlist_in_stock'
+  );
+}
+
+function pluralStores(n: number): string {
+  const mod10 = n % 10;
+  const mod100 = n % 100;
+  if (mod100 >= 11 && mod100 <= 14) return 'магазинах';
+  if (mod10 === 1) return 'магазине';
+  if (mod10 >= 2 && mod10 <= 4) return 'магазинах';
+  return 'магазинах';
+}
+
+function pluralRecords(n: number): string {
+  const mod10 = n % 10;
+  const mod100 = n % 100;
+  if (mod100 >= 11 && mod100 <= 14) return 'пластинок';
+  if (mod10 === 1) return 'пластинка';
+  if (mod10 >= 2 && mod10 <= 4) return 'пластинки';
+  return 'пластинок';
+}
+
+function formatPrice(p: unknown): string {
+  if (typeof p !== 'number') return '';
+  return `${Math.round(p)}₽`;
 }
 
 function buildText(item: NotificationItemType): string {
@@ -92,12 +124,27 @@ function buildText(item: NotificationItemType): string {
     }
     case 'wishlist_in_stock': {
       const title = (data.record_title as string | undefined) ?? 'пластинка';
-      return `«${title}» снова в продаже`;
+      const storeCount = (data.store_count as number | undefined) ?? 1;
+      const minPrice = data.min_price_rub ?? data.price_rub;
+      const priceTail = formatPrice(minPrice);
+      // Bumped multi-store: «"Mordechai" в 3 магазинах · от 4 490 ₽»
+      if ((item.occurrences ?? 1) > 1 && storeCount > 1) {
+        return `«${title}» в ${storeCount} ${pluralStores(storeCount)}${priceTail ? ` · от ${priceTail}` : ''}`;
+      }
+      return `«${title}» снова в продаже${priceTail ? ` · ${priceTail}` : ''}`;
+    }
+    case 'wishlist_in_stock_alt': {
+      const title = (data.record_title as string | undefined) ?? 'пластинка';
+      return `Другая версия «${title}» появилась в продаже`;
     }
     case 'wishlist_price_drop': {
       const title = (data.record_title as string | undefined) ?? 'пластинка';
-      const price = data.price_rub ? ` за ${data.price_rub}₽` : '';
-      return `«${title}» подешевела${price}`;
+      const priceTail = formatPrice(data.min_price_rub ?? data.price_rub);
+      return `«${title}» подешевела${priceTail ? ` · ${priceTail}` : ''}`;
+    }
+    case 'digest_wishlist_in_stock': {
+      const count = (data.count as number | undefined) ?? 0;
+      return `${count} ${pluralRecords(count)} из вишлиста снова в продаже`;
     }
     case 'achievement_unlocked': {
       const title = (data.title as string | undefined) || (data.code as string | undefined) || '';
@@ -229,7 +276,10 @@ export const NotificationItem: React.FC<Props> = ({
         <Text style={styles.text} numberOfLines={2}>
           {text}
         </Text>
-        <Text style={styles.time}>{formatRelativeTime(item.created_at)}</Text>
+        <Text style={styles.time}>
+          {formatRelativeTime(item.bumped_at || item.created_at)}
+          {(item.occurrences ?? 1) > 1 ? ` · обновлено ${item.occurrences}×` : ''}
+        </Text>
         {showInlineActions ? (
           <FollowRequestActions
             onAccept={() => onAcceptFollow!(item)}
