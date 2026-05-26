@@ -87,6 +87,136 @@ STORE_NATIVE_CROSS_SHOP_SCORE = 1.4
 STORE_NATIVE_MERGE_MIN_CONFIRMATIONS = 2
 
 
+# ---- Discogs Releases Dump (slim local index) -------------------------- #
+
+
+# Кэшируем результат проверки «есть ли вообще данные в дампе» — таблица
+# может существовать но быть пустой (миграция применена, ingest не запущен).
+# Сбрасывается при каждом перезапуске процесса; ингест на проде — редкое
+# событие, in-process cache вместо Redis достаточен.
+_dump_available: bool | None = None
+
+
+async def _is_dump_available(db: AsyncSession) -> bool:
+    """Лазает в таблицу один раз за процесс — после узнаём через cached flag."""
+    global _dump_available
+    if _dump_available is not None:
+        return _dump_available
+    try:
+        res = await db.execute(text("SELECT 1 FROM discogs_releases_index LIMIT 1"))
+        _dump_available = res.first() is not None
+    except Exception:
+        # Таблица не создана (миграция не применена)
+        _dump_available = False
+    return _dump_available
+
+
+async def _lookup_in_dump_index(
+    db: AsyncSession,
+    *,
+    barcode: str | None,
+    catalog: str | None,
+    artist: str | None,
+    title: str | None,
+    year: int | None,
+) -> tuple[dict, str, Decimal] | None:
+    """Поиск в slim Discogs Dump. Возвращает (row, method, confidence) или None.
+
+    Каскад: barcode (1.0) → catalog (0.9) → fuzzy artist+title (score-based).
+    Без запроса к Discogs API — всё локально. Бьёт намного быстрее, чем
+    on-demand /database/search.
+    """
+    if not await _is_dump_available(db):
+        return None
+
+    # 1) barcode — точный
+    if barcode:
+        row = (await db.execute(
+            text(
+                "SELECT discogs_id, master_id, artist, title, year, country, "
+                "       format_type, label, cover_image_url "
+                "FROM discogs_releases_index "
+                "WHERE barcode_norm = :b LIMIT 1"
+            ),
+            {"b": barcode},
+        )).mappings().first()
+        if row:
+            return dict(row), MatchMethod.DUMP_INDEX, Decimal("1.000")
+
+    # 2) catalog — точный
+    if catalog:
+        row = (await db.execute(
+            text(
+                "SELECT discogs_id, master_id, artist, title, year, country, "
+                "       format_type, label, cover_image_url "
+                "FROM discogs_releases_index "
+                "WHERE catalog_norm = :c LIMIT 1"
+            ),
+            {"c": catalog},
+        )).mappings().first()
+        if row:
+            return dict(row), MatchMethod.DUMP_INDEX, Decimal("0.900")
+
+    # 3) fuzzy artist+title через pg_trgm. threshold 1.4 = в среднем 0.7 similarity
+    # по каждому полю. Year-фильтр опционален — ±2 года или NULL.
+    if artist and title:
+        row = (await db.execute(
+            text(
+                "SELECT discogs_id, master_id, artist, title, year, country, "
+                "       format_type, label, cover_image_url, "
+                "       (similarity(artist, :a) + similarity(title, :t)) AS score "
+                "FROM discogs_releases_index "
+                "WHERE artist %% :a AND title %% :t "
+                "  AND (:y::int IS NULL OR year IS NULL OR ABS(year - :y) <= 2) "
+                "ORDER BY score DESC LIMIT 1"
+            ),
+            {"a": artist, "t": title, "y": year},
+        )).mappings().first()
+        if row and row.get("score") and row["score"] >= 1.4:
+            # Confidence масштабируем: 1.4 → 0.85, 2.0 → 0.95.
+            conf = min(Decimal("0.950"), Decimal(str(round(0.5 + row["score"] * 0.25, 3))))
+            return dict(row), MatchMethod.DUMP_INDEX, conf
+
+    return None
+
+
+async def _get_or_create_record_from_dump(
+    db: AsyncSession, entry: dict,
+) -> Record | None:
+    """Берёт Record по discogs_id из БД или создаёт из dump-entry.
+
+    tracklist + детальные данные подтянет _ensure_record_discogs_payload
+    при первом детальном просмотре — здесь только минимум для матчинга.
+    """
+    discogs_id = str(entry["discogs_id"])
+    existing = await _find_by_discogs_id(db, discogs_id)
+    if existing:
+        return existing
+
+    rec = Record(
+        discogs_id=discogs_id,
+        discogs_master_id=str(entry["master_id"]) if entry.get("master_id") else None,
+        title=entry["title"],
+        artist=entry["artist"],
+        label=entry.get("label"),
+        year=entry.get("year"),
+        country=entry.get("country"),
+        format_type=entry.get("format_type"),
+        cover_image_url=entry.get("cover_image_url"),
+        discogs_data={},  # пусто — _ensure_record_discogs_payload догрузит
+        source="discogs",
+    )
+    db.add(rec)
+    try:
+        await db.flush()  # получаем id, ловим IntegrityError здесь
+        return rec
+    except Exception:
+        await db.rollback()
+        # Race: кто-то другой только что создал — читаем существующую
+        existing = await _find_by_discogs_id(db, discogs_id)
+        return existing
+
+
 # ---- Поиск Record по идентификаторам ----------------------------------- #
 
 
@@ -211,6 +341,24 @@ async def match_listing(listing: StoreListing, db: AsyncSession) -> bool:
                 best, best_score = rec, score
         if best and best_score >= FUZZY_THRESHOLD:
             _apply_match(listing, best, Decimal(str(round(best_score, 3))), MatchMethod.FUZZY)
+            return True
+
+    # 4.5) Slim Discogs Dump (local index) — barcode/catalog/fuzzy lookup
+    # ДО on-demand Discogs API. Покрытие дампа 80%+ от всех релизов, поиск
+    # быстрее чем сеть, не тратим квоту 60/min.
+    dump_hit = await _lookup_in_dump_index(
+        db,
+        barcode=barcode,
+        catalog=catalog,
+        artist=listing.artist_raw,
+        title=listing.title_raw,
+        year=listing.year_raw,
+    )
+    if dump_hit:
+        entry, method, conf = dump_hit
+        rec = await _get_or_create_record_from_dump(db, entry)
+        if rec:
+            _apply_match(listing, rec, conf, method)
             return True
 
     # 5) On-demand Discogs fetch — отдельная задача (не блокируем матчер)
