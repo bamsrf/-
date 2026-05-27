@@ -159,6 +159,9 @@ async def _lookup_in_dump_index(
 
     # 3) fuzzy artist+title через pg_trgm. threshold 1.4 = в среднем 0.7 similarity
     # по каждому полю. Year-фильтр опционален — ±2 года или NULL.
+    # Используем одиночный `%` (оператор pg_trgm similarity) — asyncpg не нуждается
+    # в экранировании `%%` (это нужно только для psycopg2), и `%%` отправляется
+    # в Postgres буквально как `%%`, вызывая UndefinedFunctionError.
     if artist and title:
         row = (await db.execute(
             text(
@@ -166,8 +169,8 @@ async def _lookup_in_dump_index(
                 "       format_type, label, cover_image_url, "
                 "       (similarity(artist, :a) + similarity(title, :t)) AS score "
                 "FROM discogs_releases_index "
-                "WHERE artist %% :a AND title %% :t "
-                "  AND (:y::int IS NULL OR year IS NULL OR ABS(year - :y) <= 2) "
+                "WHERE artist % :a AND title % :t "
+                "  AND (cast(:y as int) IS NULL OR year IS NULL OR ABS(year - cast(:y as int)) <= 2) "
                 "ORDER BY score DESC LIMIT 1"
             ),
             {"a": artist, "t": title, "y": year},
