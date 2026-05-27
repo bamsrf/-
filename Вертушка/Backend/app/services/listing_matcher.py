@@ -209,12 +209,18 @@ async def _get_or_create_record_from_dump(
         discogs_data={},  # пусто — _ensure_record_discogs_payload догрузит
         source="discogs",
     )
+    # Используем вложенный SAVEPOINT, не session.rollback() — иначе откатывается
+    # вся внешняя транзакция (в т.ч. savepoint из rematch_store_native или
+    # match_unmatched_batch), что приводит к ResourceClosedError при попытке
+    # откатить уже закрытый sp. Паттерн идентичен _create_store_native_record.
+    sp = await db.begin_nested()
     db.add(rec)
     try:
-        await db.flush()  # получаем id, ловим IntegrityError здесь
+        await db.flush()
+        await sp.commit()
         return rec
     except Exception:
-        await db.rollback()
+        await sp.rollback()
         # Race: кто-то другой только что создал — читаем существующую
         existing = await _find_by_discogs_id(db, discogs_id)
         return existing
