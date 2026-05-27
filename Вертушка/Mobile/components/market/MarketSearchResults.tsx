@@ -24,6 +24,7 @@ import {
 } from 'react-native';
 
 import { MarketPalette } from '../../constants/theme';
+import { resolveMediaUrl } from '../../lib/api';
 import MiniPriceBadge from '../MiniPriceBadge';
 import StoreLogo, { getStoreName } from './StoreLogo';
 import type { MarketSearchItem } from '../../lib/types';
@@ -76,7 +77,7 @@ export function MarketSearchResults({
           <View style={styles.coverWrap}>
             {item.cover_image_url ? (
               <Image
-                source={{ uri: item.cover_image_url }}
+                source={{ uri: resolveMediaUrl(item.cover_image_url) ?? item.cover_image_url }}
                 style={styles.cover}
                 resizeMode="cover"
               />

@@ -24,7 +24,7 @@ import Animated, {
 } from 'react-native-reanimated';
 
 import { Icon } from '../ui/Icon';
-import { api } from '../../lib/api';
+import { api, resolveMediaUrl } from '../../lib/api';
 import type { MarketFormatFilter, MarketSearchItem } from '../../lib/types';
 
 import MarketSection, { type MarketStoreData } from './MarketSection';
@@ -186,7 +186,7 @@ export function MarketMain({ onScroll, scrollEnabled = true, paddingTop, pullFra
                   title: it.title,
                   year: it.year ?? null,
                   format: it.format_type ?? null,
-                  coverUrl: it.cover_image_url ?? null,
+                  coverUrl: it.cover_image_url ? resolveMediaUrl(it.cover_image_url) ?? null : null,
                   priceRub: Number(it.min_price_rub),
                 })),
               } as MarketStoreData;

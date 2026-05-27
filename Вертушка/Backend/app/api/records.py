@@ -336,6 +336,14 @@ async def _ensure_record_discogs_payload(record: Record, db: AsyncSession) -> No
     if not record.format_type and data.get("format"):
         record.format_type = data["format"]
         changed = True
+    # Обложка — ключевое поле для UI. Записи из dump-индекса создаются с NULL,
+    # здесь добираем из полного Discogs payload (cover_image / thumb_image).
+    if not record.cover_image_url and data.get("cover_image"):
+        record.cover_image_url = data["cover_image"]
+        changed = True
+    if not record.thumb_image_url and data.get("thumb_image"):
+        record.thumb_image_url = data["thumb_image"]
+        changed = True
 
     # discogs_data МЕРДЖИМ, не перезаписываем — иначе теряем поля, которые
     # уже положил _ensure_record_artist_data (artist_id, artist_thumb_image_url).
