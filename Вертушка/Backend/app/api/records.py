@@ -32,6 +32,7 @@ from app.schemas.record import (
     CoverScanResponse,
     MasterSearchResponse,
     MasterRelease,
+    MasterVersion,
     MasterVersionsResponse,
     ReleaseSearchResponse,
     ArtistSearchResponse,
@@ -430,7 +431,6 @@ async def get_or_create_record_by_discogs_id(
     try:
         await db.commit()
         await db.refresh(record)
-        return record
     except IntegrityError:
         # Параллельный запрос вставил Record с тем же discogs_id раньше нас —
         # откатываем и читаем существующую запись.
@@ -448,7 +448,18 @@ async def get_or_create_record_by_discogs_id(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail="Не удалось сохранить пластинку"
             )
-        return existing
+        record = existing
+
+    # Fire-and-forget mirror обложки на наш сервер: следующие запросы Mobile
+    # получат cover_url='/uploads/covers/{id}.jpg' и грузят с nginx мгновенно,
+    # минуя нестабильный Discogs CDN (часть пресс-обложек 403 без referer).
+    if record.cover_image_url and not record.cover_local_path:
+        from app.services.cover_storage import _download_cover_background
+        asyncio.create_task(
+            _download_cover_background(str(record.discogs_id), record.cover_image_url)
+        )
+
+    return record
 
 
 async def _search_local_index(
@@ -471,10 +482,14 @@ async def _search_local_index(
     conds: list[str] = []
     params: dict = {}
 
-    # Trigram needs ≥ 3 chars to use GIN
+    # ILIKE %q% активирует GIN trgm-индекс (gin_trgm_ops) для filter —
+    # возвращает small candidate-set за <100ms даже на 13M строках. Similarity
+    # потом используется ТОЛЬКО для ранжирования на этом малом наборе.
+    # Чистый `artist % :q` сканировал миллионы для "Beatles" (32s cold).
     if q and len(q.strip()) >= 3:
-        conds.append("(artist % :q OR title % :q)")
+        conds.append("(artist ILIKE :q_pat OR title ILIKE :q_pat)")
         params["q"] = q.strip()
+        params["q_pat"] = f"%{q.strip()}%"
     else:
         # Слишком короткое — пусть Discogs API разбирается
         return []
@@ -1158,23 +1173,32 @@ async def get_master_versions(
     if cached_enriched:
         return MasterVersionsResponse(**cached_enriched)
 
-    discogs = DiscogsService()
-
-    try:
-        versions, main_release_id = await asyncio.wait_for(
-            _fetch_master_versions_and_main_release(discogs, master_id, page, per_page),
-            timeout=25,
-        )
-    except asyncio.TimeoutError:
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Discogs API отвечает медленно — попробуйте ещё раз через минуту",
-        )
-    except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail=f"Ошибка при получении версий мастер-релиза: {str(e)}"
-        )
+    # Local-first: discogs_releases_index содержит все 13M releases с master_id.
+    # Полный SELECT покрывает большинство мастер-релизов без обращения к Discogs
+    # API → убирает 503 от rate-limit и timeout'ов. Главное отличие от API-ответа:
+    # cover_image_url в локальном индексе = NULL (дампы Discogs не несут image URLs),
+    # main_release_id неизвестен → is_canon будет проставлен только из Record.is_canon.
+    local_versions = await _fetch_versions_from_local_index(db, master_id, page, per_page)
+    if local_versions is not None and local_versions.total > 0:
+        versions = local_versions
+        main_release_id = None
+    else:
+        discogs = DiscogsService()
+        try:
+            versions, main_release_id = await asyncio.wait_for(
+                _fetch_master_versions_and_main_release(discogs, master_id, page, per_page),
+                timeout=25,
+            )
+        except asyncio.TimeoutError:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="Discogs API отвечает медленно — попробуйте ещё раз через минуту",
+            )
+        except Exception as e:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail=f"Ошибка при получении версий мастер-релиза: {str(e)}"
+            )
 
     # Дешёвые «on-the-fly» флаги для всех версий:
     # - is_canon = release_id == master.main_release_id
@@ -1232,6 +1256,67 @@ async def get_master_versions(
         await cache.set("master_versions_enriched", enriched_ck, versions.model_dump(), TTL_MASTER_VERSIONS)
 
     return versions
+
+
+async def _fetch_versions_from_local_index(
+    db: AsyncSession,
+    master_id: str,
+    page: int,
+    per_page: int,
+) -> MasterVersionsResponse | None:
+    """Возвращает MasterVersionsResponse из discogs_releases_index или None
+    если master_id не парсится в bigint. Делает 2 запроса: count + paged list.
+    """
+    try:
+        master_id_int = int(master_id)
+    except (TypeError, ValueError):
+        return None
+
+    total_row = await db.execute(
+        text("SELECT count(*) AS n FROM discogs_releases_index WHERE master_id = :m"),
+        {"m": master_id_int},
+    )
+    total = int(total_row.scalar() or 0)
+    if total == 0:
+        return None
+
+    offset = (page - 1) * per_page
+    rows = (
+        await db.execute(
+            text(
+                """
+                SELECT
+                    discogs_id::text AS release_id,
+                    artist, title, year, country, format_type, label,
+                    catalog_norm, cover_image_url
+                FROM discogs_releases_index
+                WHERE master_id = :m
+                ORDER BY year ASC NULLS LAST, discogs_id ASC
+                LIMIT :limit OFFSET :offset
+                """
+            ),
+            {"m": master_id_int, "limit": per_page, "offset": offset},
+        )
+    ).mappings().all()
+
+    results = [
+        MasterVersion(
+            release_id=row["release_id"],
+            title=row["title"],
+            label=row["label"],
+            catalog_number=row["catalog_norm"],
+            country=row["country"],
+            year=row["year"],
+            format=row["format_type"],
+            major_formats=[row["format_type"]] if row["format_type"] else [],
+            thumb_image_url=None,
+            cover_image_url=row["cover_image_url"],
+        )
+        for row in rows
+    ]
+    return MasterVersionsResponse(
+        results=results, total=total, page=page, per_page=per_page,
+    )
 
 
 async def _fetch_master_versions_and_main_release(
