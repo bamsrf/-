@@ -100,13 +100,17 @@ async def _lookup_dump_fuzzy(
     year: int | None,
 ) -> tuple[dict, float] | None:
     """Strict fuzzy: both fields >= 0.6 independently, year ±1 or NULL."""
+    # Use %% (→ SQL `%`) to activate the GIN trgm index for candidate retrieval,
+    # then post-filter with similarity() >= threshold for precision.
+    # Pure similarity() in WHERE bypasses GIN and causes a 13M-row seqscan.
     row = (await db.execute(
         text(
             "SELECT discogs_id, master_id, artist, title, year, country, "
             "       format_type, label, cover_image_url, "
             "       (similarity(artist, :a) + similarity(title, :t)) AS score "
             "FROM discogs_releases_index "
-            "WHERE similarity(artist, :a) >= :ta "
+            "WHERE artist %% :a AND title %% :t "
+            "  AND similarity(artist, :a) >= :ta "
             "  AND similarity(title, :t) >= :tt "
             "  AND (cast(:y as int) IS NULL OR year IS NULL OR ABS(year - cast(:y as int)) <= :tol) "
             "ORDER BY score DESC LIMIT 1"
