@@ -24,6 +24,8 @@ import { useEffect, useRef } from 'react';
 import {
   Animated,
   Easing,
+  Image,
+  ImageSourcePropType,
   StyleProp,
   StyleSheet,
   Text,
@@ -31,13 +33,21 @@ import {
   ViewStyle,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { SvgXml } from 'react-native-svg';
 
 import {
   getSceneRenderer,
   SceneDefault,
   TIER_AURA,
 } from './achievement-scenes';
+import { PIN_SVGS } from '../assets/achievements/pins/pins-index';
 import type { AchievementItem } from '../lib/types';
+
+// Локальные ассеты-заглушки для locked-состояний без своего SVG.
+// Уже содержат gold-rim + замочек, поэтому собственный lock-badge не рисуем.
+const PLACEHOLDER_EGG: ImageSourcePropType = require('../assets/achievements/placeholders/egg.png');
+const PLACEHOLDER_GIFT: ImageSourcePropType = require('../assets/achievements/placeholders/gift.png');
+const PLACEHOLDER_TROPHY: ImageSourcePropType = require('../assets/achievements/placeholders/trophy.png');
 
 type PinSize = 56 | 72 | 96 | 140;
 
@@ -54,6 +64,36 @@ const NEAR_UNLOCK_THRESHOLD = 0.75;
 function initialFromSlug(slug: string | null | undefined, code: string): string {
   const source = (slug || code).replace(/[^a-zA-Z0-9]/g, '').toUpperCase();
   return source.slice(0, 2) || '?';
+}
+
+type AssetChoice =
+  | { kind: 'svg'; xml: string }
+  | { kind: 'png'; source: ImageSourcePropType }
+  | null;
+
+/**
+ * Выбирает готовый ассет под состояние пина. Возвращает null, если
+ * подходящего ассета нет — caller рисует scene-renderer как раньше.
+ */
+function pickAsset(item: AchievementItem, locked: boolean, isMystery: boolean): AssetChoice {
+  // Скрытая пасхалка — навсегда яйцо (даже если open, имя/иконка скрыты до анлока).
+  if (isMystery) {
+    return { kind: 'png', source: PLACEHOLDER_EGG };
+  }
+
+  // Открытая ачивка со своим SVG-пином — рендерим SVG.
+  if (!locked && item.icon_slug) {
+    const xml = PIN_SVGS[item.icon_slug.toLowerCase()];
+    if (xml) return { kind: 'svg', xml };
+  }
+
+  // Locked: единый стиль заглушек по серии/мета.
+  if (locked) {
+    if (item.is_meta) return { kind: 'png', source: PLACEHOLDER_TROPHY };
+    if (item.series === 'gifts') return { kind: 'png', source: PLACEHOLDER_GIFT };
+  }
+
+  return null;
 }
 
 export function AchievementPin({ item, size = 72, style, glowOverride = false }: Props) {
@@ -102,8 +142,10 @@ export function AchievementPin({ item, size = 72, style, glowOverride = false }:
     outputRange: [glow ? 0.85 : 0.3, glow ? 1 : 0.45],
   });
 
-  // Render scene или fallback
-  const renderer = getSceneRenderer(item.code);
+  // 1) Готовый ассет (SVG-пин / placeholder) — приоритетный путь.
+  // 2) Fallback: scene-renderer по коду или дефолтная сцена с инициалом.
+  const asset = pickAsset(item, locked, isMystery);
+  const renderer = asset ? null : getSceneRenderer(item.code);
   const sceneProps = {
     size,
     accent: tierPalette.aura,
@@ -113,8 +155,16 @@ export function AchievementPin({ item, size = 72, style, glowOverride = false }:
   };
 
   let content;
-  if (isMystery) {
-    content = <MysteryPlaceholder size={size} />;
+  if (asset?.kind === 'svg') {
+    content = <SvgXml xml={asset.xml} width={size} height={size} />;
+  } else if (asset?.kind === 'png') {
+    content = (
+      <Image
+        source={asset.source}
+        style={{ width: size, height: size }}
+        resizeMode="contain"
+      />
+    );
   } else if (renderer) {
     content = renderer(sceneProps);
   } else {
@@ -125,6 +175,12 @@ export function AchievementPin({ item, size = 72, style, glowOverride = false }:
       />
     );
   }
+
+  // Заглушки уже содержат gold-rim+lock в самой картинке, своих бэйджей не дублируем.
+  const assetHasBakedLock = asset?.kind === 'png';
+  const assetHasBakedMeta = asset?.kind === 'png' && item.is_meta;
+  const showLockBadge = locked && !isMystery && !assetHasBakedLock;
+  const showMetaBadge = item.is_meta && !isMystery && !assetHasBakedMeta;
 
   return (
     <View
@@ -172,21 +228,24 @@ export function AchievementPin({ item, size = 72, style, glowOverride = false }:
           height: size,
           alignItems: 'center',
           justifyContent: 'center',
-          opacity: isMystery ? 1 : locked ? 0.55 : 1,
+          // PNG-заглушки уже выглядят «спящими» — не дополнительно гасим.
+          // SVG-пины открыты по определению (asset подключается только !locked).
+          // Гасим только fallback-сцены в locked-состоянии.
+          opacity: asset || isMystery || !locked ? 1 : 0.55,
         }}
       >
         {content}
       </View>
 
-      {/* Замочек для locked (но не для скрытых рандомных) */}
-      {locked && !isMystery && (
+      {/* Замочек для locked (но не для скрытых пасхалок и не для PNG-заглушек с baked-lock) */}
+      {showLockBadge && (
         <View style={[styles.lockBadge, { width: size * 0.28, height: size * 0.28, borderRadius: size * 0.14 }]}>
           <Ionicons name="lock-closed" size={size * 0.16} color="#FFFFFF" />
         </View>
       )}
 
       {/* Метка META */}
-      {item.is_meta && !isMystery && (
+      {showMetaBadge && (
         <View
           style={[
             styles.metaBadge,
@@ -200,26 +259,6 @@ export function AchievementPin({ item, size = 72, style, glowOverride = false }:
           <Text style={styles.metaStar}>★</Text>
         </View>
       )}
-    </View>
-  );
-}
-
-function MysteryPlaceholder({ size }: { size: number }) {
-  return (
-    <View
-      style={{
-        width: size * 0.7,
-        height: size * 0.7,
-        borderRadius: (size * 0.7) / 2,
-        backgroundColor: '#E4E7EE',
-        alignItems: 'center',
-        justifyContent: 'center',
-        borderWidth: 1.5,
-        borderColor: '#C2C7D5',
-        borderStyle: 'dashed',
-      }}
-    >
-      <Ionicons name="help" size={size * 0.32} color="#7A7E8B" />
     </View>
   );
 }
