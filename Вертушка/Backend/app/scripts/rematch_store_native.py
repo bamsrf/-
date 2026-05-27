@@ -30,6 +30,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import logging
+import re
 import sys
 from datetime import datetime
 from decimal import Decimal
@@ -57,6 +58,51 @@ logging.basicConfig(
     datefmt="%H:%M:%S",
 )
 logger = logging.getLogger("rematch_store_native")
+
+# Parenthetical annotations added by Russian stores to Discogs titles.
+# Stripping these before fuzzy matching prevents trigram dilution that would
+# push similarity below threshold for otherwise identical titles.
+# e.g. "Dummy (Gatefold)" → "Dummy", "Wish You Were Here (Repress 2025)" → "Wish You Were Here"
+_STORE_SUFFIX_RE = re.compile(
+    r"\s*\(\s*(?:"
+    r"\d{4}|"                              # year: (2025)
+    r"[Rr]epress\b[^)]*|"                  # (Repress ...), (Reissue ...)
+    r"[Rr]eissue\b[^)]*|"
+    r"Gatefold|gatefold|"
+    r"\dLP|\d\s*LP|"                       # (2LP), (3LP)
+    r"цветной винил|colou?red vinyl|"
+    r"пикчер\s*диск|picture\s*disc|"
+    r"[Mm]arble[^)]*|[Cc]olou?r[^)]*|"    # colour variants
+    r"Mono|моно|Stereo|стерео|"
+    r"буклет|booklet|"
+    r"[Cc][Dd]|"                           # (CD)
+    r"синий\s*винил|blue\s*vinyl|"
+    r"макси\s*сингл|maxi\s*single|"
+    r"\+[^)]*"                             # (+ буклет), (+ книга)
+    r")[^)]*\)\s*$",
+    re.IGNORECASE,
+)
+
+# Compilation artist synonyms → normalize to Discogs "Various"
+_VA_RE = re.compile(r"^(?:V/A|VA|Various Artists?|Сборник)$", re.IGNORECASE)
+
+
+def _normalize_store_title(title: str) -> str:
+    """Strip store-added parenthetical suffixes for cleaner trgm matching."""
+    t = title.strip()
+    # Strip trailing parenthetical annotations iteratively (some have multiple)
+    prev = None
+    while prev != t:
+        prev = t
+        t = _STORE_SUFFIX_RE.sub("", t).strip()
+    return t or title.strip()
+
+
+def _normalize_store_artist(artist: str) -> str:
+    if _VA_RE.match(artist.strip()):
+        return "Various"
+    return artist.strip()
+
 
 # Strict fuzzy thresholds for records with no barcode/catalog signal.
 # Each field must independently reach 0.6 (vs combined 1.4 in listing_matcher).
@@ -388,10 +434,17 @@ async def _process_one(
         if row:
             dump_entry, confidence, method = row, 0.9, "catalog"
 
+    # Normalize title/artist for fuzzy: strip store annotations like "(Gatefold)",
+    # "(Repress 2025)", "(цветной винил)" which dilute trigram similarity vs the
+    # canonical Discogs title. Normalization happens ONLY for lookup, original
+    # record fields are never modified.
+    fuzzy_artist = _normalize_store_artist(rec.artist) if rec.artist else None
+    fuzzy_title = _normalize_store_title(rec.title) if rec.title else None
+
     # 3) Fuzzy artist+title+year (if no exact hit and we have artist+title)
-    if dump_entry is None and rec.artist and rec.title:
+    if dump_entry is None and fuzzy_artist and fuzzy_title:
         fuzzy_hit = await _lookup_dump_fuzzy(
-            db, artist=rec.artist, title=rec.title, year=rec.year
+            db, artist=fuzzy_artist, title=fuzzy_title, year=rec.year
         )
         if fuzzy_hit:
             row, score = fuzzy_hit
