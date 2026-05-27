@@ -829,7 +829,7 @@ export interface AchievementTierInfo {
 
 export interface AchievementItem {
   code: string;
-  /** null если ачивка скрытая и ещё не открыта (рендерим как «❓ Сюрприз») */
+  /** null если ачивка скрытая и ещё не открыта (рендерим как «🥚 Пасхалка») */
   title_ru: string | null;
   description_ru: string | null;
   flavor_ru?: string | null;

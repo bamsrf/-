@@ -1,5 +1,5 @@
 /**
- * Экран «Ачивки» — детальный грид по сериям + блок рандомных «Сюрпризы».
+ * Экран «Ачивки» — детальный грид по сериям + блок рандомных «Пасхалки».
  *
  * Открывается:
  * - С виджета AchievementsBlock в `app/profile.tsx` → свои.
@@ -112,7 +112,7 @@ export default function AchievementsScreen() {
         {data.random_unlocked > 0 && (
           <View style={styles.summary}>
             <Text style={styles.summaryRandom}>
-              ❓ Сюрпризы открыто: {data.random_unlocked}
+              🥚 Пасхалки открыто: {data.random_unlocked}
             </Text>
           </View>
         )}
@@ -214,7 +214,7 @@ function SeriesGroup({
   );
 }
 
-// ─── Сюрпризы ───────────────────────────────────────────────────────────────
+// ─── Пасхалки ───────────────────────────────────────────────────────────────
 
 function SurpriseBlock({
   randomCount,
@@ -228,7 +228,7 @@ function SurpriseBlock({
   return (
     <View style={styles.seriesCard}>
       <View style={styles.seriesHeader}>
-        <Text style={styles.seriesTitle}>❓ Сюрпризы</Text>
+        <Text style={styles.seriesTitle}>🥚 Пасхалки</Text>
         <Text style={styles.seriesCount}>открыто {randomCount}</Text>
       </View>
       <Text style={styles.seriesDescription}>
@@ -384,7 +384,7 @@ function DetailsSheet({
           <AchievementPin item={item} size={140} />
         </View>
         <Text style={styles.sheetTitle}>
-          {item.title_ru || '❓ Сюрприз'}
+          {item.title_ru || '🥚 Пасхалка'}
         </Text>
         <View style={styles.sheetTierRow}>
           <View

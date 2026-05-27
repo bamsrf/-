@@ -111,7 +111,7 @@ export function AchievementsBlock({ username, compact = false }: Props) {
       {data.random_unlocked > 0 && (
         <View style={styles.surpriseRow}>
           <Text style={styles.surpriseText}>
-            ❓ Сюрпризы: открыто {data.random_unlocked}
+            🥚 Пасхалки: открыто {data.random_unlocked}
           </Text>
         </View>
       )}

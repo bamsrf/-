@@ -299,7 +299,7 @@ function UnlockModal({
               },
             ]}
           >
-            <Text style={styles.title}>{main.title_ru || '❓ Сюрприз'}</Text>
+            <Text style={styles.title}>{main.title_ru || '🥚 Пасхалка'}</Text>
             <View style={[styles.tierChip, { borderColor: aura.aura }]}>
               <Text style={styles.tierChipText}>{main.tier.label_ru}</Text>
             </View>

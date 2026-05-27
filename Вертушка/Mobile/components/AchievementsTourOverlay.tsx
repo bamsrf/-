@@ -81,7 +81,7 @@ export function AchievementsTourOverlay() {
           </Text>
           <View style={styles.points}>
             <Bullet emoji="✨" text="Тиры по цвету: чем темнее, тем реже." />
-            <Bullet emoji="❓" text="Скрытые сюрпризы — найдутся сами." />
+            <Bullet emoji="🥚" text="Скрытые пасхалки — найдутся сами." />
             <Bullet emoji="📤" text="Каждую можно расшарить картинкой." />
           </View>
           <TouchableOpacity style={styles.btn} onPress={handleClose}>

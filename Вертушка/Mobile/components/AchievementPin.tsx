@@ -16,7 +16,7 @@
  *
  * Состояния:
  * - is_unlocked = true → яркая сцена + полная аура.
- * - is_unlocked = false + is_hidden = true → ❓-плашка (Сюрприз скрытый).
+ * - is_unlocked = false + is_hidden = true → 🥚-плашка (Пасхалка скрытая).
  * - is_unlocked = false + is_hidden = false → приглушённая сцена с замочком.
  * - progress / progress_target ≥ 0.75 → лёгкий пульс ауры (мотивация дожать).
  */
