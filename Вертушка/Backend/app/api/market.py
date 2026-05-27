@@ -51,11 +51,30 @@ NEW_TODAY_HOURS = 24
 # дедупа по master_id вместо record_id) бампаем суффикс — старые ключи
 # в Redis самотухнут по TTL, а свежие запросы сразу получают новую логику.
 CACHE_NS_STORES = "market_stores:v2"
-CACHE_NS_STORE_LISTINGS = "market_store_listings:v2"
-CACHE_NS_SEARCH = "market_search:v2"
+CACHE_NS_STORE_LISTINGS = "market_store_listings:v3"
+CACHE_NS_SEARCH = "market_search:v3"
 CACHE_TTL_STORES = 1800       # 30 мин — список магазинов меняется редко
 CACHE_TTL_LISTINGS = 600      # 10 мин — карусели чаще обновляем
 CACHE_TTL_SEARCH = 300        # 5 мин — поиск свежее
+
+# Cover URL prefer-local: если cover уже зеркалирован на сервер
+# (cover_local_path заполнен через bulk_mirror / _download_cover_background),
+# отдаём /uploads/covers/{id}.jpg — nginx раздаёт мгновенно. Иначе fallback:
+# на Discogs CDN из record, на raw_payload листинга. Используется во всех
+# 3 market-эндпоинтах (carousel / store-all / global search). При смене
+# выражения бампать cache namespace versions выше.
+_COVER_EXPR_LISTING = (
+    "COALESCE("
+    "CASE WHEN r.cover_local_path IS NOT NULL "
+    "THEN '/uploads/' || r.cover_local_path END, "
+    "r.cover_image_url, sl.raw_payload->>'image_url')"
+)
+_COVER_EXPR_RECORD_ONLY = (
+    "COALESCE("
+    "CASE WHEN r.cover_local_path IS NOT NULL "
+    "THEN '/uploads/' || r.cover_local_path END, "
+    "r.cover_image_url)"
+)
 
 
 # ────────────────────────────────────────────────────────────────────────
@@ -180,7 +199,7 @@ async def list_market_stores(
                   AND sl.matched_record_id IS NOT NULL
                   AND sl.price_rub IS NOT NULL
                   AND r.merged_into_id IS NULL
-                  AND COALESCE(r.cover_image_url, sl.raw_payload->>'image_url') IS NOT NULL
+                  AND COALESCE(r.cover_local_path, r.cover_image_url, sl.raw_payload->>'image_url') IS NOT NULL
             ) AS in_stock_count,
             AVG(sl.price_rub) FILTER (
                 WHERE sl.status = 'in_stock'
@@ -195,7 +214,7 @@ async def list_market_stores(
                   AND sl.matched_record_id IS NOT NULL
                   AND sl.price_rub IS NOT NULL
                   AND r.merged_into_id IS NULL
-                  AND COALESCE(r.cover_image_url, sl.raw_payload->>'image_url') IS NOT NULL
+                  AND COALESCE(r.cover_local_path, r.cover_image_url, sl.raw_payload->>'image_url') IS NOT NULL
             ) AS new_today_count
         FROM stores s
         LEFT JOIN store_listings sl ON sl.store_id = s.id
@@ -208,7 +227,7 @@ async def list_market_stores(
               AND sl.matched_record_id IS NOT NULL
               AND sl.price_rub IS NOT NULL
               AND r.merged_into_id IS NULL
-              AND COALESCE(r.cover_image_url, sl.raw_payload->>'image_url') IS NOT NULL
+              AND COALESCE(r.cover_local_path, r.cover_image_url, sl.raw_payload->>'image_url') IS NOT NULL
         ) >= :min_in_stock
         ORDER BY s.rating DESC NULLS LAST, s.name ASC
         """
@@ -283,7 +302,7 @@ async def get_store_listings(
                 s.slug AS store_slug,
                 r.discogs_id, r.artist, r.title, r.year,
                 COALESCE(r.format_type, sl.format_raw) AS format_type,
-                COALESCE(r.cover_image_url, sl.raw_payload->>'image_url') AS cover_image_url
+                {_COVER_EXPR_LISTING} AS cover_image_url
             FROM store_listings sl
             JOIN stores s ON s.id = sl.store_id
             JOIN records r ON r.id = sl.matched_record_id
@@ -294,7 +313,7 @@ async def get_store_listings(
               AND sl.price_rub IS NOT NULL
               AND sl.last_seen_at >= :cutoff
               AND r.merged_into_id IS NULL
-              AND COALESCE(r.cover_image_url, sl.raw_payload->>'image_url') IS NOT NULL
+              AND COALESCE(r.cover_local_path, r.cover_image_url, sl.raw_payload->>'image_url') IS NOT NULL
             ORDER BY COALESCE(r.discogs_master_id, r.id::text), sl.price_rub ASC NULLS LAST
         )
         SELECT * FROM ranked
@@ -376,7 +395,7 @@ async def get_store_all(
                 s.slug AS store_slug,
                 r.discogs_id, r.artist, r.title, r.year,
                 COALESCE(r.format_type, sl.format_raw) AS format_type,
-                COALESCE(r.cover_image_url, sl.raw_payload->>'image_url') AS cover_image_url
+                {_COVER_EXPR_LISTING} AS cover_image_url
             FROM store_listings sl
             JOIN stores s ON s.id = sl.store_id
             JOIN records r ON r.id = sl.matched_record_id
@@ -387,7 +406,7 @@ async def get_store_all(
               AND sl.price_rub IS NOT NULL
               AND sl.last_seen_at >= :cutoff
               AND r.merged_into_id IS NULL
-              AND COALESCE(r.cover_image_url, sl.raw_payload->>'image_url') IS NOT NULL
+              AND COALESCE(r.cover_local_path, r.cover_image_url, sl.raw_payload->>'image_url') IS NOT NULL
               {fmt_sql}
               {q_clause}
             ORDER BY COALESCE(r.discogs_master_id, r.id::text), sl.price_rub ASC NULLS LAST
@@ -488,7 +507,7 @@ async def search_market(
               AND sl.price_rub IS NOT NULL
               AND sl.last_seen_at >= :cutoff
               AND r.merged_into_id IS NULL
-              AND COALESCE(r.cover_image_url, sl.raw_payload->>'image_url') IS NOT NULL
+              AND COALESCE(r.cover_local_path, r.cover_image_url, sl.raw_payload->>'image_url') IS NOT NULL
               {fmt_sql}
               {q_clause}
             GROUP BY COALESCE(r.discogs_master_id, r.id::text)
@@ -496,7 +515,8 @@ async def search_market(
         SELECT
             agg.chosen_record_id AS record_id, agg.min_price, agg.stores_with_stock,
             agg.first_seen_at, agg.cheapest_store_slug,
-            r.discogs_id, r.artist, r.title, r.year, r.format_type, r.cover_image_url
+            r.discogs_id, r.artist, r.title, r.year, r.format_type,
+            {_COVER_EXPR_RECORD_ONLY} AS cover_image_url
         FROM agg
         JOIN records r ON r.id = agg.chosen_record_id
         ORDER BY {order_clause}

@@ -9,7 +9,7 @@ from uuid import UUID
 logger = logging.getLogger(__name__)
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status, Query, Response
-from sqlalchemy import select
+from sqlalchemy import select, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -451,6 +451,94 @@ async def get_or_create_record_by_discogs_id(
         return existing
 
 
+async def _search_local_index(
+    db: AsyncSession,
+    q: str,
+    artist: str | None,
+    year: int | None,
+    year_min: int | None,
+    year_max: int | None,
+    label: str | None,
+    page: int,
+    per_page: int,
+) -> list[RecordSearchResult]:
+    """Поиск в локальном discogs_releases_index через pg_trgm.
+
+    Использует GIN trgm-индексы на artist/title (см. ingest_discogs_dump.py).
+    Возвращает ≤ per_page результатов, отсортированных по similarity DESC.
+    Если q короткий или нет matches — возвращает [] (caller сделает fallback).
+    """
+    conds: list[str] = []
+    params: dict = {}
+
+    # Trigram needs ≥ 3 chars to use GIN
+    if q and len(q.strip()) >= 3:
+        conds.append("(artist % :q OR title % :q)")
+        params["q"] = q.strip()
+    else:
+        # Слишком короткое — пусть Discogs API разбирается
+        return []
+
+    if artist:
+        conds.append("artist ILIKE :artist_like")
+        params["artist_like"] = f"%{artist}%"
+    if year is not None:
+        conds.append("year = :year_eq")
+        params["year_eq"] = year
+    else:
+        if year_min is not None:
+            conds.append("year >= :year_min")
+            params["year_min"] = year_min
+        if year_max is not None:
+            conds.append("year <= :year_max")
+            params["year_max"] = year_max
+    if label:
+        conds.append("label ILIKE :label_like")
+        params["label_like"] = f"%{label}%"
+
+    where = " AND ".join(conds)
+    offset = (page - 1) * per_page
+
+    # Ранжирование: artist match × 2, title match × 1. Prefix-match
+    # (artist начинается с q) добавляет +1 чтобы "Beatles" находил
+    # "The Beatles" поверх случайных альбомов где title содержит "beatles".
+    sql = text(
+        f"""
+        SELECT
+            discogs_id::text AS discogs_id,
+            artist, title, year, country, format_type, label, cover_image_url,
+            (
+              similarity(artist, :q) * 2.0
+              + similarity(title, :q)
+              + CASE WHEN artist ILIKE :q_pref THEN 1.0 ELSE 0.0 END
+            ) AS sim
+        FROM discogs_releases_index
+        WHERE {where}
+        ORDER BY sim DESC, year DESC NULLS LAST
+        LIMIT :limit OFFSET :offset
+        """
+    )
+    params["q_pref"] = f"%{q.strip()}%"
+    params["limit"] = per_page
+    params["offset"] = offset
+
+    rows = (await db.execute(sql, params)).mappings().all()
+    return [
+        RecordSearchResult(
+            discogs_id=row["discogs_id"],
+            title=row["title"],
+            artist=row["artist"],
+            label=row["label"],
+            year=row["year"],
+            country=row["country"],
+            cover_image_url=row["cover_image_url"],
+            thumb_image_url=None,
+            format_type=row["format_type"],
+        )
+        for row in rows
+    ]
+
+
 @router.get("/search", response_model=RecordSearchResponse)
 async def search_records(
     response: Response,
@@ -466,12 +554,39 @@ async def search_records(
     db: AsyncSession = Depends(get_db)
 ):
     """
-    Поиск пластинок в Discogs.
+    Поиск пластинок: local-first по discogs_releases_index (offline-дамп),
+    fallback на Discogs API если ничего не найдено локально.
+
     Не требует авторизации, но с авторизацией может сохранять историю.
     """
     response.headers["Cache-Control"] = "public, max-age=300"
-    discogs = DiscogsService()
 
+    # Local-first: 19M записей в discogs_releases_index покрывают подавляющее
+    # большинство запросов. API hit только если local пусто (свежие релизы,
+    # опечатки за порогом trigram).
+    try:
+        local = await _search_local_index(
+            db, q, artist, year, year_min, year_max, label, page, per_page
+        )
+    except Exception as exc:
+        logger.warning("local search failed, fallback to API: %s", exc)
+        local = []
+
+    if local:
+        await _enrich_search_results_with_rarity(
+            local, db, id_attr="discogs_id", format_attr="format_type"
+        )
+        # total известен только приблизительно — отдаём len(local) + offset как
+        # минимум. Mobile-pager работает с has_next по len(results)==per_page.
+        return RecordSearchResponse(
+            results=local,
+            total=(page - 1) * per_page + len(local),
+            page=page,
+            per_page=per_page,
+        )
+
+    # Fallback на Discogs API
+    discogs = DiscogsService()
     try:
         results = await discogs.search(
             query=q,
