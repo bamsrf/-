@@ -108,7 +108,7 @@ async def _lookup_dump_fuzzy(
             "FROM discogs_releases_index "
             "WHERE similarity(artist, :a) >= :ta "
             "  AND similarity(title, :t) >= :tt "
-            "  AND (:y::int IS NULL OR year IS NULL OR ABS(year - :y) <= :tol) "
+            "  AND (cast(:y as int) IS NULL OR year IS NULL OR ABS(year - cast(:y as int)) <= :tol) "
             "ORDER BY score DESC LIMIT 1"
         ),
         {
