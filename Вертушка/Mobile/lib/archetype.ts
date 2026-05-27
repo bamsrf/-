@@ -1,153 +1,206 @@
 /**
- * Архетипы коллекционера — автоматически выводимая «маркировка» юзера.
+ * Архетипы коллекционера — XP-лестница «Физика звука».
  *
- * Один юзер = один активный архетип (наивысший приоритет в таблице ниже).
- * Архетип не косметика — он живёт рядом с косметикой и обновляется на лету
- * из MyAchievementsResponse. Полная спецификация: PLAN_ACHIEVEMENTS_V2.md §5.6.
+ * V3-rewrite (см. docs/plans/PLAN_ACHIEVEMENTS_ARCHETYPES_V3.md):
+ * - Pure score-based ladder: суммарные очки по тирам открытых ачивок.
+ * - 10 уровней (0..9), от «Тишь» до «Первозвук».
+ * - У каждого уровня — название, флейвор-текст (постоянно в hero), tier-окрас.
+ * - Не зависит от конкретных серий — юзер копит очки откуда угодно, поощряет
+ *   пробовать разные фичи.
+ *
+ * Tier-веса геометрические (x3 ступень):
+ *   simple=1, notable=3, rare=10, epic=30, legend=100.
+ *
+ * Max-score под текущий каталог (22s + 11n + 22r + 11e + 5l) = 1105.
+ * Пейсинг уровней — ранний быстрый, поздний медленный (RPG-кривая).
  */
 import type { AchievementTierKey, MyAchievementsResponse } from './types';
-import { unlockedCodes } from './achievementHelpers';
 
-export interface ArchetypeInfo {
+// ───────────────────────────────────────────────────────────────────────────
+// Очки за тир
+// ───────────────────────────────────────────────────────────────────────────
+
+export const TIER_WEIGHT: Record<AchievementTierKey, number> = {
+  simple: 1,
+  notable: 3,
+  rare: 10,
+  epic: 30,
+  legend: 100,
+};
+
+// ───────────────────────────────────────────────────────────────────────────
+// Лестница уровней «Физика звука»
+// ───────────────────────────────────────────────────────────────────────────
+
+export interface LevelDef {
+  /** Стабильный ключ (для иконок, аналитики). */
   key: string;
+  /** Отображаемое имя уровня. */
   label: string;
-  /** Дискретная подпись для tooltip / поясняющая ленточка */
-  blurb: string;
-  /** Цвет обводки в стиле тира главного триггера */
+  /** Минимальный score для входа на уровень. */
+  threshold: number;
+  /** Флейвор-текст — постоянно виден в hero блока ачивок. */
+  flavor: string;
+  /** Цветовая зона — нужна для окрашивания chip-а в стиле тира. */
   tierKey: AchievementTierKey;
 }
 
-const FOLLOWER_THRESHOLD = 5;
+export const LEVELS: readonly LevelDef[] = [
+  {
+    key: 'silence',
+    label: 'Тишь',
+    threshold: 0,
+    flavor: 'Ты ещё не нажал на play. Но уже пришёл.',
+    tierKey: 'simple',
+  },
+  {
+    key: 'rustle',
+    label: 'Шорох',
+    threshold: 10,
+    flavor: 'Игла коснулась. Всё остальное — дело времени.',
+    tierKey: 'simple',
+  },
+  {
+    key: 'echo',
+    label: 'Эхо',
+    threshold: 30,
+    flavor: 'Что-то услышанное однажды не уходит. Оно возвращается.',
+    tierKey: 'notable',
+  },
+  {
+    key: 'wave',
+    label: 'Волна',
+    threshold: 75,
+    flavor: 'Ты больше не слушаешь музыку. Ты в ней.',
+    tierKey: 'notable',
+  },
+  {
+    key: 'resonance',
+    label: 'Резонанс',
+    threshold: 150,
+    flavor: 'Правильная пластинка в правильный момент — это физика, не случайность.',
+    tierKey: 'rare',
+  },
+  {
+    key: 'overtone',
+    label: 'Обертон',
+    threshold: 275,
+    flavor: 'Слышишь то, чего нет в нотах. Значит, слух уже другой.',
+    tierKey: 'rare',
+  },
+  {
+    key: 'amplitude',
+    label: 'Амплитуда',
+    threshold: 450,
+    flavor: 'Твоя коллекция давит на воздух. Это чувствуют все, кто входит в комнату.',
+    tierKey: 'epic',
+  },
+  {
+    key: 'frequency',
+    label: 'Частота',
+    threshold: 650,
+    flavor: 'Ты настроен точнее большинства. Фальшь слышна за три такта.',
+    tierKey: 'epic',
+  },
+  {
+    key: 'tuning_fork',
+    label: 'Камертон',
+    threshold: 850,
+    flavor: 'К тебе приходят сверяться. Ты — точка отсчёта.',
+    tierKey: 'legend',
+  },
+  {
+    key: 'primal_sound',
+    label: 'Первозвук',
+    threshold: 1050,
+    flavor: 'Было время до тебя. Теперь от тебя считают.',
+    tierKey: 'legend',
+  },
+] as const;
 
-type Predicate = (codes: Set<string>) => boolean;
+// ───────────────────────────────────────────────────────────────────────────
+// API
+// ───────────────────────────────────────────────────────────────────────────
 
-interface Rule extends ArchetypeInfo {
-  match: Predicate;
+export interface ArchetypeInfo {
+  /** Ключ текущего уровня. */
+  key: string;
+  /** Имя текущего уровня. */
+  label: string;
+  /** Флейвор-текст текущего уровня. */
+  flavor: string;
+  /** Tier-окрас для chip-а. */
+  tierKey: AchievementTierKey;
+  /** Накопленные очки. */
+  score: number;
+  /** Порог текущего уровня. */
+  currentThreshold: number;
+  /** Имя следующего уровня (null если max). */
+  nextLabel: string | null;
+  /** Порог следующего уровня (null если max). */
+  nextThreshold: number | null;
+  /** Сколько очков до следующего уровня (0 если max). */
+  pointsToNext: number;
+  /** Прогресс внутри текущего сегмента 0..1 (1 если max). */
+  progressPct: number;
+  /** Индекс уровня 0..9 — для UI/аналитики. */
+  index: number;
+  /** Всего уровней (10) — для отображения «6/10». */
+  total: number;
 }
 
-const RULES: Rule[] = [
-  {
-    key: 'evangelist',
-    label: 'Эпидемиолог',
-    blurb: 'Привёл круг коллекционеров.',
-    tierKey: 'legend',
-    match: (c) => c.has('META_evangelist'),
-  },
-  {
-    key: 'scientist',
-    label: 'Учёный',
-    blurb: 'Дискография, версии, лейблы — закрыто.',
-    tierKey: 'legend',
-    match: (c) => c.has('META_depth'),
-  },
-  {
-    key: 'archivist',
-    label: 'Архивист',
-    blurb: 'Большая, любимая, ухоженная коллекция.',
-    tierKey: 'legend',
-    match: (c) => c.has('META_scale') || c.has('B5_keeper') || c.has('B6_warden'),
-  },
-  {
-    key: 'resident',
-    label: 'Резидент',
-    blurb: 'Сильное сообщество вокруг.',
-    tierKey: 'epic',
-    match: (c) => c.has('META_community'),
-  },
-  {
-    key: 'polymath',
-    label: 'Эрудит',
-    blurb: 'Всеяден жанрово.',
-    tierKey: 'epic',
-    match: (c) => c.has('META_genres'),
-  },
-  {
-    key: 'cartographer',
-    label: 'Картограф',
-    blurb: 'Кругосветка пройдена.',
-    tierKey: 'epic',
-    match: (c) => c.has('META_geography'),
-  },
-  {
-    key: 'eras_keeper',
-    label: 'Хранитель эпох',
-    blurb: 'Каждое десятилетие на полке.',
-    tierKey: 'legend',
-    match: (c) => c.has('META_eras'),
-  },
-  {
-    key: 'grail_hunter',
-    label: 'Охотник за Граалем',
-    blurb: 'Коллекционки + лимитки + тренды.',
-    tierKey: 'epic',
-    match: (c) => c.has('META_rarity'),
-  },
-  {
-    key: 'gifter',
-    label: 'Дарящая рука',
-    blurb: 'Социальный жест через подарки.',
-    tierKey: 'epic',
-    match: (c) => c.has('META_gifts'),
-  },
-  {
-    key: 'searcher',
-    label: 'Меломан-сёрчер',
-    blurb: 'Ищет, фолловит, копит.',
-    tierKey: 'notable',
-    match: (c) =>
-      c.has('K7_mutual_x10') && c.has('K1_following_x5') && c.has('B3_archivist'),
-  },
-  {
-    key: 'quiet_collector',
-    label: 'Тихий собиратель',
-    blurb: 'Коллекционирует без шума.',
-    tierKey: 'notable',
-    match: (c) =>
-      c.has('B3_archivist') &&
-      !c.has('META_community') &&
-      // подписан мало (5 = K1, если нет K1 — точно мало)
-      !c.has('K1_following_x5'),
-  },
-  {
-    key: 'selecta',
-    label: 'Селекта',
-    blurb: 'Глубокий в одном жанре.',
-    tierKey: 'rare',
-    match: (c) =>
-      c.has('F3_jazz_x25') ||
-      c.has('F4_electronic_x25') ||
-      c.has('F5_classical_x15') ||
-      c.has('F6_rock_x25'),
-  },
-  {
-    key: 'melomane',
-    label: 'Меломан',
-    blurb: 'Прошёл онбординг, реально слушает.',
-    tierKey: 'notable',
-    match: (c) => c.has('META_foundation') && c.has('B1_starter'),
-  },
-];
-
-export function computeArchetype(data: MyAchievementsResponse): ArchetypeInfo | null {
-  const codes = unlockedCodes(data);
-  if (codes.size < 3) {
-    return {
-      key: 'rookie',
-      label: 'Новичок',
-      blurb: 'Только начинаем.',
-      tierKey: 'simple',
-    };
-  }
-  for (const rule of RULES) {
-    if (rule.match(codes)) {
-      const { match: _omit, ...info } = rule;
-      return info;
+/**
+ * Считает суммарный XP-score по открытым ачивкам.
+ */
+export function computeScore(data: MyAchievementsResponse): number {
+  let score = 0;
+  for (const series of data.series) {
+    for (const item of series.items) {
+      if (item.is_unlocked) {
+        score += TIER_WEIGHT[item.tier.key] ?? 0;
+      }
     }
   }
+  return score;
+}
+
+/**
+ * Определяет текущий архетип-уровень юзера и сопутствующую инфу.
+ *
+ * Никогда не возвращает null — у любого юзера есть как минимум «Тишь».
+ */
+export function computeArchetype(data: MyAchievementsResponse): ArchetypeInfo {
+  const score = computeScore(data);
+
+  // Берём самый высокий уровень, чей threshold <= score.
+  let idx = 0;
+  for (let i = 0; i < LEVELS.length; i++) {
+    if (score >= LEVELS[i].threshold) {
+      idx = i;
+    } else {
+      break;
+    }
+  }
+
+  const current = LEVELS[idx];
+  const next = LEVELS[idx + 1] ?? null;
+  const span = next ? next.threshold - current.threshold : 0;
+  const progressPct = next && span > 0
+    ? Math.min(1, Math.max(0, (score - current.threshold) / span))
+    : 1;
+
   return {
-    key: 'rookie',
-    label: 'Новичок',
-    blurb: 'Только начинаем.',
-    tierKey: 'simple',
+    key: current.key,
+    label: current.label,
+    flavor: current.flavor,
+    tierKey: current.tierKey,
+    score,
+    currentThreshold: current.threshold,
+    nextLabel: next?.label ?? null,
+    nextThreshold: next?.threshold ?? null,
+    pointsToNext: next ? Math.max(0, next.threshold - score) : 0,
+    progressPct,
+    index: idx,
+    total: LEVELS.length,
   };
 }

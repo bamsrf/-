@@ -1,0 +1,86 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" overflow="visible">
+  <defs>
+    <linearGradient id="g" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#F2C770"></stop>
+      <stop offset=".5" stop-color="#D9A84E"></stop>
+      <stop offset="1" stop-color="#A87E32"></stop>
+    </linearGradient>
+  </defs>
+
+  
+  <g id="record-left" transform="rotate(-5 38 52)">
+    <circle cx="38" cy="52" r="34" fill="#0B1438"></circle>
+    <circle cx="38" cy="52" r="32.5" fill="url(#g)"></circle>
+    <circle cx="38" cy="52" r="30" fill="#1A1A2E"></circle>
+    
+    <path d="M 10 52 A 28 28 0 0 1 66 52" fill="none" stroke="#000" stroke-opacity=".5" stroke-width="1.6" transform="translate(0,-1)"></path>
+    
+    <g stroke="#D9A84E" stroke-width=".3" stroke-opacity=".55" fill="none">
+      <circle cx="38" cy="52" r="26"></circle>
+      <circle cx="38" cy="52" r="22"></circle>
+      <circle cx="38" cy="52" r="18"></circle>
+      <circle cx="38" cy="52" r="14"></circle>
+    </g>
+    
+    <circle cx="40" cy="52" r="10" fill="#0B1438"></circle>
+    <circle cx="40" cy="52" r="9.2" fill="#E89AC0"></circle>
+    <path d="M 32 52 A 8.2 8.2 0 0 1 48 52" fill="none" stroke="#7A4360" stroke-opacity=".55" stroke-width="1.2"></path>
+    <circle cx="40" cy="52" r="8.6" fill="none" stroke="#D9A84E" stroke-width=".5"></circle>
+    <circle cx="40" cy="52" r="1.1" fill="#FBF5EA"></circle>
+  </g>
+
+  
+  <g id="record-right" transform="rotate(5 62 52)">
+    <circle cx="62" cy="52" r="34" fill="#0B1438"></circle>
+    <circle cx="62" cy="52" r="32.5" fill="url(#g)"></circle>
+    <circle cx="62" cy="52" r="30" fill="#1A1A2E"></circle>
+    <path d="M 34 52 A 28 28 0 0 1 90 52" fill="none" stroke="#000" stroke-opacity=".5" stroke-width="1.6" transform="translate(0,-1)"></path>
+    <g stroke="#D9A84E" stroke-width=".3" stroke-opacity=".55" fill="none">
+      <circle cx="62" cy="52" r="26"></circle>
+      <circle cx="62" cy="52" r="22"></circle>
+      <circle cx="62" cy="52" r="18"></circle>
+      <circle cx="62" cy="52" r="14"></circle>
+    </g>
+    <circle cx="60" cy="52" r="10" fill="#0B1438"></circle>
+    <circle cx="60" cy="52" r="9.2" fill="#E89AC0"></circle>
+    <path d="M 52 52 A 8.2 8.2 0 0 1 68 52" fill="none" stroke="#7A4360" stroke-opacity=".55" stroke-width="1.2"></path>
+    <circle cx="60" cy="52" r="8.6" fill="none" stroke="#D9A84E" stroke-width=".5"></circle>
+    <circle cx="60" cy="52" r="1.1" fill="#FBF5EA"></circle>
+  </g>
+
+  
+  <g id="seam">
+    <line x1="50" y1="22" x2="50" y2="82" stroke="#0B1438" stroke-width=".8" stroke-opacity=".6"></line>
+  </g>
+
+  
+  <g id="equals">
+    
+    <ellipse cx="50" cy="52" rx="5.2" ry="9" fill="#0B1438"></ellipse>
+    <ellipse cx="50" cy="52" rx="4.4" ry="8" fill="url(#g)"></ellipse>
+    
+    <path d="M 46 52 A 4 7 0 0 1 54 52" fill="none" stroke="#0B1438" stroke-opacity=".4" stroke-width=".8" transform="translate(0,-.6)"></path>
+    
+    <rect x="46.4" y="48.4" width="7.2" height="1.6" rx=".4" fill="#0B1438"></rect>
+    <rect x="46.4" y="54" width="7.2" height="1.6" rx=".4" fill="#0B1438"></rect>
+  </g>
+
+  
+  <g id="sparkles">
+    <g transform="translate(50 12)">
+      <path d="M0 -6 L1.6 -1.6 L6 0 L1.6 1.6 L0 6 L-1.6 1.6 L-6 0 L-1.6 -1.6 Z" fill="url(#g)"></path>
+      <path d="M0 -3.5 L.9 -.9 L3.5 0 L.9 .9 L0 3.5 L-.9 .9 L-3.5 0 L-.9 -.9 Z" fill="#FBF5EA" fill-opacity=".85"></path>
+    </g>
+    <g transform="translate(80 22)">
+      <path d="M0 -3.6 L1 -1 L3.6 0 L1 1 L0 3.6 L-1 1 L-3.6 0 L-1 -1 Z" fill="url(#g)"></path>
+    </g>
+    <g transform="translate(20 22)">
+      <path d="M0 -3.2 L.9 -.9 L3.2 0 L.9 .9 L0 3.2 L-.9 .9 L-3.2 0 L-.9 -.9 Z" fill="url(#g)"></path>
+    </g>
+  </g>
+
+  <g id="highlights">
+    <path d="M 12 38 Q 18 22 30 20" fill="none" stroke="#FFF" stroke-opacity=".4" stroke-width="1.8" stroke-linecap="round"></path>
+    <path d="M 70 20 Q 82 22 88 38" fill="none" stroke="#FFF" stroke-opacity=".4" stroke-width="1.8" stroke-linecap="round"></path>
+  </g>
+</svg>

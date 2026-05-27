@@ -1,0 +1,60 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" overflow="visible">
+  <defs>
+    <linearGradient id="g" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#F2C770"></stop>
+      <stop offset=".5" stop-color="#D9A84E"></stop>
+      <stop offset="1" stop-color="#A87E32"></stop>
+    </linearGradient>
+    <clipPath id="heart-inside">
+      <path d="M50 86 C 50 86, 12 62, 12 33 C 12 19.5, 23 9.5, 34.5 9.5 C 42 9.5, 47.5 14, 50 21 C 52.5 14, 58 9.5, 65.5 9.5 C 77 9.5, 88 19.5, 88 33 C 88 62, 50 86, 50 86 Z"></path>
+    </clipPath>
+  </defs>
+
+  
+  <g id="outline">
+    <path d="M50 92 C 50 92, 6 64, 6 32 C 6 16, 20 4, 34 4 C 42 4, 48 10, 50 17 C 52 10, 58 4, 66 4 C 80 4, 94 16, 94 32 C 94 64, 50 92, 50 92 Z" fill="#0B1438"></path>
+    <path d="M50 90 C 50 90, 8 63, 8 32.5 C 8 17.5, 21 6, 34 6 C 42 6, 47.5 11.5, 50 19 C 52.5 11.5, 58 6, 66 6 C 79 6, 92 17.5, 92 32.5 C 92 63, 50 90, 50 90 Z" fill="url(#g)"></path>
+  </g>
+
+  
+  <g id="enamel" clip-path="url(#heart-inside)">
+    <path d="M50 86 C 50 86, 12 62, 12 33 C 12 19.5, 23 9.5, 34.5 9.5 C 42 9.5, 47.5 14, 50 21 C 52.5 14, 58 9.5, 65.5 9.5 C 77 9.5, 88 19.5, 88 33 C 88 62, 50 86, 50 86 Z" fill="#1A1A2E"></path>
+
+    
+    <g stroke="#D9A84E" stroke-width=".4" stroke-opacity=".5" fill="none">
+      <circle cx="50" cy="46" r="38"></circle>
+      <circle cx="50" cy="46" r="34"></circle>
+      <circle cx="50" cy="46" r="30"></circle>
+      <circle cx="50" cy="46" r="26"></circle>
+      <circle cx="50" cy="46" r="22"></circle>
+      <circle cx="50" cy="46" r="18"></circle>
+      <circle cx="50" cy="46" r="14"></circle>
+    </g>
+
+    
+    <path d="M 50 8 C 70 8, 88 22, 88 36 C 88 50, 76 70, 60 80 L 50 46 Z" fill="#FFF" fill-opacity=".05"></path>
+  </g>
+
+  
+  <g>
+    <path d="M 14 30 C 16 18, 25 11, 35 11 C 42 11, 47 15, 50 22" fill="none" stroke="#000" stroke-opacity=".55" stroke-width="1.6" stroke-linecap="round"></path>
+    <path d="M 50 22 C 53 15, 58 11, 65 11 C 75 11, 84 18, 86 30" fill="none" stroke="#000" stroke-opacity=".55" stroke-width="1.6" stroke-linecap="round"></path>
+  </g>
+
+  
+  <g id="label">
+    <circle cx="50" cy="46" r="9.5" fill="#0B1438"></circle>
+    <circle cx="50" cy="46" r="8.8" fill="#FBF5EA"></circle>
+    <path d="M 42 46 A 8 8 0 0 1 58 46" fill="none" stroke="#8C7A4A" stroke-opacity=".4" stroke-width="1"></path>
+    <circle cx="50" cy="46" r="8.2" fill="none" stroke="#D9A84E" stroke-width=".5"></circle>
+    
+    <circle cx="50" cy="46" r="1.8" fill="#E85A2A"></circle>
+    <circle cx="50" cy="46" r=".6" fill="#FBF5EA"></circle>
+  </g>
+
+  <g id="highlights">
+    
+    <path d="M 16 26 Q 22 12 32 11" fill="none" stroke="#FFF" stroke-opacity=".55" stroke-width="2.4" stroke-linecap="round"></path>
+    <path d="M 22 28 Q 26 18 32 16" fill="none" stroke="#FFF" stroke-opacity=".25" stroke-width="1" stroke-linecap="round"></path>
+  </g>
+</svg>

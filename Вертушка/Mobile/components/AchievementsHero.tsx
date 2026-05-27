@@ -1,12 +1,11 @@
 /**
  * AchievementsHero — крупный блок в шапке экрана /achievements.
  *
- * Содержит:
- * - Анимированный counter «X / Y открыто» (число «вырастает» при загрузке)
- * - Архетип юзера (chip)
- * - Самая редкая открытая ачивка (большой пин справа)
- *
- * Если ачивок ещё нет — мотивирующее empty-state.
+ * V3 (см. PLAN_ACHIEVEMENTS_ARCHETYPES_V3.md):
+ * - Pure XP-уровень («Тишь» → «Первозвук», 10 ступеней).
+ * - Флейвор-текст уровня — ВСЕГДА виден под счётчиком.
+ * - Прогресс-бар «score / next_threshold» к следующей ступени.
+ * - Топ-пин справа (самая редкая) сохранён.
  */
 import { useEffect, useRef, useState } from 'react';
 import { Animated, Easing, StyleSheet, Text, View } from 'react-native';
@@ -50,6 +49,11 @@ export function AchievementsHero({ data, extraRandom = [], username }: Props) {
   // Цвет фона hero — производный от тира самой редкой
   const auraKey = rarest?.tier.key || 'simple';
   const aura = TIER_AURA[auraKey];
+  const onLight = aura.ink !== '#FFFFFF';
+  const softInk = onLight ? 'rgba(14,18,28,0.7)' : 'rgba(255,255,255,0.85)';
+  const mutedInk = onLight ? 'rgba(14,18,28,0.55)' : 'rgba(255,255,255,0.7)';
+  const trackBg = onLight ? 'rgba(14,18,28,0.12)' : 'rgba(255,255,255,0.18)';
+  const fillBg = onLight ? 'rgba(14,18,28,0.55)' : 'rgba(255,255,255,0.9)';
 
   return (
     <View style={styles.wrap}>
@@ -59,53 +63,88 @@ export function AchievementsHero({ data, extraRandom = [], username }: Props) {
         end={{ x: 1, y: 1 }}
         style={styles.gradient}
       >
-        <View style={styles.left}>
-          <Text style={[styles.eyebrow, { color: aura.ink === '#FFFFFF' ? 'rgba(255,255,255,0.8)' : 'rgba(14,18,28,0.7)' }]}>
-            {username ? `@${username}` : 'Твоя коллекция'}
-          </Text>
-          <View style={styles.counterRow}>
-            <Text style={[styles.countBig, { color: aura.ink }]}>{displayCount}</Text>
-            <Text style={[styles.countSlash, { color: aura.ink }]}>/{data.total}</Text>
-          </View>
-          <Text style={[styles.subtitle, { color: aura.ink === '#FFFFFF' ? 'rgba(255,255,255,0.85)' : 'rgba(14,18,28,0.65)' }]}>
-            ачивок открыто
-          </Text>
-          {archetype && (
+        <View style={styles.row}>
+          <View style={styles.left}>
+            <Text style={[styles.eyebrow, { color: softInk }]}>
+              {username ? `@${username}` : 'Твоя коллекция'}
+            </Text>
+            <View style={styles.counterRow}>
+              <Text style={[styles.countBig, { color: aura.ink }]}>{displayCount}</Text>
+              <Text style={[styles.countSlash, { color: aura.ink }]}>/{data.total}</Text>
+            </View>
+            <Text style={[styles.subtitle, { color: softInk }]}>
+              ачивок открыто
+            </Text>
+
             <View
               style={[
                 styles.archChip,
                 {
-                  borderColor: aura.ink === '#FFFFFF' ? 'rgba(255,255,255,0.35)' : 'rgba(14,18,28,0.2)',
-                  backgroundColor: aura.ink === '#FFFFFF' ? 'rgba(255,255,255,0.12)' : 'rgba(255,255,255,0.7)',
+                  borderColor: onLight ? 'rgba(14,18,28,0.2)' : 'rgba(255,255,255,0.35)',
+                  backgroundColor: onLight ? 'rgba(255,255,255,0.7)' : 'rgba(255,255,255,0.12)',
                 },
               ]}
             >
-              <Text style={[styles.archChipLabel, { color: aura.ink }]}>
+              <Text style={[styles.archLevel, { color: mutedInk }]}>
+                Уровень {archetype.index + 1}/{archetype.total}
+              </Text>
+              <Text style={[styles.archLabel, { color: aura.ink }]}>
                 {archetype.label}
               </Text>
             </View>
-          )}
+          </View>
+
+          <View style={styles.right}>
+            {rarest ? (
+              <View style={styles.rarestWrap}>
+                <Text style={[styles.rarestEyebrow, { color: mutedInk }]}>
+                  Твой топ
+                </Text>
+                <AchievementPin item={rarest} size={96} />
+                <Text numberOfLines={1} style={[styles.rarestLabel, { color: aura.ink }]}>
+                  {rarest.title_ru || '?'}
+                </Text>
+              </View>
+            ) : (
+              <View style={styles.rarestEmpty}>
+                <Text style={[styles.rarestEmptyText, { color: mutedInk }]}>
+                  Открой первую — здесь появится твоя самая редкая.
+                </Text>
+              </View>
+            )}
+          </View>
         </View>
 
-        <View style={styles.right}>
-          {rarest ? (
-            <View style={styles.rarestWrap}>
-              <Text style={[styles.rarestEyebrow, { color: aura.ink === '#FFFFFF' ? 'rgba(255,255,255,0.7)' : 'rgba(14,18,28,0.55)' }]}>
-                Твой топ
-              </Text>
-              <AchievementPin item={rarest} size={96} />
-              <Text numberOfLines={1} style={[styles.rarestLabel, { color: aura.ink }]}>
-                {rarest.title_ru || '?'}
-              </Text>
+        {/* Флейвор-текст уровня — всегда виден */}
+        <Text style={[styles.flavor, { color: softInk }]}>
+          «{archetype.flavor}»
+        </Text>
+
+        {/* Прогресс-бар к следующему уровню */}
+        {archetype.nextLabel ? (
+          <View style={styles.progressBlock}>
+            <View style={[styles.progressTrack, { backgroundColor: trackBg }]}>
+              <View
+                style={[
+                  styles.progressFill,
+                  { backgroundColor: fillBg, width: `${Math.round(archetype.progressPct * 100)}%` },
+                ]}
+              />
             </View>
-          ) : (
-            <View style={styles.rarestEmpty}>
-              <Text style={[styles.rarestEmptyText, { color: aura.ink === '#FFFFFF' ? 'rgba(255,255,255,0.7)' : 'rgba(14,18,28,0.6)' }]}>
-                Открой первую — здесь появится твоя самая редкая.
-              </Text>
+            <Text style={[styles.progressText, { color: mutedInk }]}>
+              {archetype.score} / {archetype.nextThreshold} XP до «{archetype.nextLabel}»
+            </Text>
+          </View>
+        ) : (
+          <View style={styles.progressBlock}>
+            <View style={[styles.progressTrack, { backgroundColor: trackBg }]}>
+              <View style={[styles.progressFill, { backgroundColor: fillBg, width: '100%' }]} />
             </View>
-          )}
-        </View>
+            <Text style={[styles.progressText, { color: mutedInk }]}>
+              Все ступени пройдены · {archetype.score} XP
+            </Text>
+          </View>
+        )}
       </LinearGradient>
     </View>
   );
@@ -119,10 +158,12 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
   },
   gradient: {
-    flexDirection: 'row',
     paddingHorizontal: Spacing.lg,
     paddingVertical: Spacing.lg,
     minHeight: 156,
+  },
+  row: {
+    flexDirection: 'row',
   },
   left: {
     flex: 1,
@@ -163,15 +204,22 @@ const styles = StyleSheet.create({
   },
   archChip: {
     alignSelf: 'flex-start',
-    paddingHorizontal: 10,
-    paddingVertical: 4,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
     borderRadius: 14,
     borderWidth: 1,
   },
-  archChipLabel: {
-    fontSize: 13,
-    fontWeight: '700',
-    letterSpacing: 0.3,
+  archLevel: {
+    fontSize: 10,
+    fontWeight: '600',
+    letterSpacing: 0.8,
+    textTransform: 'uppercase',
+    marginBottom: 1,
+  },
+  archLabel: {
+    fontSize: 15,
+    fontWeight: '800',
+    letterSpacing: 0.2,
   },
   rarestWrap: {
     alignItems: 'center',
@@ -198,6 +246,30 @@ const styles = StyleSheet.create({
     fontSize: 12,
     textAlign: 'center',
     lineHeight: 16,
+  },
+  flavor: {
+    marginTop: Spacing.md,
+    fontSize: 13,
+    fontStyle: 'italic',
+    lineHeight: 18,
+  },
+  progressBlock: {
+    marginTop: Spacing.sm,
+  },
+  progressTrack: {
+    height: 6,
+    borderRadius: 3,
+    overflow: 'hidden',
+  },
+  progressFill: {
+    height: '100%',
+    borderRadius: 3,
+  },
+  progressText: {
+    marginTop: 6,
+    fontSize: 11,
+    fontWeight: '600',
+    letterSpacing: 0.3,
   },
 });
 

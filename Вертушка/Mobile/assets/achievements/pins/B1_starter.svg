@@ -1,0 +1,118 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" overflow="visible">
+  <defs>
+    <linearGradient id="g" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#F2C770"></stop>
+      <stop offset=".5" stop-color="#D9A84E"></stop>
+      <stop offset="1" stop-color="#A87E32"></stop>
+    </linearGradient>
+  </defs>
+
+  
+  <g id="numeral">
+    
+    <g>
+      <path d="M 26 -2 L 36 -2 L 36 30 L 26 30 Z" fill="#0B1438"></path>
+      <path d="M 27.5 -.5 L 34.5 -.5 L 34.5 28.5 L 27.5 28.5 Z" fill="url(#g)"></path>
+      
+      <path d="M 26 6 L 34.5 .5 L 34.5 7 Z" fill="#0B1438"></path>
+      
+      <path d="M 23 28.5 L 39 28.5 L 39 31 L 23 31 Z" fill="#0B1438"></path>
+      <path d="M 24.5 28.5 L 37.5 28.5 L 37.5 30 L 24.5 30 Z" fill="url(#g)"></path>
+      
+      <line x1="28.5" y1="1" x2="28.5" y2="27" stroke="#FFF" stroke-opacity=".3" stroke-width=".6"></line>
+    </g>
+    
+    <g>
+      <ellipse cx="56" cy="14" rx="16" ry="17" fill="#0B1438"></ellipse>
+      <ellipse cx="56" cy="14" rx="14.5" ry="15.5" fill="url(#g)"></ellipse>
+      <ellipse cx="56" cy="14" rx="8" ry="9" fill="#0B1438"></ellipse>
+      <ellipse cx="56" cy="14" rx="6.5" ry="7.5" fill="url(#g)"></ellipse>
+      <ellipse cx="56" cy="14" rx="5.2" ry="6.2" fill="#0B1438"></ellipse>
+      
+      <path d="M 44 8 Q 50 -1 64 -1" fill="none" stroke="#FFF" stroke-opacity=".45" stroke-width="1.3" stroke-linecap="round"></path>
+    </g>
+  </g>
+
+  
+  <g id="shelf-outline">
+    <rect x="6" y="36" width="88" height="62" rx="4" fill="#0B1438"></rect>
+    <rect x="7.5" y="37.5" width="85" height="59" rx="3" fill="url(#g)"></rect>
+    <rect x="9.5" y="39.5" width="81" height="55" rx="2" fill="#0B1438"></rect>
+  </g>
+
+  
+  <g id="spines">
+    
+    
+    
+    
+    <rect x="12" y="42" width="7" height="46" fill="#E85A2A"></rect>
+    <line x1="13.5" y1="56" x2="17.5" y2="56" stroke="#FBF5EA" stroke-width=".5"></line>
+    <line x1="13.5" y1="74" x2="17.5" y2="74" stroke="#FBF5EA" stroke-width=".5"></line>
+    
+    <rect x="19.6" y="42" width="7" height="46" fill="#FBF5EA"></rect>
+    <line x1="21" y1="52" x2="25.2" y2="52" stroke="#0B1438" stroke-width=".5"></line>
+    <line x1="21" y1="64" x2="25.2" y2="64" stroke="#0B1438" stroke-width=".5"></line>
+    <line x1="21" y1="76" x2="25.2" y2="76" stroke="#0B1438" stroke-width=".5"></line>
+    
+    <rect x="27.2" y="42" width="7" height="46" fill="#2A4BD7"></rect>
+    <rect x="28.5" y="56" width="4.4" height="6" fill="#D9A84E"></rect>
+    <line x1="28.5" y1="76" x2="32.9" y2="76" stroke="#D9A84E" stroke-width=".4"></line>
+    
+    <rect x="34.8" y="42" width="7" height="46" fill="#1A1A2E"></rect>
+    <line x1="36" y1="50" x2="40.6" y2="50" stroke="#D9A84E" stroke-width=".4"></line>
+    <line x1="36" y1="54" x2="40.6" y2="54" stroke="#D9A84E" stroke-width=".4"></line>
+    <line x1="36" y1="74" x2="40.6" y2="74" stroke="#D9A84E" stroke-width=".4"></line>
+    
+    <rect x="42.4" y="42" width="7" height="46" fill="#5C7AE8"></rect>
+    <rect x="43.6" y="55" width="4.6" height="4" fill="#FBF5EA"></rect>
+    <line x1="43.6" y1="78" x2="48.2" y2="78" stroke="#FBF5EA" stroke-width=".4"></line>
+    
+    <rect x="50" y="42" width="7" height="46" fill="#FBF5EA"></rect>
+    <circle cx="53.5" cy="62" r="2.2" fill="#E85A2A"></circle>
+    <line x1="51.3" y1="76" x2="55.7" y2="76" stroke="#2A4BD7" stroke-width=".5"></line>
+    
+    <rect x="57.6" y="42" width="7" height="46" fill="#E85A2A"></rect>
+    <rect x="58.8" y="54" width="4.6" height="2" fill="#0B1438"></rect>
+    <rect x="58.8" y="74" width="4.6" height="2" fill="#0B1438"></rect>
+    
+    <rect x="65.2" y="42" width="7" height="46" fill="#0B1438"></rect>
+    <line x1="66.4" y1="56" x2="71" y2="56" stroke="#D9A84E" stroke-width=".4"></line>
+    <line x1="66.4" y1="60" x2="71" y2="60" stroke="#D9A84E" stroke-width=".4"></line>
+    <line x1="66.4" y1="80" x2="71" y2="80" stroke="#D9A84E" stroke-width=".4"></line>
+    
+    <rect x="72.8" y="42" width="7" height="46" fill="#5C7AE8"></rect>
+    <line x1="74" y1="50" x2="78.6" y2="50" stroke="#FBF5EA" stroke-width=".4"></line>
+    <line x1="74" y1="80" x2="78.6" y2="80" stroke="#FBF5EA" stroke-width=".4"></line>
+    
+    <rect x="80.4" y="42" width="7" height="46" fill="#2A4BD7"></rect>
+    <rect x="81.7" y="58" width="4.4" height="10" fill="#FBF5EA"></rect>
+    <circle cx="83.9" cy="63" r="1.4" fill="#E85A2A"></circle>
+
+    
+    <rect x="12" y="42" width="75.4" height="2.2" fill="#000" fill-opacity=".4"></rect>
+    
+    <g stroke="#D9A84E" stroke-width=".3" stroke-opacity=".55">
+      <line x1="19.3" y1="42" x2="19.3" y2="88"></line>
+      <line x1="26.9" y1="42" x2="26.9" y2="88"></line>
+      <line x1="34.5" y1="42" x2="34.5" y2="88"></line>
+      <line x1="42.1" y1="42" x2="42.1" y2="88"></line>
+      <line x1="49.7" y1="42" x2="49.7" y2="88"></line>
+      <line x1="57.3" y1="42" x2="57.3" y2="88"></line>
+      <line x1="64.9" y1="42" x2="64.9" y2="88"></line>
+      <line x1="72.5" y1="42" x2="72.5" y2="88"></line>
+      <line x1="80.1" y1="42" x2="80.1" y2="88"></line>
+    </g>
+  </g>
+
+  
+  <g id="shelf-bottom">
+    <rect x="9.5" y="86" width="81" height="3" fill="#A87E32"></rect>
+    <rect x="9.5" y="89" width="81" height="2" fill="#0B1438"></rect>
+    <rect x="9.5" y="91" width="81" height="3.5" fill="url(#g)"></rect>
+  </g>
+
+  <g id="highlights">
+    <path d="M 12 43 Q 18 41.5 32 41.5" fill="none" stroke="#FFF" stroke-opacity=".4" stroke-width="1" stroke-linecap="round"></path>
+  </g>
+</svg>

@@ -1,8 +1,8 @@
 /**
- * ArchetypeChip — маленький chip с архетипом коллекционера под аватаркой/ником.
+ * ArchetypeChip — маленький chip с уровнем коллекционера под аватаркой/ником.
  *
- * Тянет ачивки юзера, считает архетип и рисует chip. Если archetype=Новичок и
- * `hideRookie=true` — ничего не рисуем (новые юзеры не получают chip).
+ * V3: уровень из XP-лестницы «Физика звука» (см. lib/archetype.ts).
+ * Если уровень = «Тишь» (стартовый) и `hideRookie=true` — ничего не рисуем.
  */
 import { useEffect, useState } from 'react';
 import { StyleSheet, Text, View, ViewStyle, StyleProp } from 'react-native';
@@ -14,7 +14,7 @@ import type { MyAchievementsResponse } from '../lib/types';
 interface Props {
   /** null/undefined → текущий юзер */
   username?: string | null;
-  /** Не рисовать chip, если архетип = Новичок (default true) */
+  /** Не рисовать chip, если уровень = «Тишь» (default true) */
   hideRookie?: boolean;
   style?: StyleProp<ViewStyle>;
 }
@@ -41,7 +41,7 @@ export function ArchetypeChip({ username, hideRookie = true, style }: Props) {
   }, [username]);
 
   if (!archetype) return null;
-  if (hideRookie && archetype.key === 'rookie') return null;
+  if (hideRookie && archetype.key === 'silence') return null;
 
   const tone = TIER_AURA[archetype.tierKey] || TIER_AURA.simple;
 

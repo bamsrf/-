@@ -1,0 +1,135 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" overflow="visible">
+  <defs>
+    <linearGradient id="g" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#F2C770"></stop>
+      <stop offset=".5" stop-color="#D9A84E"></stop>
+      <stop offset="1" stop-color="#A87E32"></stop>
+    </linearGradient>
+    <clipPath id="medallion-inside">
+      <ellipse cx="50" cy="46" rx="30" ry="32"></ellipse>
+    </clipPath>
+  </defs>
+
+  
+  <g id="ribbon">
+    
+    <path d="M -4 75 L 22 70 L 22 78 L -2 84 Z" fill="#2A4BD7"></path>
+    <path d="M -4 75 L 22 70 L 22 78 L -2 84 Z" fill="none" stroke="#0B1438" stroke-width=".7"></path>
+    
+    <path d="M 104 75 L 78 70 L 78 78 L 102 84 Z" fill="#2A4BD7"></path>
+    <path d="M 104 75 L 78 70 L 78 78 L 102 84 Z" fill="none" stroke="#0B1438" stroke-width=".7"></path>
+    
+    <path d="M 22 70 L 18 76 L 22 78 Z" fill="#1A357A" stroke="#0B1438" stroke-width=".5"></path>
+    <path d="M 78 70 L 82 76 L 78 78 Z" fill="#1A357A" stroke="#0B1438" stroke-width=".5"></path>
+    
+    <path d="M 18 70 L 82 70 L 82 80 L 18 80 Z" fill="#2A4BD7"></path>
+    <path d="M 18 70 L 82 70 L 82 80 L 18 80 Z" fill="none" stroke="#0B1438" stroke-width=".8"></path>
+    
+    <line x1="20" y1="72" x2="80" y2="72" stroke="#D9A84E" stroke-width=".4" stroke-opacity=".8"></line>
+    <line x1="20" y1="78" x2="80" y2="78" stroke="#D9A84E" stroke-width=".4" stroke-opacity=".8"></line>
+    
+    <line x1="-1" y1="78" x2="2" y2="82" stroke="#D9A84E" stroke-width=".5"></line>
+    <line x1="101" y1="78" x2="98" y2="82" stroke="#D9A84E" stroke-width=".5"></line>
+  </g>
+
+  
+  <g id="filigree">
+    
+    <g transform="translate(50 5)">
+      <path d="M -3 0 Q 0 -6, 3 0 L 1.5 1 Q 0 -3, -1.5 1 Z" fill="url(#g)" stroke="#0B1438" stroke-width=".4"></path>
+      <circle cx="0" cy="-5" r="1.6" fill="url(#g)" stroke="#0B1438" stroke-width=".4"></circle>
+      <circle cx="0" cy="-5" r=".7" fill="#0B1438"></circle>
+    </g>
+
+    
+    <g transform="translate(20 12)">
+      <path d="M 0 0 Q -3 -2, -5 0 Q -7 4, -3 6 Q 1 6, 2 2 Q 1 0, 0 0 Z" fill="url(#g)" stroke="#0B1438" stroke-width=".4"></path>
+      <circle cx="-3" cy="3" r=".9" fill="#0B1438"></circle>
+    </g>
+    
+    <g transform="translate(80 12) scale(-1, 1)">
+      <path d="M 0 0 Q -3 -2, -5 0 Q -7 4, -3 6 Q 1 6, 2 2 Q 1 0, 0 0 Z" fill="url(#g)" stroke="#0B1438" stroke-width=".4"></path>
+      <circle cx="-3" cy="3" r=".9" fill="#0B1438"></circle>
+    </g>
+
+    
+    <g transform="translate(13 44)">
+      <path d="M 0 -6 Q -4 -3, -3 0 Q -4 3, 0 6 Q 2 3, 1 0 Q 2 -3, 0 -6 Z" fill="url(#g)" stroke="#0B1438" stroke-width=".4"></path>
+      <circle cx="-1" cy="0" r="1" fill="#0B1438"></circle>
+    </g>
+    
+    <g transform="translate(87 44) scale(-1, 1)">
+      <path d="M 0 -6 Q -4 -3, -3 0 Q -4 3, 0 6 Q 2 3, 1 0 Q 2 -3, 0 -6 Z" fill="url(#g)" stroke="#0B1438" stroke-width=".4"></path>
+      <circle cx="-1" cy="0" r="1" fill="#0B1438"></circle>
+    </g>
+
+    
+    <g transform="translate(20 74)">
+      <path d="M 0 0 Q -3 2, -5 0 Q -7 -4, -3 -6 Q 1 -6, 2 -2 Q 1 0, 0 0 Z" fill="url(#g)" stroke="#0B1438" stroke-width=".4"></path>
+      <circle cx="-3" cy="-3" r=".9" fill="#0B1438"></circle>
+    </g>
+    
+    <g transform="translate(80 74) scale(-1, 1)">
+      <path d="M 0 0 Q -3 2, -5 0 Q -7 -4, -3 -6 Q 1 -6, 2 -2 Q 1 0, 0 0 Z" fill="url(#g)" stroke="#0B1438" stroke-width=".4"></path>
+      <circle cx="-3" cy="-3" r=".9" fill="#0B1438"></circle>
+    </g>
+
+    
+    <g fill="#0B1438">
+      <circle cx="35" cy="9" r="1"></circle>
+      <circle cx="65" cy="9" r="1"></circle>
+      <circle cx="14" cy="28" r=".9"></circle>
+      <circle cx="86" cy="28" r=".9"></circle>
+      <circle cx="14" cy="60" r=".9"></circle>
+      <circle cx="86" cy="60" r=".9"></circle>
+      <circle cx="35" cy="79" r="1"></circle>
+      <circle cx="65" cy="79" r="1"></circle>
+    </g>
+  </g>
+
+  
+  <g id="outline">
+    <ellipse cx="50" cy="46" rx="33" ry="35" fill="#0B1438"></ellipse>
+    <ellipse cx="50" cy="46" rx="31.5" ry="33.5" fill="url(#g)"></ellipse>
+    <ellipse cx="50" cy="46" rx="30" ry="32" fill="#0B1438"></ellipse>
+  </g>
+
+  
+  <g id="enamel" clip-path="url(#medallion-inside)">
+    <rect x="18" y="12" width="64" height="68" fill="#FBF5EA"></rect>
+    
+    <path d="M 24 36 A 26 26 0 0 1 76 36" fill="none" stroke="#8C7A4A" stroke-opacity=".35" stroke-width="1.4"></path>
+
+    
+    <ellipse cx="50" cy="46" rx="28" ry="30" fill="none" stroke="#D9A84E" stroke-width=".5"></ellipse>
+
+    
+    
+    <path d="M 24 80 C 26 64, 38 58, 50 58 C 62 58, 74 64, 76 80 L 76 82 L 24 82 Z" fill="#0B1438"></path>
+    
+    <rect x="46" y="48" width="8" height="14" fill="#0B1438"></rect>
+    
+    <circle cx="50" cy="36" r="14" fill="#0B1438"></circle>
+    <circle cx="50" cy="36" r="12.6" fill="#1A1A2E"></circle>
+    
+    <path d="M 38 36 A 12 12 0 0 1 62 36" fill="none" stroke="#000" stroke-opacity=".5" stroke-width="1.2" transform="translate(0,-.6)"></path>
+    
+    <g stroke="#D9A84E" stroke-width=".3" stroke-opacity=".55" fill="none">
+      <circle cx="50" cy="36" r="11"></circle>
+      <circle cx="50" cy="36" r="9"></circle>
+      <circle cx="50" cy="36" r="7"></circle>
+      <circle cx="50" cy="36" r="5"></circle>
+    </g>
+    
+    <circle cx="50" cy="36" r="4" fill="#E85A2A"></circle>
+    <circle cx="50" cy="36" r="3.5" fill="none" stroke="#D9A84E" stroke-width=".5"></circle>
+    <circle cx="50" cy="36" r=".8" fill="#FBF5EA"></circle>
+    
+    <path d="M 41 30 Q 46 24 54 24" fill="none" stroke="#FFF" stroke-opacity=".25" stroke-width=".8" stroke-linecap="round"></path>
+  </g>
+
+  <g id="highlights">
+    <path d="M 22 30 Q 32 12 50 10" fill="none" stroke="#FFF" stroke-opacity=".55" stroke-width="1.8" stroke-linecap="round"></path>
+    <path d="M 26 36 Q 32 22 44 18" fill="none" stroke="#FFF" stroke-opacity=".25" stroke-width=".8" stroke-linecap="round"></path>
+  </g>
+</svg>
