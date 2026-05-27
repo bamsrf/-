@@ -1,0 +1,92 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" overflow="visible">
+  <defs>
+    <linearGradient id="g" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#F2C770"></stop>
+      <stop offset=".5" stop-color="#D9A84E"></stop>
+      <stop offset="1" stop-color="#A87E32"></stop>
+    </linearGradient>
+    <clipPath id="hull-clip">
+      <path d="M 14 58 L 86 58 L 80 84 L 20 84 Z"></path>
+    </clipPath>
+  </defs>
+
+  
+  <g id="mast">
+    <line x1="50" y1="58" x2="50" y2="-6" stroke="#0B1438" stroke-width="3.4" stroke-linecap="round"></line>
+    <line x1="50" y1="58" x2="50" y2="-6" stroke="url(#g)" stroke-width="2" stroke-linecap="round"></line>
+    
+    <circle cx="50" cy="-6" r="2" fill="#0B1438"></circle>
+    <circle cx="50" cy="-6" r="1.4" fill="url(#g)"></circle>
+  </g>
+
+  
+  <g id="flag">
+    <path d="M 51 -4 L 70 -1 L 64 4 L 70 9 L 51 12 Z" fill="#0B1438"></path>
+    <path d="M 52 -3 L 68 -.5 L 62.5 4 L 68 8.5 L 52 11 Z" fill="#E85A2A"></path>
+    
+    <path d="M 56 1.5 L 60.5 1.5 L 60.5 3 L 57.5 3 L 57.5 4.6 L 59 4.6 C 60.6 4.6 61.6 5.6 61.6 7 C 61.6 8.4 60.6 9.4 59 9.4 L 56.5 9.4 L 56.5 7.9 L 58.8 7.9 C 59.5 7.9 60 7.5 60 7 C 60 6.5 59.5 6.1 58.8 6.1 L 56 6.1 Z" fill="#FBF5EA"></path>
+  </g>
+
+  
+  <g id="sail">
+    
+    <path d="M 50 12 L 80 18 L 80 50 L 50 52 Z" fill="#0B1438"></path>
+    
+    <path d="M 51 13.5 L 78.5 19 L 78.5 49 L 51 50.5 Z" fill="#2A4BD7"></path>
+    
+    <path d="M 51 13.5 L 53 14 L 53 49.5 L 51 50.5 Z" fill="#0B1438" fill-opacity=".4"></path>
+    
+    <rect x="56" y="22" width="20" height="20" fill="#FBF5EA" stroke="#0B1438" stroke-width=".6"></rect>
+    <circle cx="66" cy="32" r="6" fill="#1A1A2E"></circle>
+    <circle cx="66" cy="32" r="4.6" fill="none" stroke="#D9A84E" stroke-width=".25" stroke-opacity=".7"></circle>
+    <circle cx="66" cy="32" r="3" fill="none" stroke="#D9A84E" stroke-width=".25" stroke-opacity=".7"></circle>
+    <circle cx="66" cy="32" r="1.4" fill="#E85A2A"></circle>
+    
+    <circle cx="56" cy="22" r=".9" fill="url(#g)"></circle>
+    <circle cx="76" cy="22" r=".9" fill="url(#g)"></circle>
+    
+    <path d="M 55 18 Q 60 22 60 32" fill="none" stroke="#FFF" stroke-opacity=".25" stroke-width="1.2" stroke-linecap="round"></path>
+  </g>
+
+  
+  <g id="hull-outline">
+    
+    <path d="M 11 56 L 89 56 L 82 86 L 18 86 Z" fill="#0B1438"></path>
+    
+    <path d="M 13 57.5 L 87 57.5 L 81 84.5 L 19 84.5 Z" fill="url(#g)"></path>
+    
+    <line x1="14" y1="58.5" x2="86" y2="58.5" stroke="#0B1438" stroke-width=".5"></line>
+  </g>
+
+  <g id="hull-enamel">
+    <path d="M 15 59 L 85 59 L 79.5 83 L 20.5 83 Z" fill="#1A1A2E"></path>
+    
+    <line x1="16" y1="60" x2="84" y2="60" stroke="#000" stroke-opacity=".55" stroke-width="1.2"></line>
+    
+    <g stroke="#D9A84E" stroke-width=".3" stroke-opacity=".7">
+      <line x1="17" y1="63.5" x2="83" y2="63.5"></line>
+      <line x1="17.5" y1="67" x2="82.5" y2="67"></line>
+      <line x1="18" y1="70.5" x2="82" y2="70.5"></line>
+      <line x1="18.5" y1="74" x2="81.5" y2="74"></line>
+      <line x1="19" y1="77.5" x2="81" y2="77.5"></line>
+      <line x1="19.5" y1="81" x2="80.5" y2="81"></line>
+    </g>
+    
+    <ellipse cx="36" cy="71" rx="6.5" ry="6.8" fill="#E85A2A" stroke="#D9A84E" stroke-width=".6"></ellipse>
+    <circle cx="36" cy="71" r="1.2" fill="#FBF5EA"></circle>
+  </g>
+
+  
+  <g id="waves">
+    <path d="M 6 88 Q 18 84, 30 88 T 54 88 T 78 88 T 100 88" fill="none" stroke="url(#g)" stroke-width="2"></path>
+    <path d="M 6 88 Q 18 84, 30 88 T 54 88 T 78 88 T 100 88" fill="none" stroke="#0B1438" stroke-width=".4"></path>
+    <path d="M 0 94 Q 14 90, 28 94 T 56 94 T 84 94 T 104 94" fill="none" stroke="#5C7AE8" stroke-width="2.4"></path>
+    <path d="M 0 94 Q 14 90, 28 94 T 56 94 T 84 94 T 104 94" fill="none" stroke="#0B1438" stroke-width=".4"></path>
+    <path d="M -2 100 Q 16 96, 32 100 T 64 100 T 96 100 T 104 100" fill="none" stroke="#2A4BD7" stroke-width="2.6"></path>
+    <path d="M -2 100 Q 16 96, 32 100 T 64 100 T 96 100 T 104 100" fill="none" stroke="#0B1438" stroke-width=".4"></path>
+  </g>
+
+  <g id="highlights">
+    <path d="M 18 62 Q 22 60 38 60" fill="none" stroke="#FFF" stroke-opacity=".4" stroke-width="1.2" stroke-linecap="round"></path>
+  </g>
+</svg>

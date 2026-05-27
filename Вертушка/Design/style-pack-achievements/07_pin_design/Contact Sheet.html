@@ -1,0 +1,300 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8"/>
+  <title>Вертушка — 10 пинов Phase 0</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com"/>
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
+  <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700&family=JetBrains+Mono:wght@500&display=swap" rel="stylesheet"/>
+  <style>
+    :root {
+      --bg: #FAFBFF;
+      --ink: #0B1438;
+      --ink-2: #4B5476;
+      --line: #E5E8F2;
+      --halo-blue-soft: #A5C8E1;
+      --halo-blue: #5B7DD8;
+      --halo-pink: #E89AC0;
+    }
+    * { box-sizing: border-box; }
+    html, body { background: var(--bg); color: var(--ink); }
+    body {
+      font-family: 'Manrope', -apple-system, system-ui, sans-serif;
+      margin: 0;
+      padding: 40px 36px 80px;
+      min-height: 100vh;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    /* header */
+    .doc-head { max-width: 1320px; margin: 0 auto 40px; display: flex; justify-content: space-between; align-items: flex-end; gap: 32px; }
+    .doc-head h1 { font-size: 32px; line-height: 1.1; margin: 0 0 8px; letter-spacing: -.02em; font-weight: 700; }
+    .doc-head .sub { color: var(--ink-2); font-size: 14px; line-height: 1.5; max-width: 640px; }
+    .doc-head .meta { font-family: 'JetBrains Mono', monospace; font-size: 11px; color: var(--ink-2); text-align: right; letter-spacing: .04em; text-transform: uppercase; line-height: 1.6; }
+    .doc-head .meta b { color: var(--ink); font-weight: 500; }
+
+    /* legend */
+    .legend { max-width: 1320px; margin: 0 auto 48px; display: flex; flex-wrap: wrap; gap: 24px 36px; padding: 18px 22px; background: #fff; border: 1px solid var(--line); border-radius: 10px; }
+    .legend-item { display: flex; align-items: center; gap: 10px; font-size: 12px; color: var(--ink-2); }
+    .swatch { width: 22px; height: 22px; border-radius: 5px; border: 1px solid rgba(0,0,0,.08); }
+    .swatch.round { border-radius: 999px; }
+    .legend code { font-family: 'JetBrains Mono', monospace; font-size: 11px; color: var(--ink); }
+
+    /* contact sheet grid 5x2 */
+    .sheet { max-width: 1320px; margin: 0 auto 80px; display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 18px; }
+    .cell .meta .code { display: block; }
+    .cell {
+      background: #fff;
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      padding: 24px 12px 18px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      text-align: center;
+      position: relative;
+      min-width: 0;
+    }
+    .cell .stage {
+      width: 100%;
+      aspect-ratio: 1 / 1;
+      display: grid;
+      place-items: center;
+      overflow: visible;
+      padding: 4px;
+    }
+    .cell .stage img, .cell .stage object {
+      width: 100%;
+      height: 100%;
+      overflow: visible;
+      display: block;
+    }
+    .cell .num {
+      position: absolute;
+      top: 12px; left: 14px;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 10px;
+      color: var(--ink-2);
+      letter-spacing: .08em;
+    }
+    .cell .tier {
+      position: absolute;
+      top: 12px; right: 14px;
+      width: 10px; height: 10px;
+      border-radius: 999px;
+      border: 1px solid rgba(0,0,0,.1);
+    }
+    .cell .tier.t-simple { background: var(--halo-blue-soft); }
+    .cell .tier.t-notable { background: var(--halo-blue); }
+    .cell .tier.t-rare { background: var(--halo-pink); }
+    .cell .title {
+      margin: 14px 0 2px;
+      font-size: 15px;
+      font-weight: 600;
+      letter-spacing: -.01em;
+    }
+    .cell .meta {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 4px;
+    }
+    .cell .meta .code {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 9px;
+      color: var(--ink-2);
+      letter-spacing: 0;
+      text-align: center;
+      overflow-wrap: anywhere;
+    }
+    .cell .meta .tier-name {
+      font-size: 10.5px;
+      color: var(--ink-2);
+      letter-spacing: .02em;
+    }
+
+    /* legibility row at 64px */
+    .small-row-wrap { max-width: 1320px; margin: 0 auto 40px; }
+    .small-row-wrap h2 { font-size: 13px; font-weight: 600; color: var(--ink-2); letter-spacing: .08em; text-transform: uppercase; margin: 0 0 18px; }
+    .small-row {
+      display: grid;
+      grid-template-columns: repeat(10, 1fr);
+      gap: 14px;
+      padding: 22px 22px;
+      background: #fff;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+    }
+    .small-cell {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 6px;
+    }
+    .small-cell .mini {
+      width: 64px; height: 64px;
+      overflow: visible;
+      display: grid;
+      place-items: center;
+    }
+    .small-cell .mini img { width: 100%; height: 100%; overflow: visible; }
+    .small-cell .lbl { font-family: 'JetBrains Mono', monospace; font-size: 9px; color: var(--ink-2); }
+
+    /* halo preview row */
+    .halo-wrap { max-width: 1320px; margin: 0 auto; }
+    .halo-wrap h2 { font-size: 13px; font-weight: 600; color: var(--ink-2); letter-spacing: .08em; text-transform: uppercase; margin: 0 0 18px; }
+    .halo-row { display: grid; grid-template-columns: repeat(3, 1fr); gap: 24px; }
+    .halo-cell { background: #fff; border: 1px solid var(--line); border-radius: 12px; padding: 26px; display: flex; flex-direction: column; align-items: center; gap: 16px; }
+    .halo-stage { width: 220px; height: 220px; border-radius: 999px; display: grid; place-items: center; position: relative; overflow: visible; }
+    .halo-stage::before {
+      content: '';
+      position: absolute; inset: -10px;
+      border-radius: 999px;
+      background: radial-gradient(closest-side, var(--c) 0%, transparent 70%);
+      filter: blur(6px);
+      z-index: 0;
+    }
+    .halo-stage svg, .halo-stage img { width: 150px; height: 150px; position: relative; z-index: 1; overflow: visible; }
+    .halo-label { font-family: 'JetBrains Mono', monospace; font-size: 10px; color: var(--ink-2); letter-spacing: .06em; }
+  </style>
+</head>
+<body>
+
+  <header class="doc-head">
+    <div>
+      <h1>Вертушка · Ачивки · Phase 0</h1>
+      <p class="sub">Soft-enamel пин-сет, 10 шт. Единый материал и толщина золотой линии (#D9A84E), у каждого пина — своя метафора и палитра. Тир пина задаётся аурой-halo позади (рендерит UI) — на самих пинах halo нет. Розовый #E89AC0 — только в R-пинах (#9, #10).</p>
+    </div>
+    <div class="meta">
+      <div><b>VIEWBOX</b> 0 0 100 100</div>
+      <div><b>OVERFLOW</b> visible (±8)</div>
+      <div><b>RENDER</b> 700 · 256 · 64 px</div>
+      <div><b>STACK</b> outline / enamel / metal-lines / highlights / sparkles</div>
+    </div>
+  </header>
+
+  <section class="legend" aria-label="Брендовая палитра">
+    <div class="legend-item"><span class="swatch" style="background:#0B1438"></span><div><div>Navy</div><code>#0B1438</code></div></div>
+    <div class="legend-item"><span class="swatch" style="background:#2A4BD7"></span><div><div>Cobalt</div><code>#2A4BD7</code></div></div>
+    <div class="legend-item"><span class="swatch" style="background:#5C7AE8"></span><div><div>Cobalt soft</div><code>#5C7AE8</code></div></div>
+    <div class="legend-item"><span class="swatch" style="background:#E85A2A"></span><div><div>Ember</div><code>#E85A2A</code></div></div>
+    <div class="legend-item"><span class="swatch" style="background:#FBF5EA"></span><div><div>Ivory</div><code>#FBF5EA</code></div></div>
+    <div class="legend-item"><span class="swatch" style="background:#1A1A2E"></span><div><div>Vinyl black</div><code>#1A1A2E</code></div></div>
+    <div class="legend-item"><span class="swatch" style="background:linear-gradient(180deg,#F2C770,#D9A84E,#A87E32)"></span><div><div>Gold</div><code>#D9A84E</code></div></div>
+    <div class="legend-item"><span class="swatch" style="background:#E89AC0"></span><div><div>Pink (rare only)</div><code>#E89AC0</code></div></div>
+    <div class="legend-item" style="border-left: 1px solid var(--line); padding-left: 24px; margin-left: 6px;">
+      <span class="swatch round" style="background:#A5C8E1"></span><div><div>💧 Простая</div><code>halo #A5C8E1</code></div>
+    </div>
+    <div class="legend-item">
+      <span class="swatch round" style="background:#5B7DD8"></span><div><div>🔵 Заметная</div><code>halo #5B7DD8</code></div>
+    </div>
+    <div class="legend-item">
+      <span class="swatch round" style="background:#E89AC0"></span><div><div>🌸 Редкая</div><code>halo #E89AC0 + ✦</code></div>
+    </div>
+  </section>
+
+  <section class="sheet" aria-label="10 пинов 5×2">
+    <div class="cell">
+      <span class="num">01</span><span class="tier t-simple" title="💧 Простая"></span>
+      <div class="stage"><img src="pins/A1_first_record.svg" alt="Поехали"/></div>
+      <div class="title">Поехали</div>
+      <div class="meta"><span class="code">A1_first_record</span><span class="tier-name">💧 Простая</span></div>
+    </div>
+    <div class="cell">
+      <span class="num">02</span><span class="tier t-simple" title="💧 Простая"></span>
+      <div class="stage"><img src="pins/A2_first_wishlist.svg" alt="Хотелка"/></div>
+      <div class="title">Хотелка</div>
+      <div class="meta"><span class="code">A2_first_wishlist</span><span class="tier-name">💧 Простая</span></div>
+    </div>
+    <div class="cell">
+      <span class="num">03</span><span class="tier t-simple" title="💧 Простая"></span>
+      <div class="stage"><img src="pins/A3_avatar_set.svg" alt="Аватар"/></div>
+      <div class="title">Аватар</div>
+      <div class="meta"><span class="code">A3_avatar_set</span><span class="tier-name">💧 Простая</span></div>
+    </div>
+    <div class="cell">
+      <span class="num">04</span><span class="tier t-simple" title="💧 Простая"></span>
+      <div class="stage"><img src="pins/A4_public_profile.svg" alt="Распахнул"/></div>
+      <div class="title">Распахнул</div>
+      <div class="meta"><span class="code">A4_public_profile</span><span class="tier-name">💧 Простая</span></div>
+    </div>
+    <div class="cell">
+      <span class="num">05</span><span class="tier t-notable" title="🔵 Заметная"></span>
+      <div class="stage"><img src="pins/META_foundation.svg" alt="На борту"/></div>
+      <div class="title">На борту</div>
+      <div class="meta"><span class="code">META_foundation</span><span class="tier-name">🔵 Заметная</span></div>
+    </div>
+    <div class="cell">
+      <span class="num">06</span><span class="tier t-simple" title="💧 Простая"></span>
+      <div class="stage"><img src="pins/B1_starter.svg" alt="Десятка"/></div>
+      <div class="title">Десятка</div>
+      <div class="meta"><span class="code">B1_starter</span><span class="tier-name">💧 Простая</span></div>
+    </div>
+    <div class="cell">
+      <span class="num">07</span><span class="tier t-simple" title="💧 Простая"></span>
+      <div class="stage"><img src="pins/B2_collector.svg" alt="Полтинник"/></div>
+      <div class="title">Полтинник</div>
+      <div class="meta"><span class="code">B2_collector</span><span class="tier-name">💧 Простая</span></div>
+    </div>
+    <div class="cell">
+      <span class="num">08</span><span class="tier t-simple" title="💧 Простая"></span>
+      <div class="stage"><img src="pins/J1_first_gift.svg" alt="Подарил"/></div>
+      <div class="title">Подарил</div>
+      <div class="meta"><span class="code">J1_first_gift</span><span class="tier-name">💧 Простая</span></div>
+    </div>
+    <div class="cell">
+      <span class="num">09</span><span class="tier t-rare" title="🌸 Редкая"></span>
+      <div class="stage"><img src="pins/R_self_titled.svg" alt="Тёзка"/></div>
+      <div class="title">Тёзка</div>
+      <div class="meta"><span class="code">R_self_titled</span><span class="tier-name">🌸 Редкая</span></div>
+    </div>
+    <div class="cell">
+      <span class="num">10</span><span class="tier t-rare" title="🌸 Редкая"></span>
+      <div class="stage"><img src="pins/R_thirty_three.svg" alt="Тридцать три"/></div>
+      <div class="title">Тридцать три</div>
+      <div class="meta"><span class="code">R_thirty_three</span><span class="tier-name">🌸 Редкая</span></div>
+    </div>
+  </section>
+
+  <section class="small-row-wrap" aria-label="Силуэт при 64px (грид-карточка)">
+    <h2>Силуэт при 64×64 px — проверка читаемости в гриде</h2>
+    <div class="small-row">
+      <div class="small-cell"><div class="mini"><img src="pins/A1_first_record.svg"/></div><div class="lbl">01</div></div>
+      <div class="small-cell"><div class="mini"><img src="pins/A2_first_wishlist.svg"/></div><div class="lbl">02</div></div>
+      <div class="small-cell"><div class="mini"><img src="pins/A3_avatar_set.svg"/></div><div class="lbl">03</div></div>
+      <div class="small-cell"><div class="mini"><img src="pins/A4_public_profile.svg"/></div><div class="lbl">04</div></div>
+      <div class="small-cell"><div class="mini"><img src="pins/META_foundation.svg"/></div><div class="lbl">05</div></div>
+      <div class="small-cell"><div class="mini"><img src="pins/B1_starter.svg"/></div><div class="lbl">06</div></div>
+      <div class="small-cell"><div class="mini"><img src="pins/B2_collector.svg"/></div><div class="lbl">07</div></div>
+      <div class="small-cell"><div class="mini"><img src="pins/J1_first_gift.svg"/></div><div class="lbl">08</div></div>
+      <div class="small-cell"><div class="mini"><img src="pins/R_self_titled.svg"/></div><div class="lbl">09</div></div>
+      <div class="small-cell"><div class="mini"><img src="pins/R_thirty_three.svg"/></div><div class="lbl">10</div></div>
+    </div>
+  </section>
+
+  <section class="halo-wrap" aria-label="Совместимость с halo тира (только на пине 01)">
+    <h2>Halo тира за пином (рендерится UI, не пином) — проверка контраста</h2>
+    <div class="halo-row">
+      <div class="halo-cell">
+        <div class="halo-stage" style="--c: #A5C8E1">
+          <img src="pins/A1_first_record.svg"/>
+        </div>
+        <div class="halo-label">💧 ПРОСТАЯ · #A5C8E1</div>
+      </div>
+      <div class="halo-cell">
+        <div class="halo-stage" style="--c: #5B7DD8">
+          <img src="pins/META_foundation.svg"/>
+        </div>
+        <div class="halo-label">🔵 ЗАМЕТНАЯ · #5B7DD8</div>
+      </div>
+      <div class="halo-cell">
+        <div class="halo-stage" style="--c: #E89AC0">
+          <img src="pins/R_thirty_three.svg"/>
+        </div>
+        <div class="halo-label">🌸 РЕДКАЯ · #E89AC0</div>
+      </div>
+    </div>
+  </section>
+
+</body>
+</html>
