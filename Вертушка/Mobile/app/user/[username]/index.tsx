@@ -108,6 +108,16 @@ function formatRub(value: number) {
   return Math.round(value).toLocaleString('ru-RU').replace(/,/g, ' ');
 }
 
+// Русская плюрализация: [1, 2-4, 5+] → одна / две / пять
+function pluralRu(n: number, forms: [string, string, string]): string {
+  const abs = Math.abs(n) % 100;
+  const n1 = abs % 10;
+  if (abs > 10 && abs < 20) return forms[2];
+  if (n1 > 1 && n1 < 5) return forms[1];
+  if (n1 === 1) return forms[0];
+  return forms[2];
+}
+
 /**
  * Хук плавного бегущего счётчика — порт логики из /collection/value.
  * Возвращает текущий display-string. Анимация на UI-thread через reanimated.
@@ -417,18 +427,21 @@ export default function UserProfileScreen() {
     } catch {}
   }, [username]);
 
+  // Возвращает true, если действие выполнено (modal открыт / редирект на auth / показан toast).
+  // false — caller должен сам выбрать fallback (например, открыть детальную карточки).
   const tryOpenBooking = useCallback(
-    (item: WishlistPublicItem | null, reserved: boolean) => {
-      if (!item || reserved || isOwn) return;
+    (item: WishlistPublicItem | null, reserved: boolean): boolean => {
+      if (!item || reserved || isOwn) return false;
       if (!currentUser) {
         router.push('/(auth)/register');
-        return;
+        return true;
       }
       if (!following) {
         toast.info('Подпишитесь', 'Бронь подарков доступна подписчикам');
-        return;
+        return true;
       }
       setBookingItem(item);
+      return true;
     },
     [currentUser, following, isOwn, router]
   );
@@ -573,12 +586,19 @@ export default function UserProfileScreen() {
 
   const handleCardPress = useCallback(
     (r: PublicProfileRecord) => {
-      if (isWishlistTab) {
-        const item = wishlistItems.find((w) => w.record.id === r.id) ?? null;
+      if (isWishlistTab && !isOwn) {
+        // Match по record.id + fallback по discogs_id — защита от ID-дрейфа,
+        // когда одна и та же пластинка попала к двум юзерам разными путями.
+        const item =
+          wishlistItems.find(
+            (w) =>
+              w.record.id === r.id ||
+              (!!w.record.discogs_id && w.record.discogs_id === r.discogs_id),
+          ) ?? null;
         const reserved = !!r.is_booked;
-        if (item && !reserved && !isOwn) {
-          tryOpenBooking(item, reserved);
-          return;
+        if (item && !reserved) {
+          const handled = tryOpenBooking(item, reserved);
+          if (handled) return;
         }
       }
       router.push(`/record/${r.id}`);
@@ -684,15 +704,36 @@ export default function UserProfileScreen() {
             <View style={styles.heroStatsRow}>
               <View style={styles.heroStatItem}>
                 <Text style={styles.heroStatNum}>{pubProfile.collection_count}</Text>
-                <Text style={styles.heroStatLbl}>в наличии</Text>
+                <Text
+                  style={styles.heroStatLbl}
+                  numberOfLines={1}
+                  adjustsFontSizeToFit
+                  minimumFontScale={0.85}
+                >
+                  в наличии
+                </Text>
               </View>
               <View style={styles.heroStatItem}>
                 <Text style={styles.heroStatNum}>{pubProfile.wishlist_count}</Text>
-                <Text style={styles.heroStatLbl}>в вишлисте</Text>
+                <Text
+                  style={styles.heroStatLbl}
+                  numberOfLines={1}
+                  adjustsFontSizeToFit
+                  minimumFontScale={0.85}
+                >
+                  в вишлисте
+                </Text>
               </View>
               <View style={styles.heroStatItem}>
                 <Text style={styles.heroStatNum}>{pubProfile.followers_count}</Text>
-                <Text style={styles.heroStatLbl}>подписчиков</Text>
+                <Text
+                  style={styles.heroStatLbl}
+                  numberOfLines={1}
+                  adjustsFontSizeToFit
+                  minimumFontScale={0.75}
+                >
+                  подписчики
+                </Text>
               </View>
             </View>
           </View>
@@ -786,62 +827,9 @@ export default function UserProfileScreen() {
           <AchievementsBlock username={username} />
         </View>
 
-        {/* Booking hint — только в вишлисте */}
-        {activeTab === 'wishlist' && !isOwn ? (
-          <View style={styles.bookingHint}>
-            <View style={styles.bookingHintRow}>
-              <Text style={styles.bookingHintEmoji}>🔒</Text>
-              <Text style={styles.bookingHintTxt}>Бронь анонимна</Text>
-            </View>
-            <View style={styles.bookingHintRow}>
-              <Text style={styles.bookingHintEmoji}>🎁</Text>
-              <Text style={styles.bookingHintTxt}>Срок брони — 60 дней</Text>
-            </View>
-            <View style={styles.bookingHintRow}>
-              <Text style={styles.bookingHintEmoji}>⏰</Text>
-              <Text style={styles.bookingHintTxt}>Напоминание за 7 дней</Text>
-            </View>
-            {!following ? (
-              <Text style={styles.bookingHintSub}>
-                Подпишитесь, чтобы бронировать подарки
-              </Text>
-            ) : null}
-          </View>
-        ) : null}
-
-        {/* Папки (только в режиме «В наличии») */}
-        {activeTab === 'collection' && folders.length > 0 ? (
-          <View style={styles.foldersSection}>
-            <Text style={styles.foldersSectionTitle}>Папки</Text>
-            <ScrollView
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              contentContainerStyle={styles.foldersScroll}
-            >
-              {folders.map((folder) => (
-                <TouchableOpacity
-                  key={folder.id}
-                  activeOpacity={0.85}
-                  style={styles.folderCard}
-                  onPress={() =>
-                    router.push({
-                      pathname: '/folder/[id]',
-                      params: { id: folder.id, ownerUsername: username ?? '' },
-                    } as any)
-                  }
-                >
-                  <View style={styles.folderImage}>
-                    <Icon name="folder" size={28} color={PP.cobalt} />
-                  </View>
-                  <Text style={styles.folderName} numberOfLines={1}>{folder.name}</Text>
-                  <Text style={styles.folderCount}>{folder.items_count} пл.</Text>
-                </TouchableOpacity>
-              ))}
-            </ScrollView>
-          </View>
-        ) : null}
-
-        {/* Segmented — тот же контрол, что в личной коллекции */}
+        {/* Segmented + toolbar — стабильная позиция (НЕ зависит от активного таба).
+            Раньше BookingHint/Folders рендерились выше и при переключении
+            таба «прыгал» segment + toolbar. Теперь они ниже toolbar'а. */}
         <View style={styles.segmentedWrap}>
           <SegmentedControl
             segments={[
@@ -853,7 +841,8 @@ export default function UserProfileScreen() {
           />
         </View>
 
-        {/* Toolbar: format filter (dropdown) + sort (dropdown) + view toggle */}
+        {/* Toolbar: format filter + sort + counter + view toggle.
+            Counter заполняет середину — нет «дыры» между кнопками. */}
         <View style={styles.toolbar}>
           <TouchableOpacity
             activeOpacity={0.85}
@@ -878,7 +867,9 @@ export default function UserProfileScreen() {
             <Icon name="swap-vertical-outline" size={16} color={PP.cobalt} />
           </TouchableOpacity>
 
-          <View style={{ flex: 1 }} />
+          <Text style={styles.toolbarCount} numberOfLines={1}>
+            {gridData.length} {pluralRu(gridData.length, ['пластинка', 'пластинки', 'пластинок'])}
+          </Text>
           <ViewToggle value={viewMode} onChange={setViewMode} />
         </View>
 
@@ -941,6 +932,54 @@ export default function UserProfileScreen() {
             })}
           </View>
         </Animated.View>
+
+        {/* Booking hint — компактная одна строка вместо тяжёлой карточки.
+            Под toolbar'ом, не сдвигает sticky-зону при переключении таба. */}
+        {activeTab === 'wishlist' && !isOwn ? (
+          <View style={styles.bookingHint}>
+            <Text style={styles.bookingHintInline} numberOfLines={1}>
+              🔒 Анонимно  ·  🎁 60 дней  ·  ⏰ Напомним за 7
+            </Text>
+            {!following ? (
+              <Text style={styles.bookingHintSub}>
+                Подпишитесь, чтобы бронировать подарки
+              </Text>
+            ) : null}
+          </View>
+        ) : null}
+
+        {/* Папки (только в режиме «В наличии»). Под toolbar'ом — не сдвигает
+            sticky-зону при переключении таба. */}
+        {activeTab === 'collection' && folders.length > 0 ? (
+          <View style={styles.foldersSection}>
+            <Text style={styles.foldersSectionTitle}>Папки</Text>
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.foldersScroll}
+            >
+              {folders.map((folder) => (
+                <TouchableOpacity
+                  key={folder.id}
+                  activeOpacity={0.85}
+                  style={styles.folderCard}
+                  onPress={() =>
+                    router.push({
+                      pathname: '/folder/[id]',
+                      params: { id: folder.id, ownerUsername: username ?? '' },
+                    } as any)
+                  }
+                >
+                  <View style={styles.folderImage}>
+                    <Icon name="folder" size={28} color={PP.cobalt} />
+                  </View>
+                  <Text style={styles.folderName} numberOfLines={1}>{folder.name}</Text>
+                  <Text style={styles.folderCount}>{folder.items_count} пл.</Text>
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+          </View>
+        ) : null}
 
           </>
         );
@@ -1199,32 +1238,34 @@ const styles = StyleSheet.create({
     marginTop: 18,
   },
 
-  /* Booking hint */
+  /* Booking hint — компактная плашка одной строкой */
   bookingHint: {
     marginHorizontal: GRID_PADDING,
     marginTop: 14,
-    paddingHorizontal: 14, paddingVertical: 12,
-    borderRadius: 12,
+    marginBottom: 6,
+    paddingHorizontal: 12, paddingVertical: 8,
+    borderRadius: 10,
     backgroundColor: 'rgba(255,255,255,0.55)',
     borderWidth: 1, borderColor: PP.hairline,
-    gap: 6,
   },
-  bookingHintRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
+  bookingHintInline: {
+    fontSize: 11.5,
+    color: PP.slate,
+    fontWeight: '500',
+    letterSpacing: 0.1,
+    textAlign: 'center',
   },
-  bookingHintEmoji: { fontSize: 13, width: 18, textAlign: 'center' },
-  bookingHintTxt: { fontSize: 12.5, color: PP.slate, fontWeight: '500', flex: 1 },
   bookingHintSub: {
-    fontSize: 11.5, color: PP.cobalt, fontWeight: '600',
+    fontSize: 11, color: PP.cobalt, fontWeight: '600',
     marginTop: 6, paddingTop: 6,
     borderTopWidth: 1, borderTopColor: PP.hairline,
+    textAlign: 'center',
   },
 
   /* Folders */
   foldersSection: {
-    marginTop: 18,
+    marginTop: 14,
+    marginBottom: 6,
   },
   foldersSectionTitle: {
     fontSize: 13,
@@ -1266,28 +1307,40 @@ const styles = StyleSheet.create({
     marginTop: 2,
   },
 
-  /* Segmented wrapper */
+  /* Segmented wrapper — отделён от achievements воздухом сверху */
   segmentedWrap: {
-    marginTop: 18,
+    marginTop: 22,
     paddingHorizontal: GRID_PADDING,
   },
 
-  /* Toolbar */
+  /* Toolbar — плотно под сегментом (общая пара controls) */
   toolbar: {
     flexDirection: 'row', alignItems: 'center',
     paddingHorizontal: GRID_PADDING,
-    marginTop: 16,
+    marginTop: 10,
     gap: 8,
   },
+  toolbarCount: {
+    fontSize: 12,
+    color: PP.mute,
+    fontWeight: '600',
+    letterSpacing: 0.3,
+    flex: 1,
+    textAlign: 'left',
+    marginLeft: 4,
+  },
   toolbarBtn: {
-    height: 34,
+    // 36×36 + radius 18 — те же размеры, что и в (tabs)/collection.tsx
+    // (styles.filterButton), чтобы нижний тулбар чужого профиля визуально
+    // совпадал со своим.
+    height: 36,
     paddingHorizontal: 10,
-    borderRadius: 17,
+    borderRadius: 18,
     backgroundColor: 'rgba(255,255,255,0.55)',
     borderWidth: 1, borderColor: PP.hairline,
     alignItems: 'center', justifyContent: 'center',
     flexDirection: 'row', gap: 6,
-    minWidth: 34,
+    minWidth: 36,
   },
   toolbarBtnActive: {
     backgroundColor: PP.cobalt,
@@ -1319,14 +1372,16 @@ const styles = StyleSheet.create({
   dropdownItemTxtActive: { color: PP.cobalt, fontWeight: '700' },
 
   viewToggle: {
+    // Высота 36 = filterBtn/sortBtn высота → ровный ряд в toolbar.
     flexDirection: 'row',
+    height: 36,
     backgroundColor: 'rgba(255,255,255,0.55)',
-    borderRadius: 10,
+    borderRadius: 18,
     borderWidth: 1, borderColor: PP.hairline,
     padding: 2, gap: 2,
   },
   viewToggleBtn: {
-    width: 30, height: 28, borderRadius: 8,
+    width: 32, height: 30, borderRadius: 15,
     alignItems: 'center', justifyContent: 'center',
   },
   viewToggleBtnActive: { backgroundColor: '#fff', borderWidth: 1, borderColor: 'rgba(58,75,224,0.20)' },

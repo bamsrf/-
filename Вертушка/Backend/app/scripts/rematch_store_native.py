@@ -63,33 +63,51 @@ logger = logging.getLogger("rematch_store_native")
 # Stripping these before fuzzy matching prevents trigram dilution that would
 # push similarity below threshold for otherwise identical titles.
 # e.g. "Dummy (Gatefold)" → "Dummy", "Wish You Were Here (Repress 2025)" → "Wish You Were Here"
+# Fix 1: also covers generic "* vinyl" colour variants:
+#   "clear vinyl", "bone vinyl", "red translucent vinyl", "pink & white marbled vinyl" etc.
 _STORE_SUFFIX_RE = re.compile(
     r"\s*\(\s*(?:"
-    r"\d{4}|"                              # year: (2025)
-    r"[Rr]epress\b[^)]*|"                  # (Repress ...), (Reissue ...)
+    r"\d{4}|"                               # year: (2025)
+    r"[Rr]epress\b[^)]*|"                   # (Repress ...), (Reissue ...)
     r"[Rr]eissue\b[^)]*|"
+    r"[Uu]sed\b[^)]*|"                      # (Used)
     r"Gatefold|gatefold|"
-    r"\dLP|\d\s*LP|"                       # (2LP), (3LP)
-    r"цветной винил|colou?red vinyl|"
+    r"\d\s*LP|"                             # (2LP), (3LP)
+    r"[^)]*\b(?:vinyl|винил)\b[^)]*|"       # ANY * vinyl/винил * — clear, bone, оранжевый...
     r"пикчер\s*диск|picture\s*disc|"
-    r"[Mm]arble[^)]*|[Cc]olou?r[^)]*|"    # colour variants
     r"Mono|моно|Stereo|стерео|"
     r"буклет|booklet|"
-    r"[Cc][Dd]|"                           # (CD)
-    r"синий\s*винил|blue\s*vinyl|"
+    r"[Cc][Dd]|"                            # (CD)
     r"макси\s*сингл|maxi\s*single|"
-    r"\+[^)]*"                             # (+ буклет), (+ книга)
-    r")[^)]*\)\s*$",
+    r"obi[^)]*|ОБИ[^)]*|"                  # (+ obi), (obi-strip)
+    r"бокс[^)]*|box\s*set[^)]*|"
+    r"\+[^)]*"                              # (+ буклет), (+ книга)
+    r")[^)]*\)+\s*$",                       # \)+ — handle nested parens: (picture disc (пикчер диск))
     re.IGNORECASE,
 )
+
+# Bilingual "X = Y" titles where stores write both Latin and Cyrillic.
+# Pick the part with more ASCII (Latin) chars — Discogs uses Latin canonical names.
+def _pick_latin_part(s: str) -> str:
+    """For 'Лед Зеппелин = Led Zeppelin' or 'Abba = Абба' → return the Latin part."""
+    if " = " not in s:
+        return s
+    left, _, right = s.partition(" = ")
+    left_ascii = sum(1 for c in left if ord(c) < 128 and c.isalpha())
+    right_ascii = sum(1 for c in right if ord(c) < 128 and c.isalpha())
+    return (right if right_ascii >= left_ascii else left).strip()
 
 # Compilation artist synonyms → normalize to Discogs "Various"
 _VA_RE = re.compile(r"^(?:V/A|VA|Various Artists?|Сборник)$", re.IGNORECASE)
 
 
 def _normalize_store_title(title: str) -> str:
-    """Strip store-added parenthetical suffixes for cleaner trgm matching."""
-    t = title.strip()
+    """Strip store-added parenthetical suffixes for cleaner trgm matching.
+
+    Fix 3: pick the Latin part from bilingual "X = Y" titles.
+    Fix 1: generic vinyl/винил pattern + nested-paren support.
+    """
+    t = _pick_latin_part(title.strip())
     # Strip trailing parenthetical annotations iteratively (some have multiple)
     prev = None
     while prev != t:
@@ -99,9 +117,10 @@ def _normalize_store_title(title: str) -> str:
 
 
 def _normalize_store_artist(artist: str) -> str:
-    if _VA_RE.match(artist.strip()):
+    a = artist.strip()
+    if _VA_RE.match(a):
         return "Various"
-    return artist.strip()
+    return _pick_latin_part(a)
 
 
 # Strict fuzzy thresholds for records with no barcode/catalog signal.
@@ -451,6 +470,42 @@ async def _process_one(
             # Scale confidence: combined 1.2 → 0.75, 2.0 → 0.95
             conf = min(0.95, round(0.375 + score * 0.275, 3))
             dump_entry, confidence, method = row, conf, "fuzzy"
+
+    # 4) Discogs API fallback — for new releases not yet in the local dump.
+    # Uses the existing rate-limited _try_discogs_fetch_by_text (2000 req/hr limit).
+    # Only fires when dump lookup failed AND we have artist+title to search with.
+    if dump_entry is None and fuzzy_artist and fuzzy_title and not dry_run:
+        from app.services.listing_matcher import _try_discogs_fetch_by_text
+        found = await _try_discogs_fetch_by_text(
+            db,
+            artist=fuzzy_artist,
+            title=fuzzy_title,
+            year=rec.year,
+        )
+        if found and found.discogs_id and found.id != rec.id:
+            # We have a live Discogs Record — merge directly (skip dump_entry path)
+            merge_res = await safe_merge_store_native_into(
+                rec, found.discogs_id, db, merged_by="bulk_rematch_api"
+            )
+            if merge_res["target_found"]:
+                item_counts = await _remap_user_items(db, rec.id, found.id, dry_run=False)
+                logger.info(
+                    "MERGED (API): %s → discogs_id=%s listings=%d "
+                    "collection_items=%d wishlist_items=%d "
+                    "(artist=%r title=%r year=%s)",
+                    rec.id, found.discogs_id,
+                    merge_res["listings_remapped"],
+                    item_counts["collection"], item_counts["wishlist"],
+                    rec.artist, rec.title, rec.year,
+                )
+                counters["merged"] += 1
+                return True
+            # target_found=0 means Record created but not found — shouldn't happen
+            # after _try_discogs_fetch_by_text, log and fall through to no_match
+            logger.warning(
+                "API merge target_found=0 for source=%s discogs_id=%s",
+                rec.id, found.discogs_id,
+            )
 
     if dump_entry is None:
         counters["no_match"] += 1

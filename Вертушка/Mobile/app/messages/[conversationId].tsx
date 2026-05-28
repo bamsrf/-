@@ -1215,6 +1215,9 @@ export default function ConversationScreen() {
   const lastTapRef = useRef<{ id: string; ts: number } | null>(null);
   const handleBubbleTap = useCallback(
     (m: Message) => {
+      // RNGH GestureDetector поглощает все касания, поэтому keyboardShouldPersistTaps
+      // никогда не срабатывает. Закрываем явно при любом тапе по бабблу.
+      Keyboard.dismiss();
       if (selectionMode) {
         toggleSelection(m.id);
         return;
@@ -1567,6 +1570,7 @@ export default function ConversationScreen() {
             }}
             ListEmptyComponent={isLoading ? null : <EmptyState partner={partner} />}
             keyboardShouldPersistTaps="handled"
+            keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'}
           />
           {showScrollToBottom ? (
             <TouchableOpacity
