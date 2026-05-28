@@ -78,7 +78,8 @@ export const useMarketStore = create<MarketState>()(
         return persistedState as MarketState;
       },
       partialize: (state) => ({
-        committed: state.committed,
+        // committed НЕ сохраняем — при каждом запуске приложения Поиск
+        // открывается в базовом режиме, а не в Маркете.
         hasSeenSwipeHint: state.hasSeenSwipeHint,
         hasSeenCurtainHint: state.hasSeenCurtainHint,
       }),

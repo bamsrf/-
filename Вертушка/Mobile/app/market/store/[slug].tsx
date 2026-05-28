@@ -250,7 +250,7 @@ export default function StorePage() {
       <FlatList
         data={items}
         renderItem={renderItem}
-        keyExtractor={(it) => it.record_id}
+        keyExtractor={(it, index) => `${it.record_id}_${index}`}
         numColumns={2}
         columnWrapperStyle={styles.row}
         contentContainerStyle={styles.listContent}
