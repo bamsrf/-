@@ -29,6 +29,20 @@ import { Colors, Spacing, BorderRadius } from '../constants/theme';
 import { AchievementPin } from '../components/AchievementPin';
 import { AchievementsHero } from '../components/AchievementsHero';
 import { AchievementsTourOverlay } from '../components/AchievementsTourOverlay';
+import { MetaTrophyShelf } from '../components/MetaTrophyShelf';
+import { Capsule } from '../components/achievement-mockup/Capsule';
+import { GroovesBg } from '../components/achievement-mockup/GroovesBg';
+import {
+  M_EMBER,
+  M_EMBER_GLOW,
+  M_GOLD,
+  M_GOLD_HI,
+  M_GOLD_RIM_SOFT,
+  M_IVORY,
+  M_IVORY_DIM,
+  M_IVORY_MUTED,
+  M_NAVY,
+} from '../components/achievement-mockup/palette';
 import type {
   AchievementItem,
   AchievementSeriesItem,
@@ -106,18 +120,13 @@ export default function AchievementsScreen() {
         contentContainerStyle={{ paddingBottom: insets.bottom + 40 }}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
       >
-        {/* Hero — анимированный counter + архетип + самая редкая */}
+        {/* Hero — counter + архетип-уровень + флейвор + прогресс к следующему уровню */}
         <AchievementsHero data={data} extraRandom={randomItems} username={username} />
 
-        {data.random_unlocked > 0 && (
-          <View style={styles.summary}>
-            <Text style={styles.summaryRandom}>
-              🥚 Пасхалки открыто: {data.random_unlocked}
-            </Text>
-          </View>
-        )}
+        {/* Витрина мета-трофеев — финал каждой серии в навигационной сетке */}
+        <MetaTrophyShelf data={data} onPin={(item) => setSelected(item)} />
 
-        {/* Серии */}
+        {/* Серии — navy-карточки с пинами */}
         {data.series.map((series) => (
           <SeriesGroup
             key={series.key}
@@ -156,21 +165,45 @@ function SeriesGroup({
   series: AchievementSeriesItem;
   onPin: (item: AchievementItem) => void;
 }) {
-  // Мета — отдельно справа, остальные сетка
   const regulars = series.items.filter((i) => !i.is_meta);
   const meta = series.items.find((i) => i.is_meta) || null;
+  const progress = series.total > 0 ? series.unlocked / series.total : 0;
 
   return (
     <View style={styles.seriesCard}>
+      <GroovesBg opacity={0.05} originX={0} originY={-20} />
+
+      {/* Header: emoji + title + counter capsule */}
       <View style={styles.seriesHeader}>
-        <Text style={styles.seriesTitle}>
-          {series.icon_emoji} {series.title_ru}
-        </Text>
-        <Text style={styles.seriesCount}>
-          {series.unlocked} / {series.total}
-        </Text>
+        <View style={styles.seriesHeaderLeft}>
+          <Text style={styles.seriesEmoji}>{series.icon_emoji}</Text>
+          <View style={styles.seriesHeaderText}>
+            <Text style={styles.seriesTitle}>{series.title_ru}</Text>
+            <Text style={styles.seriesDescription} numberOfLines={1}>
+              {series.description_ru}
+            </Text>
+          </View>
+        </View>
+        <Capsule tone="gold" size="md">{`${series.unlocked} / ${series.total}`}</Capsule>
       </View>
-      <Text style={styles.seriesDescription}>{series.description_ru}</Text>
+
+      {/* Gold progress thread + dot */}
+      <View style={styles.seriesProgressTrack}>
+        <View
+          style={[
+            styles.seriesProgressFill,
+            { width: `${Math.round(progress * 100)}%` },
+          ]}
+        />
+        {progress > 0 && progress < 1 && (
+          <View
+            style={[
+              styles.seriesProgressDot,
+              { left: `${Math.round(progress * 100)}%` },
+            ]}
+          />
+        )}
+      </View>
 
       <View style={styles.gridWrap}>
         {regulars.map((it) => (
@@ -181,7 +214,13 @@ function SeriesGroup({
             activeOpacity={0.7}
           >
             <AchievementPin item={it} size={72} />
-            <Text numberOfLines={1} style={styles.gridLabel}>
+            <Text
+              numberOfLines={1}
+              style={[
+                styles.gridLabel,
+                !it.is_unlocked && { color: M_IVORY_DIM },
+              ]}
+            >
               {it.title_ru || '?'}
             </Text>
             {it.progress_target > 0 && !it.is_unlocked && (
@@ -199,14 +238,17 @@ function SeriesGroup({
             activeOpacity={0.7}
           >
             <AchievementPin item={meta} size={96} />
-            <Text numberOfLines={1} style={[styles.gridLabel, styles.gridLabelMeta]}>
+            <Text
+              numberOfLines={1}
+              style={[
+                styles.gridLabel,
+                styles.gridLabelMeta,
+                !meta.is_unlocked && { color: M_IVORY_DIM },
+              ]}
+            >
               {meta.title_ru || '?'}
             </Text>
-            {meta.progress_target > 0 && !meta.is_unlocked && (
-              <Text style={styles.gridProgress}>
-                {meta.progress}/{meta.progress_target}
-              </Text>
-            )}
+            <Text style={styles.gridMetaTag}>МЕТА</Text>
           </TouchableOpacity>
         )}
       </View>
@@ -226,20 +268,27 @@ function SurpriseBlock({
   onPin: (item: AchievementItem) => void;
 }) {
   return (
-    <View style={styles.seriesCard}>
+    <View style={[styles.seriesCard, styles.surpriseCard]}>
+      <GroovesBg opacity={0.05} originX={350} originY={400} />
+
       <View style={styles.seriesHeader}>
-        <Text style={styles.seriesTitle}>🥚 Пасхалки</Text>
-        <Text style={styles.seriesCount}>открыто {randomCount}</Text>
+        <View style={styles.seriesHeaderLeft}>
+          <Text style={styles.seriesEmoji}>🥚</Text>
+          <View style={styles.seriesHeaderText}>
+            <Text style={styles.seriesTitle}>Пасхалки</Text>
+            <Text style={[styles.seriesDescription, { fontStyle: 'italic' }]} numberOfLines={1}>
+              Их находят сами. Не подсматривай.
+            </Text>
+          </View>
+        </View>
+        <Capsule tone="ember" size="md">{`${randomCount} открыто`}</Capsule>
       </View>
-      <Text style={styles.seriesDescription}>
-        Их обычно находят сами. Не подсматривай.
-      </Text>
+
+      <View style={styles.surpriseDivider} />
 
       {randomItems.length === 0 ? (
         <View style={styles.surpriseEmpty}>
-          <Text style={styles.surpriseEmptyText}>
-            Пока ничего не нашлось.
-          </Text>
+          <Text style={styles.surpriseEmptyText}>Пока ничего не нашлось.</Text>
         </View>
       ) : (
         <View style={styles.gridWrap}>
@@ -530,33 +579,93 @@ const styles = StyleSheet.create({
     color: Colors.textMuted,
   },
   seriesCard: {
-    backgroundColor: Colors.surface,
-    borderRadius: BorderRadius.lg,
+    backgroundColor: M_NAVY,
+    borderRadius: BorderRadius.xl,
     paddingHorizontal: Spacing.lg,
     paddingVertical: Spacing.md,
     marginHorizontal: Spacing.md,
     marginBottom: Spacing.md,
+    overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: M_GOLD_RIM_SOFT,
+  },
+  surpriseCard: {
+    borderColor: M_EMBER,
+    borderWidth: 1.5,
+    shadowColor: M_EMBER_GLOW,
+    shadowOpacity: 0.5,
+    shadowRadius: 14,
+    shadowOffset: { width: 0, height: 0 },
+    elevation: 4,
   },
   seriesHeader: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    marginBottom: 2,
+    gap: 8,
+  },
+  seriesHeaderLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    flex: 1,
+    minWidth: 0,
+  },
+  seriesHeaderText: {
+    flexShrink: 1,
+  },
+  seriesEmoji: {
+    fontSize: 22,
+    lineHeight: 24,
   },
   seriesTitle: {
     fontSize: 17,
-    fontWeight: '700',
-    color: Colors.text,
-  },
-  seriesCount: {
-    fontSize: 14,
-    color: Colors.textSecondary,
-    fontWeight: '500',
+    fontWeight: '800',
+    color: M_IVORY,
+    letterSpacing: -0.3,
   },
   seriesDescription: {
-    fontSize: 13,
-    color: Colors.textMuted,
-    marginBottom: Spacing.md,
+    fontSize: 12,
+    color: M_IVORY_MUTED,
+    marginTop: 1,
+  },
+  seriesProgressTrack: {
+    height: 2,
+    backgroundColor: 'rgba(217,168,78,0.18)',
+    marginTop: 14,
+    marginBottom: 16,
+    borderRadius: 1,
+    position: 'relative',
+  },
+  seriesProgressFill: {
+    height: '100%',
+    backgroundColor: M_GOLD_HI,
+    borderRadius: 1,
+    shadowColor: M_GOLD,
+    shadowOpacity: 0.8,
+    shadowRadius: 6,
+    shadowOffset: { width: 0, height: 0 },
+  },
+  seriesProgressDot: {
+    position: 'absolute',
+    top: -3,
+    marginLeft: -4,
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: M_GOLD_HI,
+    borderWidth: 2,
+    borderColor: M_NAVY,
+    shadowColor: M_GOLD,
+    shadowOpacity: 0.9,
+    shadowRadius: 4,
+    shadowOffset: { width: 0, height: 0 },
+  },
+  surpriseDivider: {
+    height: 1,
+    backgroundColor: 'rgba(232,90,42,0.27)',
+    marginTop: 14,
+    marginBottom: 16,
   },
   gridWrap: {
     flexDirection: 'row',
@@ -574,23 +683,33 @@ const styles = StyleSheet.create({
   gridLabel: {
     marginTop: 8,
     fontSize: 12,
-    color: Colors.text,
+    color: M_IVORY,
     textAlign: 'center',
+    fontWeight: '600',
   },
   gridLabelMeta: {
+    fontWeight: '800',
+    fontSize: 13,
+  },
+  gridMetaTag: {
+    marginTop: 2,
+    fontSize: 9,
+    color: M_GOLD,
     fontWeight: '700',
+    letterSpacing: 1,
   },
   gridProgress: {
     marginTop: 2,
     fontSize: 11,
-    color: Colors.textMuted,
+    color: M_IVORY_MUTED,
+    fontWeight: '600',
   },
   surpriseEmpty: {
     paddingVertical: Spacing.lg,
     alignItems: 'center',
   },
   surpriseEmptyText: {
-    color: Colors.textMuted,
+    color: M_IVORY_DIM,
     fontSize: 13,
   },
   sheetBackdrop: {
