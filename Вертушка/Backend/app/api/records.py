@@ -214,6 +214,26 @@ async def _ensure_record_price_data(record: Record, db: AsyncSession) -> None:
         logger.exception("Failed to ensure price data for record %s", record.discogs_id)
 
 
+async def _ensure_record_price_data_bg(record_id: UUID, discogs_id: str) -> None:
+    """Fire-and-forget версия — открывает собственную DB-сессию.
+
+    Вызывается через asyncio.create_task() чтобы не блокировать ответ на
+    детальную карточку: цены нужны для отображения, но не критичны для
+    первого рендера — юзер получает карточку быстро, цены подтягиваются
+    фоном (следующее открытие карточки уже покажет их из БД).
+    """
+    from app.database import async_session_maker
+    try:
+        async with async_session_maker() as db:
+            from sqlalchemy import select as _select
+            res = await db.execute(_select(Record).where(Record.id == record_id))
+            rec = res.scalar_one_or_none()
+            if rec and not rec.estimated_price_min and not rec.estimated_price_median:
+                await _ensure_record_price_data(rec, db)
+    except Exception:
+        logger.exception("Background price fetch failed for record %s", record_id)
+
+
 async def _ensure_record_artist_data(record: Record, db: AsyncSession) -> None:
     """
     Обогащает запись данными артиста (artist_id, artist_thumb_image_url),
@@ -901,12 +921,13 @@ async def get_record(
     # Порядок важен: payload ПЕРЕД artist_data.
     # _ensure_record_discogs_payload может догрузить полный Discogs release
     # с tracklist'ом — и положить туда же artist_id, что потом сэкономит
-    # _ensure_record_artist_data один HTTP-запрос. Если payload запустить
-    # ПОСЛЕ artist_data — мердж сохранит artist_thumb_image_url, но и так
-    # лучше избежать лишнего запроса.
+    # _ensure_record_artist_data один HTTP-запрос.
+    # Price data — fire-and-forget: не блокирует ответ, подтягивается фоном.
+    # Следующее открытие карточки уже покажет цены из БД.
     await _ensure_record_discogs_payload(record, db)
     await _ensure_record_artist_data(record, db)
-    await _ensure_record_price_data(record, db)
+    if not record.estimated_price_min and not record.estimated_price_median and record.discogs_id:
+        asyncio.create_task(_ensure_record_price_data_bg(record.id, record.discogs_id))
 
     response = RecordResponse.model_validate(record)
     discogs_data = record.discogs_data or {}
@@ -938,12 +959,11 @@ async def get_record_by_discogs_id(
     record = result.scalar_one_or_none()
 
     if record:
-        # Порядок: payload ПЕРЕД artist_data — payload может положить
-        # artist_id в discogs_data, что сэкономит запрос /releases/{id}
-        # внутри _ensure_record_artist_data. См. идентичный блок в get_record().
+        # Порядок: payload ПЕРЕД artist_data. Price — fire-and-forget.
         await _ensure_record_discogs_payload(record, db)
         await _ensure_record_artist_data(record, db)
-        await _ensure_record_price_data(record, db)
+        if not record.estimated_price_min and not record.estimated_price_median and record.discogs_id:
+            asyncio.create_task(_ensure_record_price_data_bg(record.id, record.discogs_id))
 
         discogs_data = record.discogs_data or {}
         response = RecordResponse.model_validate(record)
