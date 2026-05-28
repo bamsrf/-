@@ -507,12 +507,13 @@ async def get_record_offers_full(
         .where(StoreListing.status.in_((ListingStatus.IN_STOCK, ListingStatus.PREORDER)))
         .where(StoreListing.last_seen_at >= cutoff)
         .order_by(StoreListing.price_rub.asc().nulls_last())
+        .limit(50)
     )
     exact_listings = list((await db.execute(exact_stmt)).unique().scalars().all())
 
     # Alt-version offers (другой pressing того же мастера)
     alt_listings: list[StoreListing] = []
-    if include_master_versions and master_id:
+    if include_master_versions and master_id and master_id != '0':
         alt_stmt = (
             select(StoreListing)
             .options(
@@ -525,6 +526,7 @@ async def get_record_offers_full(
             .where(StoreListing.status == ListingStatus.IN_STOCK)
             .where(StoreListing.last_seen_at >= cutoff)
             .order_by(StoreListing.price_rub.asc().nulls_last())
+            .limit(20)
         )
         alt_listings = list((await db.execute(alt_stmt)).unique().scalars().all())
 

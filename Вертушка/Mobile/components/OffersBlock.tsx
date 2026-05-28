@@ -116,10 +116,12 @@ export function OffersBlock({ discogsId, recordId }: OffersBlockProps) {
     <View style={styles.shell}>
       <View style={styles.headerRow}>
         <Text style={styles.title}>Купить сейчас</Text>
-        <View style={styles.headerBadge}>
-          <Icon name="disc" size={10} color="onBrand" style={{ opacity: 0.85 }} />
-          <Text style={styles.headerBadgeText}>{offers!.length} в наличии</Text>
-        </View>
+        {exactOffers.length > 0 && (
+          <View style={styles.headerBadge}>
+            <Icon name="disc" size={10} color="onBrand" style={{ opacity: 0.85 }} />
+            <Text style={styles.headerBadgeText}>{exactOffers.length} в наличии</Text>
+          </View>
+        )}
       </View>
 
       {/* Exact-match блок — точное совпадение pressing'а */}

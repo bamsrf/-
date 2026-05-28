@@ -45,7 +45,7 @@ _UPDATE_SQL = text(
       country           = COALESCE(NULLIF(r.country, ''),     idx.country),
       format_type       = COALESCE(NULLIF(r.format_type, ''), idx.format_type),
       label             = COALESCE(NULLIF(r.label, ''),       idx.label),
-      discogs_master_id = COALESCE(NULLIF(r.discogs_master_id, ''), idx.master_id::text),
+      discogs_master_id = COALESCE(NULLIF(r.discogs_master_id, ''), NULLIF(idx.master_id, 0)::text),
       cover_image_url   = COALESCE(NULLIF(r.cover_image_url, ''),   idx.cover_image_url),
       updated_at        = NOW()
     FROM discogs_releases_index idx
