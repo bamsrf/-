@@ -234,6 +234,27 @@ async def _ensure_record_price_data_bg(record_id: UUID, discogs_id: str) -> None
         logger.exception("Background price fetch failed for record %s", record_id)
 
 
+async def _enrich_stub_bg(record_id: UUID, discogs_id: str) -> None:
+    """Фоновое обогащение stub-записи созданной из discogs_releases_index.
+
+    Открывает собственную сессию чтобы не зависеть от lifetime request-сессии.
+    Последовательно: payload (tracklist, master_id, cover) → artist (thumb) → price.
+    Вызывается через asyncio.create_task() — не блокирует ответ.
+    """
+    from app.database import async_session_maker
+    try:
+        async with async_session_maker() as db:
+            res = await db.execute(select(Record).where(Record.id == record_id))
+            rec = res.scalar_one_or_none()
+            if not rec:
+                return
+            await _ensure_record_discogs_payload(rec, db)
+            await _ensure_record_artist_data(rec, db)
+            await _ensure_record_price_data(rec, db)
+    except Exception:
+        logger.exception("_enrich_stub_bg failed for record %s (discogs_id=%s)", record_id, discogs_id)
+
+
 async def _ensure_record_artist_data(record: Record, db: AsyncSession) -> None:
     """
     Обогащает запись данными артиста (artist_id, artist_thumb_image_url),
@@ -972,6 +993,56 @@ async def get_record_by_discogs_id(
         response.vinyl_color_raw = discogs_data.get("vinyl_color_raw")
         return await _enrich_response_with_rub(response, record, db)
 
+    # Fallback local-first: создаём stub-запись из discogs_releases_index
+    # без обращения к Discogs API. Юзер получает карточку за <100ms,
+    # обогащение (tracklist, cover, artist) идёт фоном.
+    # Это закрывает «вечную загрузку» когда юзер нажимает на версию релиза
+    # которая ещё не в нашей БД — дамп покрывает ~13M релизов.
+    try:
+        dump_row = (await db.execute(
+            text(
+                "SELECT discogs_id, master_id, artist, title, year, country, "
+                "format_type, label, catalog_norm, cover_image_url "
+                "FROM discogs_releases_index WHERE discogs_id = :did LIMIT 1"
+            ),
+            {"did": discogs_id},
+        )).mappings().first()
+    except Exception:
+        dump_row = None
+
+    if dump_row:
+        stub = Record(
+            discogs_id=str(dump_row["discogs_id"]),
+            discogs_master_id=str(dump_row["master_id"]) if dump_row["master_id"] else None,
+            title=dump_row["title"] or "Unknown",
+            artist=dump_row["artist"] or "Unknown",
+            label=dump_row["label"],
+            catalog_number=dump_row["catalog_norm"],
+            year=dump_row["year"],
+            country=dump_row["country"],
+            format_type=dump_row["format_type"],
+            cover_image_url=dump_row["cover_image_url"],
+            source="discogs",
+        )
+        try:
+            db.add(stub)
+            await db.commit()
+            await db.refresh(stub)
+        except IntegrityError:
+            await db.rollback()
+            result = await db.execute(select(Record).where(Record.discogs_id == discogs_id))
+            stub = result.scalar_one_or_none()
+        if stub:
+            # Обогащение payload/artist/price — fire-and-forget, собственные сессии
+            if stub.discogs_id:
+                asyncio.create_task(_enrich_stub_bg(stub.id, stub.discogs_id))
+            response = RecordResponse.model_validate(stub)
+            discogs_data = stub.discogs_data or {}
+            response.artist_id = discogs_data.get("artist_id")
+            response.artist_thumb_image_url = discogs_data.get("artist_thumb_image_url")
+            response.vinyl_color_raw = discogs_data.get("vinyl_color_raw")
+            return await _enrich_response_with_rub(response, stub, db)
+
     # Запрос в Discogs с watchdog: клиент не висит 60 сек.
     # asyncio.shield + create_task — на таймаут отдаём 503, но запрос
     # к Discogs продолжается в фоне и кладёт результат в Redis,
@@ -1309,17 +1380,29 @@ async def _fetch_versions_from_local_index(
         return None
 
     offset = (page - 1) * per_page
+    # LEFT JOIN records: подтягиваем обложки из локального кэша.
+    # Дамп Discogs не несёт image URLs, но records.cover_local_path /
+    # records.cover_image_url заполнены для релизов которые уже видели.
     rows = (
         await db.execute(
             text(
                 """
                 SELECT
-                    discogs_id::text AS release_id,
-                    artist, title, year, country, format_type, label,
-                    catalog_norm, cover_image_url
-                FROM discogs_releases_index
-                WHERE master_id = :m
-                ORDER BY year ASC NULLS LAST, discogs_id ASC
+                    dri.discogs_id::text AS release_id,
+                    dri.artist, dri.title, dri.year, dri.country,
+                    dri.format_type, dri.label, dri.catalog_norm,
+                    COALESCE(
+                        CASE WHEN r.cover_local_path IS NOT NULL
+                             THEN '/uploads/' || r.cover_local_path END,
+                        r.cover_image_url,
+                        dri.cover_image_url
+                    ) AS cover_image_url
+                FROM discogs_releases_index dri
+                LEFT JOIN records r
+                    ON r.discogs_id = dri.discogs_id::text
+                    AND r.merged_into_id IS NULL
+                WHERE dri.master_id = :m
+                ORDER BY dri.year ASC NULLS LAST, dri.discogs_id ASC
                 LIMIT :limit OFFSET :offset
                 """
             ),
