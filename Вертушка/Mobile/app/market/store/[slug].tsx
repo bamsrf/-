@@ -27,7 +27,7 @@ import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 import { BlurView } from 'expo-blur';
 
 import { Icon } from '@/components/ui';
-import { api } from '../../../lib/api';
+import { api, resolveMediaUrl } from '../../../lib/api';
 import { MarketPalette } from '../../../constants/theme';
 import type {
   MarketSearchItem,
@@ -202,7 +202,7 @@ export default function StorePage() {
     >
       <View style={styles.coverWrap}>
         {item.cover_image_url ? (
-          <Image source={{ uri: item.cover_image_url }} style={styles.cover} resizeMode="cover" />
+          <Image source={{ uri: resolveMediaUrl(item.cover_image_url) ?? item.cover_image_url ?? '' }} style={styles.cover} resizeMode="cover" />
         ) : (
           <View style={[styles.cover, styles.coverPlaceholder]} />
         )}
