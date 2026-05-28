@@ -12,6 +12,7 @@ import { Image } from 'expo-image';
 import { Icon } from '@/components/ui';
 import { Colors, Typography, BorderRadius, Shadows, Spacing } from '../constants/theme';
 import { MasterVersion } from '../lib/types';
+import { resolveMediaUrl } from '../lib/api';
 import { RarityAura, TierCoverEffects, TierLabel, pickRarityTier } from './RarityAura';
 
 interface VersionCardProps {
@@ -20,7 +21,7 @@ interface VersionCardProps {
 }
 
 export function VersionCard({ version, onPress }: VersionCardProps) {
-  const imageUrl = version.cover_image_url || version.thumb_image_url;
+  const imageUrl = resolveMediaUrl(version.cover_image_url || version.thumb_image_url);
   const rarityTier = pickRarityTier(version, 'search');
 
   const inner = (

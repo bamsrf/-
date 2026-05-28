@@ -1281,6 +1281,17 @@ async def get_master_versions(
     if local_versions is not None and local_versions.total > 0:
         versions = local_versions
         main_release_id = None
+        # Фоновый 1-вызов к Discogs: подтягиваем thumbs для всех версий страницы.
+        # get_master_versions кэшируется на TTL_MASTER_VERSIONS — повторные заходы
+        # попадут в Redis-кэш discogs-service без нового HTTP запроса.
+        background_tasks.add_task(
+            _enrich_covers_from_api,
+            master_id=master_id,
+            page=page,
+            per_page=per_page,
+            versions_dump=local_versions.model_dump(),
+            enriched_ck=enriched_ck,
+        )
     else:
         discogs = DiscogsService()
         try:
@@ -1451,6 +1462,61 @@ async def _fetch_master_versions_and_main_release(
     return versions, main_release_id
 
 
+async def _enrich_covers_from_api(
+    *,
+    master_id: str,
+    page: int,
+    per_page: int,
+    versions_dump: dict,
+    enriched_ck: str,
+) -> None:
+    """Подтягивает thumb_image_url для всех версий одним вызовом Discogs API.
+
+    get_master_versions возвращает `thumb` по каждой версии — это намного
+    эффективнее N×get_release. Результат мёржится в versions_dump и сохраняется
+    в master_versions_enriched кэш. Следующий заход юзера сразу получит обложки.
+
+    Если enriched-кэш уже есть (заполнен из другой задачи) — пропускаем.
+    """
+    if await cache.get("master_versions_enriched", enriched_ck):
+        return  # уже обогатили
+    lock_key = f"covers:{master_id}:p{page}:pp{per_page}"
+    if not await cache.set_nx("master_versions_lock", lock_key, "1", ttl=120):
+        return
+
+    try:
+        discogs = DiscogsService()
+        api_resp = await discogs.get_master_versions(
+            master_id=master_id, page=page, per_page=per_page
+        )
+        thumb_by_id = {
+            v.release_id: (v.thumb_image_url or v.cover_image_url)
+            for v in api_resp.results
+            if v.thumb_image_url or v.cover_image_url
+        }
+        if not thumb_by_id:
+            return
+
+        versions = MasterVersionsResponse(**versions_dump)
+        changed = False
+        for v in versions.results:
+            if not v.cover_image_url and not v.thumb_image_url:
+                t = thumb_by_id.get(v.release_id)
+                if t:
+                    v.thumb_image_url = t
+                    changed = True
+
+        if changed:
+            await cache.set(
+                "master_versions_enriched", enriched_ck,
+                versions.model_dump(), TTL_MASTER_VERSIONS,
+            )
+    except Exception:
+        logger.exception("_enrich_covers_from_api failed master_id=%s", master_id)
+    finally:
+        await cache.delete("master_versions_lock", lock_key)
+
+
 async def _enrich_collectible_async(
     *,
     master_id: str,
@@ -1486,14 +1552,20 @@ async def _enrich_collectible_async(
         async def fetch_flags(v):
             async with sem:
                 try:
-                    # Priority.ENRICHMENT, чтобы фоновое обогащение не дренило
-                    # token-bucket и не тормозило UI-запросы юзера, ждущие
-                    # тех же токенов с Priority.DETAIL.
+                    # Priority.ENRICHMENT — не дренит token-bucket UI-запросов.
                     data = await discogs.get_release(v.release_id, priority=Priority.ENRICHMENT)
                     v.is_canon = v.is_canon or bool(data.get("is_canon"))
                     v.is_collectible = v.is_collectible or bool(data.get("is_collectible"))
                     v.is_limited = v.is_limited or bool(data.get("is_limited"))
                     v.is_hot = v.is_hot or bool(data.get("is_hot"))
+                    # Обложка: берём из get_release если версия ещё без cover
+                    if not v.cover_image_url and not v.thumb_image_url:
+                        cover = data.get("cover_image") or data.get("cover_image_url")
+                        thumb = data.get("thumb_image") or data.get("thumb_image_url")
+                        if cover:
+                            v.cover_image_url = cover
+                        elif thumb:
+                            v.thumb_image_url = thumb
                 except Exception:
                     pass
 
@@ -1508,6 +1580,21 @@ async def _enrich_collectible_async(
                 master_id, page,
             )
 
+        # Мёрджим с уже имеющимся кэшем: если _enrich_covers_from_api успел
+        # записать thumb'ы — не затираем их нулями из нашего versions объекта.
+        existing = await cache.get("master_versions_enriched", enriched_ck)
+        if existing:
+            existing_resp = MasterVersionsResponse(**existing)
+            cover_by_id = {
+                v.release_id: (v.cover_image_url or v.thumb_image_url)
+                for v in existing_resp.results
+                if v.cover_image_url or v.thumb_image_url
+            }
+            for v in versions.results:
+                if not v.cover_image_url and not v.thumb_image_url:
+                    c = cover_by_id.get(v.release_id)
+                    if c:
+                        v.thumb_image_url = c
         await cache.set("master_versions_enriched", enriched_ck, versions.model_dump(), TTL_MASTER_VERSIONS)
     finally:
         await cache.delete("master_versions_lock", lock_key)
