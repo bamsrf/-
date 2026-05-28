@@ -1,7 +1,7 @@
 /**
  * Страница со списком всех версий мастер-релиза
  */
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   View,
   Text,
@@ -48,9 +48,18 @@ export default function VersionsScreen() {
   const [hasMore, setHasMore] = useState(true);
   const [total, setTotal] = useState(0);
   const [activeFilter, setActiveFilter] = useState<FormatFilter>('all');
+  // Одиночный retry для обложек: сервер обогащает кэш ~2-3с фоном после
+  // первого запроса. Через 3с перезапрашиваем страницу 1 — попадём в
+  // enriched-кэш с thumb'ами. Retry только один раз чтобы не зациклиться.
+  const coverRetryDone = useRef(false);
+  const coverRetryTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
+    coverRetryDone.current = false;
     loadVersions();
+    return () => {
+      if (coverRetryTimer.current) clearTimeout(coverRetryTimer.current);
+    };
   }, [id]);
 
   const loadVersions = async (pageNum = 1) => {
@@ -66,6 +75,19 @@ export default function VersionsScreen() {
       if (pageNum === 1) {
         setVersions(response.results);
         setTotal(response.total);
+
+        // Если ни у одной версии нет обложки — значит пришли из дампа без cover.
+        // Запускаем единственный retry через 3с: к тому времени фоновый
+        // _enrich_covers_from_api должен заполнить Redis-кэш thumb'ами.
+        const hasCover = response.results.some(
+          (v) => v.cover_image_url || v.thumb_image_url
+        );
+        if (!hasCover && !coverRetryDone.current) {
+          coverRetryTimer.current = setTimeout(() => {
+            coverRetryDone.current = true;
+            loadVersions(1);
+          }, 3000);
+        }
       } else {
         setVersions([...versions, ...response.results]);
       }
