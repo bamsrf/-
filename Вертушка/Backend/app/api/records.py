@@ -1343,14 +1343,14 @@ async def get_master_versions(
     - Watchdog 25 сек на синхронной части — чтобы клиент не висел в axios
       timeout 60s, если Discogs отвечает медленно.
     """
-    response.headers["Cache-Control"] = "public, max-age=3600"
-
     # Кэш ENRICHED-ответа отдельный — get_master_versions кэширует только сырые
     # данные от Discogs (теперь с is_hot), здесь храним полностью обогащённую
     # версию (с is_collectible), чтобы не делать N×get_release на каждый запрос.
     enriched_ck = f"{master_id}:p{page}:pp{per_page}"
     cached_enriched = await cache.get("master_versions_enriched", enriched_ck)
     if cached_enriched:
+        # Полностью обогащённый ответ (с обложками) — можно кэшировать на nginx.
+        response.headers["Cache-Control"] = "public, max-age=3600"
         return MasterVersionsResponse(**cached_enriched)
 
     # Local-first: discogs_releases_index содержит все 13M releases с master_id.
@@ -1445,6 +1445,13 @@ async def get_master_versions(
     else:
         # Все виденные — можно сразу записать enriched-кэш
         await cache.set("master_versions_enriched", enriched_ck, versions.model_dump(), TTL_MASTER_VERSIONS)
+
+    # local-first ответ может быть неполным: обложки и версии, отсутствующие в
+    # дампе, дотягиваются фоном в master_versions_enriched. Если разрешить nginx
+    # кэшировать этот ответ (max-age=3600), он час отдаёт версию без обложек, а
+    # клиентский retry попадает в nginx-кэш и не доходит до enriched в Redis.
+    # no-store → retry проходит до бэка и получает обогащённый ответ.
+    response.headers["Cache-Control"] = "no-store"
 
     return versions
 
