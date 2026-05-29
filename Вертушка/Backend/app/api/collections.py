@@ -629,7 +629,18 @@ async def get_collection_stats(
     )
     items = result.scalars().all()
 
-    total_records = len(items)
+    # Дедуп по record_id: одна и та же пластинка может лежать в нескольких
+    # папках (= отдельных Collection) — в статистике общей коллекции её нужно
+    # учитывать один раз, а не суммировать копии из папок.
+    seen_records: set = set()
+    unique_items = []
+    for item in items:
+        if item.record_id in seen_records:
+            continue
+        seen_records.add(item.record_id)
+        unique_items.append(item)
+
+    total_records = len(unique_items)
     total_min = 0.0
     total_max = 0.0
     total_median = 0.0
@@ -642,7 +653,7 @@ async def get_collection_stats(
     most_expensive_item = None
     most_expensive_rub = 0.0
 
-    for item in items:
+    for item in unique_items:
         record = item.record
 
         if record.estimated_price_min:

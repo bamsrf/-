@@ -79,6 +79,8 @@ export default function CollectionValueScreen() {
   const router = useRouter();
   const { stats, isLoadingStats, fetchStats, collectionItems, defaultCollection } = useCollectionStore();
 
+  const [helpOpen, setHelpOpen] = React.useState(false);
+
   const barWidth = useSharedValue(0);
   const gradientShift = useSharedValue(0);
 
@@ -200,6 +202,16 @@ export default function CollectionValueScreen() {
                     style={StyleSheet.absoluteFill}
                   />
                 </Animated.View>
+
+                <TouchableOpacity
+                  style={styles.helpButton}
+                  onPress={() => setHelpOpen(v => !v)}
+                  hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+                  activeOpacity={0.7}
+                >
+                  <Icon name="question" size={14} color="#FFFFFF" />
+                </TouchableOpacity>
+
                 <Text style={styles.valueLabel}>Примерная стоимость</Text>
 
                 {/* Анимированная шкала */}
@@ -229,6 +241,29 @@ export default function CollectionValueScreen() {
                 )}
               </View>
             </View>
+
+            {/* Складной блок: как считается оценка */}
+            {helpOpen && (
+              <View style={styles.helpPanel}>
+                <Text style={styles.helpTitle}>Как считается оценка</Text>
+                <Text style={styles.helpText}>
+                  <Text style={styles.helpBullet}>1. </Text>
+                  Берём минимальную цену активных лотов с Discogs (в USD).
+                </Text>
+                <Text style={styles.helpText}>
+                  <Text style={styles.helpBullet}>2. </Text>
+                  Переводим в рубли по курсу ЦБ.
+                </Text>
+                <Text style={styles.helpText}>
+                  <Text style={styles.helpBullet}>3. </Text>
+                  Добавляем наценку РФ — доставка, комиссия, ввоз.
+                </Text>
+                <Text style={styles.helpNote}>
+                  Цена приблизительная. «Оценено N из M»: у части пластинок нет
+                  активных продаж на Discogs — для них цены пока нет.
+                </Text>
+              </View>
+            )}
 
             {/* Детали */}
             <View style={styles.detailsRow}>
@@ -345,6 +380,48 @@ const styles = StyleSheet.create({
     ...Typography.bodySmall,
     color: 'rgba(255,255,255,0.8)',
     marginBottom: Spacing.md,
+  },
+  helpButton: {
+    position: 'absolute',
+    top: Spacing.sm,
+    right: Spacing.sm,
+    width: 26,
+    height: 26,
+    borderRadius: 13,
+    backgroundColor: 'rgba(255,255,255,0.22)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 2,
+  },
+
+  // Help panel
+  helpPanel: {
+    backgroundColor: Colors.surface,
+    borderRadius: BorderRadius.md,
+    padding: Spacing.md,
+    marginBottom: Spacing.md,
+    gap: Spacing.xs,
+    ...Shadows.sm,
+  },
+  helpTitle: {
+    ...Typography.bodyBold,
+    color: Colors.text,
+    marginBottom: Spacing.xs,
+  },
+  helpText: {
+    ...Typography.bodySmall,
+    color: Colors.textSecondary,
+    lineHeight: 20,
+  },
+  helpBullet: {
+    color: Colors.royalBlue,
+    fontFamily: 'Inter_600SemiBold',
+  },
+  helpNote: {
+    ...Typography.caption,
+    color: Colors.textMuted,
+    marginTop: Spacing.xs,
+    lineHeight: 18,
   },
   barContainer: {
     width: '100%',

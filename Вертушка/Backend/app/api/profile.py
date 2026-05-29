@@ -219,8 +219,11 @@ async def _get_new_releases(
 
 async def get_public_profile_payload(user: User, profile: ProfileShare, db: AsyncSession) -> PublicProfileResponse:
     """Общий helper, используется и API endpoint, и web-роутом."""
+    # DISTINCT по record_id: одна пластинка может лежать и в общей коллекции,
+    # и в папках (= отдельных Collection). Считаем уникальные пластинки, а не
+    # суммируем копии из папок.
     collection_count = await db.scalar(
-        select(func.count(CollectionItem.id))
+        select(func.count(func.distinct(CollectionItem.record_id)))
         .join(Collection)
         .where(Collection.user_id == user.id)
     ) or 0
@@ -239,11 +242,16 @@ async def get_public_profile_payload(user: User, profile: ProfileShare, db: Asyn
     collection_value_rub = None
     monthly_delta = None
     if profile.show_collection_value:
-        value_result = await db.scalar(
-            select(func.sum(func.coalesce(Record.estimated_price_min, Record.estimated_price_median)))
-            .join(CollectionItem, CollectionItem.record_id == Record.id)
+        # Уникальные record_id пользователя (без двойного учёта копий из папок)
+        distinct_records = (
+            select(func.distinct(CollectionItem.record_id))
             .join(Collection)
             .where(Collection.user_id == user.id)
+            .subquery()
+        )
+        value_result = await db.scalar(
+            select(func.sum(func.coalesce(Record.estimated_price_min, Record.estimated_price_median)))
+            .where(Record.id.in_(select(distinct_records.c[0])))
         )
         collection_value = float(value_result) if value_result else 0.0
         rate = await get_usd_rub_rate()

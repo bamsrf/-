@@ -28,16 +28,27 @@ async def record_daily_snapshots():
 
     async with async_session_maker() as db:
         try:
-            stmt = (
+            # DISTINCT по record_id: пластинка может лежать в общей коллекции
+            # и в папках одновременно — не дублируем её в снапшоте стоимости.
+            dedup = (
                 select(
                     Collection.user_id.label("user_id"),
-                    func.coalesce(func.sum(Record.estimated_price_median), 0).label("value_usd"),
-                    func.count(CollectionItem.id).label("items_count"),
+                    CollectionItem.record_id.label("record_id"),
+                    func.max(Record.estimated_price_median).label("price_usd"),
                 )
                 .select_from(Collection)
                 .join(CollectionItem, CollectionItem.collection_id == Collection.id)
                 .join(Record, Record.id == CollectionItem.record_id)
-                .group_by(Collection.user_id)
+                .group_by(Collection.user_id, CollectionItem.record_id)
+                .subquery()
+            )
+            stmt = (
+                select(
+                    dedup.c.user_id.label("user_id"),
+                    func.coalesce(func.sum(dedup.c.price_usd), 0).label("value_usd"),
+                    func.count(dedup.c.record_id).label("items_count"),
+                )
+                .group_by(dedup.c.user_id)
             )
             result = await db.execute(stmt)
             rows = result.all()
