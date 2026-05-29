@@ -40,7 +40,10 @@ class OpenAIVisionService:
         }
 
         payload = {
-            "model": "gpt-4o-mini",
+            # gpt-4o, не -mini: mini считает image-токены ~50x дороже
+            # (тайл×5667+2833 ≈ 36K/скан против ~765 у 4o). 4o дешевле по
+            # токенам И точнее распознаёт обложки.
+            "model": "gpt-4o",
             "messages": [
                 {
                     "role": "user",
