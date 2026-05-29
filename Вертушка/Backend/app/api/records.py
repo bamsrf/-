@@ -1551,11 +1551,15 @@ async def _enrich_covers_from_api(
     versions_dump: dict,
     enriched_ck: str,
 ) -> None:
-    """Подтягивает thumb_image_url для всех версий одним вызовом Discogs API.
+    """Подтягивает обложки И версии, отсутствующие в локальном дампе, одним
+    вызовом Discogs API.
 
     get_master_versions возвращает `thumb` по каждой версии — это намного
-    эффективнее N×get_release. Результат мёржится в versions_dump и сохраняется
-    в master_versions_enriched кэш. Следующий заход юзера сразу получит обложки.
+    эффективнее N×get_release. Дополнительно: дамп Discogs — месячный снапшот
+    и не содержит релизы, добавленные/изменённые позже снапшота либо бывшие в
+    Draft. Поэтому мёржим версии из живого API, которых нет в локальном списке
+    (дедуп по release_id), и обновляем total. Результат сохраняется в
+    master_versions_enriched — следующий заход юзера получит полный список.
 
     Если enriched-кэш уже есть (заполнен из другой задачи) — пропускаем.
     """
@@ -1570,16 +1574,16 @@ async def _enrich_covers_from_api(
         api_resp = await discogs.get_master_versions(
             master_id=master_id, page=page, per_page=per_page
         )
+
+        versions = MasterVersionsResponse(**versions_dump)
+        changed = False
+
+        # 1) Обложки для версий, уже присутствующих в локальном списке.
         thumb_by_id = {
             v.release_id: (v.thumb_image_url or v.cover_image_url)
             for v in api_resp.results
             if v.thumb_image_url or v.cover_image_url
         }
-        if not thumb_by_id:
-            return
-
-        versions = MasterVersionsResponse(**versions_dump)
-        changed = False
         for v in versions.results:
             if not v.cover_image_url and not v.thumb_image_url:
                 t = thumb_by_id.get(v.release_id)
@@ -1587,7 +1591,28 @@ async def _enrich_covers_from_api(
                     v.thumb_image_url = t
                     changed = True
 
+        # 2) Версии из API, которых нет в дампе (дедуп по release_id).
+        local_ids = {v.release_id for v in versions.results}
+        for av in api_resp.results:
+            if av.release_id and av.release_id not in local_ids:
+                fmt_lower = (av.format or "").lower()
+                if any(tok in fmt_lower for tok in DiscogsService.LIMITED_TOKENS):
+                    av.is_limited = True
+                versions.results.append(av)
+                local_ids.add(av.release_id)
+                changed = True
+
+        # total отражает истинное число версий на мастере (pagination.items API),
+        # если оно больше локального — дамп отстал.
+        if api_resp.total > versions.total:
+            versions.total = api_resp.total
+            changed = True
+
         if changed:
+            # Сортировка как в локальном индексе: год ASC, NULL в конец.
+            versions.results.sort(
+                key=lambda v: (v.year is None, v.year or 0, v.release_id or "")
+            )
             await cache.set(
                 "master_versions_enriched", enriched_ck,
                 versions.model_dump(), TTL_MASTER_VERSIONS,
@@ -1623,9 +1648,6 @@ async def _enrich_collectible_async(
         versions = MasterVersionsResponse(**versions_dump)
         unseen_set = set(unseen_ids)
         unseen_versions = [v for v in versions.results if v.release_id in unseen_set]
-        if not unseen_versions:
-            await cache.set("master_versions_enriched", enriched_ck, versions.model_dump(), TTL_MASTER_VERSIONS)
-            return
 
         discogs = DiscogsService()
         sem = asyncio.Semaphore(5)
@@ -1663,6 +1685,8 @@ async def _enrich_collectible_async(
 
         # Мёрджим с уже имеющимся кэшем: если _enrich_covers_from_api успел
         # записать thumb'ы — не затираем их нулями из нашего versions объекта.
+        # Также подбираем версии, дозалитые из API (отсутствуют в дампе), и
+        # больший total — иначе перезатёрли бы их local-only списком.
         existing = await cache.get("master_versions_enriched", enriched_ck)
         if existing:
             existing_resp = MasterVersionsResponse(**existing)
@@ -1676,6 +1700,16 @@ async def _enrich_collectible_async(
                     c = cover_by_id.get(v.release_id)
                     if c:
                         v.thumb_image_url = c
+            local_ids = {v.release_id for v in versions.results}
+            for ev in existing_resp.results:
+                if ev.release_id and ev.release_id not in local_ids:
+                    versions.results.append(ev)
+                    local_ids.add(ev.release_id)
+            if existing_resp.total > versions.total:
+                versions.total = existing_resp.total
+            versions.results.sort(
+                key=lambda v: (v.year is None, v.year or 0, v.release_id or "")
+            )
         await cache.set("master_versions_enriched", enriched_ck, versions.model_dump(), TTL_MASTER_VERSIONS)
     finally:
         await cache.delete("master_versions_lock", lock_key)
@@ -1775,6 +1809,7 @@ async def get_artist_masters(
     page: int = Query(1, ge=1, description="Номер страницы"),
     per_page: int = Query(100, ge=1, le=100, description="Записей на страницу"),
     load_all: bool = Query(False, description="Загрузить все страницы сразу"),
+    sort_order: str = Query("desc", regex="^(asc|desc)$", description="Порядок по году"),
     current_user: User | None = Depends(get_current_user_optional),
 ):
     """
@@ -1792,6 +1827,7 @@ async def get_artist_masters(
             page=page,
             per_page=per_page,
             load_all=load_all,
+            sort_order=sort_order,
         )
         return masters
     except Exception as e:
