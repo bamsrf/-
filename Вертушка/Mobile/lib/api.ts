@@ -746,11 +746,10 @@ class ApiClient {
     cursor: number = 1,
     perPage: number = 20,
   ): Promise<MasterSearchResponse> {
-    // sort_order намеренно НЕ передаём — бэк сортирует сам (hardcoded desc),
-    // передача лишнего параметра создаёт отдельный nginx cache-ключ и
-    // может попасть на кэшированный пустой ответ.
+    // sort_order задаёт направление пагинации на бэке: desc = новые→старые,
+    // asc = старые→новые. Кэш-ключ на бэке включает направление.
     return this.deduplicatedGet<MasterSearchResponse>(`/records/artists/${artistId}/masters`, {
-      params: { page: cursor, per_page: perPage },
+      params: { page: cursor, per_page: perPage, sort_order: sortOrder },
     });
   }
 

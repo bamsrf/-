@@ -1252,6 +1252,7 @@ class DiscogsService:
         page: int = 1,
         per_page: int = 100,
         load_all: bool = False,
+        sort_order: str = "desc",
     ) -> MasterSearchResponse:
         """Master releases артиста по `docs/plans/PRINCIPLES.md`.
 
@@ -1271,7 +1272,8 @@ class DiscogsService:
 
         Кэшируется в Redis на TTL_ARTIST_MASTERS.
         """
-        ck = f"{artist_id}:v7:p{page}:pp{per_page}"
+        sort_order = "asc" if sort_order == "asc" else "desc"
+        ck = f"{artist_id}:v7:p{page}:pp{per_page}:{sort_order}"
         cached = await cache.get("artist_masters", ck)
         if cached is not None:
             return MasterSearchResponse(**cached)
@@ -1298,7 +1300,7 @@ class DiscogsService:
                 "page": page,
                 "per_page": per_page,
                 "sort": "year",
-                "sort_order": "desc",
+                "sort_order": sort_order,
             },
             priority=Priority.SEARCH,
         )

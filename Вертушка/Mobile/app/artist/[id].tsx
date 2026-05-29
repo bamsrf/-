@@ -38,6 +38,10 @@ const SORT_OPTIONS: { key: SortMode; label: string }[] = [
   { key: 'title', label: 'По названию' },
 ];
 
+// Направление пагинации на сервере: только year-режимы. title сортируется клиентом.
+const serverSortOrder = (mode: SortMode): 'asc' | 'desc' =>
+  mode === 'year_desc' ? 'desc' : 'asc';
+
 const matchesFilter = (master: MasterSearchResult, filter: ReleaseFilter): boolean => {
   if (!master.release_type) return filter === 'album';
   return master.release_type === filter;
@@ -173,7 +177,7 @@ export default function ArtistDetailScreen() {
     }
   };
 
-  const loadMasters = async (reset: boolean = false) => {
+  const loadMasters = async (reset: boolean = false, orderArg?: 'asc' | 'desc') => {
     if (!id) return;
     // Блокируем только подгрузку следующей страницы, reset-загрузки проходят всегда
     if (!reset && isLoadingMasters) return;
@@ -181,14 +185,15 @@ export default function ArtistDetailScreen() {
     const cursor = reset ? 1 : nextCursor;
     if (!cursor) return;
 
+    const order = orderArg ?? serverSortOrder(sortMode);
     const currentLoadId = ++loadIdRef.current;
     setIsLoadingMasters(true);
     if (reset) setHasLoadError(false);
 
     try {
       setError(null);
-      // Всегда грузим asc с сервера; клиент сортирует через filteredMasters useMemo
-      const data = await api.getArtistMasters(id, 'asc', cursor, 100);
+      // Сервер пагинирует в направлении сортировки по году; клиент не пересортировывает.
+      const data = await api.getArtistMasters(id, order, cursor, 100);
 
       // Игнорируем устаревший ответ (пользователь сменил сортировку/фильтр)
       if (loadIdRef.current !== currentLoadId) return;
@@ -217,9 +222,15 @@ export default function ArtistDetailScreen() {
   };
 
   const handleSortChange = (newMode: SortMode) => {
-    // Все режимы сортировки обрабатываются клиентски через filteredMasters useMemo
+    const directionChanged = serverSortOrder(newMode) !== serverSortOrder(sortMode);
     setSortMode(newMode);
     setShowSortMenu(false);
+    // Смена направления year → перезагрузить с page 1 в новом порядке.
+    // title сортируется клиентом поверх загруженного, без перезагрузки.
+    if (directionChanged) {
+      setNextCursor(1);
+      loadMasters(true, serverSortOrder(newMode));
+    }
   };
 
   const handleLoadMore = useCallback(() => {
@@ -249,23 +260,12 @@ export default function ArtistDetailScreen() {
       ? masters.filter((m) => matchesFilter(m, activeFilter))
       : [...masters];
 
-    const yearSort = (a: MasterSearchResult, b: MasterSearchResult, desc: boolean) => {
-      const ay = a.year ?? null;
-      const by = b.year ?? null;
-      if (ay === null && by === null) return 0;
-      if (ay === null) return 1;  // без года — в конец
-      if (by === null) return -1;
-      return desc ? by - ay : ay - by;
-    };
-
-    switch (sortMode) {
-      case 'year_desc':
-        return filtered.sort((a, b) => yearSort(a, b, true));
-      case 'year_asc':
-        return filtered.sort((a, b) => yearSort(a, b, false));
-      case 'title':
-        return filtered.sort((a, b) => a.title.localeCompare(b.title, 'ru'));
+    // year_asc/year_desc: порядок уже задан сервером (пагинация в направлении).
+    // title: сортируем клиентом поверх загруженного набора.
+    if (sortMode === 'title') {
+      return filtered.sort((a, b) => a.title.localeCompare(b.title, 'ru'));
     }
+    return filtered;
   }, [masters, activeFilter, sortMode]);
 
   // Авто-подгрузка: если после фильтрации мало результатов, но ещё есть данные на сервере
