@@ -1561,10 +1561,11 @@ async def _enrich_covers_from_api(
     (дедуп по release_id), и обновляем total. Результат сохраняется в
     master_versions_enriched — следующий заход юзера получит полный список.
 
-    Если enriched-кэш уже есть (заполнен из другой задачи) — пропускаем.
+    NB: не делаем early-return при наличии enriched-кэша. Этот таск —
+    единственный, кто тянет live-API и добавляет версии, отсутствующие в дампе.
+    _enrich_collectible_async может записать enriched (local-only) раньше нас;
+    тогда берём его как базу и всё равно домёрживаем недостающие API-версии.
     """
-    if await cache.get("master_versions_enriched", enriched_ck):
-        return  # уже обогатили
     lock_key = f"covers:{master_id}:p{page}:pp{per_page}"
     if not await cache.set_nx("master_versions_lock", lock_key, "1", ttl=120):
         return
@@ -1575,7 +1576,10 @@ async def _enrich_covers_from_api(
             master_id=master_id, page=page, per_page=per_page
         )
 
-        versions = MasterVersionsResponse(**versions_dump)
+        # База для мёржа: уже записанный enriched (от collectible-таска), иначе
+        # локальный dump. Так не теряем флаги/обложки, проставленные ранее.
+        existing = await cache.get("master_versions_enriched", enriched_ck)
+        versions = MasterVersionsResponse(**(existing or versions_dump))
         changed = False
 
         # 1) Обложки для версий, уже присутствующих в локальном списке.
