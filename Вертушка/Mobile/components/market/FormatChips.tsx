@@ -118,7 +118,7 @@ function ChipButton({ chip, active, tint, onPress }: ChipButtonProps) {
           colors={Gradients.hotStock}
           start={{ x: 0, y: 0 }}
           end={{ x: 1, y: 1 }}
-          style={StyleSheet.absoluteFill}
+          style={[StyleSheet.absoluteFill, { borderRadius: 9999 }]}
         />
       )}
       <Icon
