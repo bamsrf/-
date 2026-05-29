@@ -495,7 +495,6 @@ const REGISTRY: Record<string, SceneRenderer> = {
   A2_first_wishlist: SceneHotelka,
   A3_avatar_set: SceneAvatar,
   A4_public_profile: SceneOpenWindow,
-  A5_second_collection: SceneTwoShelves,
   META_foundation: SceneOnBoard,
   // Scale (стопка растёт с тиром)
   B1_starter: (p) => <SceneStack {...p} count={2} />,

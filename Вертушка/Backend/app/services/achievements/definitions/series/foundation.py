@@ -1,19 +1,18 @@
 """Серия «Первые шаги» (A* + META_foundation).
 
-Phase 1: A1–A5 + META_foundation.
+Phase 1: A1–A4 + META_foundation.
 - A1: первая пластинка в коллекции
 - A2: первая запись в вишлисте
 - A3: установлен аватар
 - A4: активирован публичный профиль
-- A5: создана вторая коллекция вручную (первая создаётся системой)
-- META_foundation: все 5 открыты
+- META_foundation: все 4 открыты
 """
 from __future__ import annotations
 
 from typing import Any
 from uuid import UUID
 
-from sqlalchemy import select, exists, func
+from sqlalchemy import select, exists
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.collection import Collection, CollectionItem
@@ -23,7 +22,6 @@ from app.models.user_achievement import UserAchievement
 from app.models.wishlist import Wishlist, WishlistItem
 from app.services.achievements.events import (
     AVATAR_SET,
-    COLLECTION_CREATED,
     COLLECTION_ITEM_ADDED,
     PROFILE_SHARED_ENABLED,
     WISHLIST_ITEM_ADDED,
@@ -39,9 +37,8 @@ A1_CODE = "A1_first_record"
 A2_CODE = "A2_first_wishlist"
 A3_CODE = "A3_avatar_set"
 A4_CODE = "A4_public_profile"
-A5_CODE = "A5_second_collection"
 META_CODE = "META_foundation"
-FOUNDATION_CODES = {A1_CODE, A2_CODE, A3_CODE, A4_CODE, A5_CODE}
+FOUNDATION_CODES = {A1_CODE, A2_CODE, A3_CODE, A4_CODE}
 
 
 async def _evaluate_a1(
@@ -100,29 +97,13 @@ async def _evaluate_a4(
     return EvalResult(unlocked=bool(share and share.is_active))
 
 
-async def _evaluate_a5(
-    db: AsyncSession,
-    user_id: UUID,
-    payload: dict[str, Any],
-    unlocked_now: set[str],
-) -> EvalResult:
-    """У юзера ≥2 коллекций.
-
-    Первую создаёт сама система при регистрации; вторая = осознанный жест.
-    """
-    count = await db.scalar(
-        select(func.count(Collection.id)).where(Collection.user_id == user_id)
-    )
-    return EvalResult(unlocked=int(count or 0) >= 2)
-
-
 async def _evaluate_meta_foundation(
     db: AsyncSession,
     user_id: UUID,
     payload: dict[str, Any],
     unlocked_now: set[str],
 ) -> EvalResult:
-    """Открывается, когда все A1–A5 уже unlocked.
+    """Открывается, когда все A1–A4 уже unlocked.
 
     Учитывает ачивки, открытые ровно в этом же emit_event (unlocked_now),
     плюс уже сохранённые в БД.
@@ -149,7 +130,6 @@ _ALL_FOUNDATION_TRIGGERS = (
     WISHLIST_ITEM_ADDED,
     AVATAR_SET,
     PROFILE_SHARED_ENABLED,
-    COLLECTION_CREATED,
 )
 
 
@@ -198,18 +178,6 @@ DEFINITIONS: list[AchievementDefinition] = [
         triggers=(PROFILE_SHARED_ENABLED,),
         evaluator=_evaluate_a4,
         icon_slug="a4_public_profile",
-    ),
-    AchievementDefinition(
-        code=A5_CODE,
-        title_ru="Полка-двойник",
-        description_ru="Создай вторую коллекцию вручную.",
-        series="foundation",
-        tier=AchievementTier.SIMPLE,
-        is_hidden=False,
-        triggers=(COLLECTION_CREATED,),
-        evaluator=_evaluate_a5,
-        flavor_ru="Когда одна полка перестаёт хватать.",
-        icon_slug="a5_second_collection",
     ),
     # META — всегда последний, на все события серии
     AchievementDefinition(

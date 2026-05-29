@@ -2,7 +2,6 @@
 
 # Коллекции
 COLLECTION_ITEM_ADDED = "collection_item_added"
-COLLECTION_CREATED = "collection_created"  # юзер создал коллекцию вручную
 
 # Вишлист
 WISHLIST_ITEM_ADDED = "wishlist_item_added"

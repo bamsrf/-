@@ -181,16 +181,6 @@ async def create_collection(
     await db.commit()
     await db.refresh(collection)
 
-    # Эмиссия события ачивок (A5)
-    from app.services.achievements import emit_event
-    from app.services.achievements.events import COLLECTION_CREATED
-    await emit_event(
-        db,
-        current_user.id,
-        COLLECTION_CREATED,
-        {"collection_id": collection.id},
-    )
-
     return CollectionResponse(
         id=collection.id,
         user_id=collection.user_id,
