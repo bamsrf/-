@@ -1,5 +1,0 @@
-.env
-seen_vacancies.json
-__pycache__/
-*.pyc
-.venv/

@@ -78,3 +78,5 @@ htmlcov/
 
 # User uploads (server-side generated content)
 Вертушка/Backend/uploads/
+# yandex-jobs-bot — extracted to github.com/bamsrf/yandex-jobs-bot
+yandex-jobs-bot/
