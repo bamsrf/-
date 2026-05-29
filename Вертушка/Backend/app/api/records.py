@@ -6,6 +6,8 @@ import logging
 from datetime import datetime
 from uuid import UUID
 
+import httpx
+
 logger = logging.getLogger(__name__)
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status, Query, Response
@@ -715,6 +717,68 @@ async def scan_barcode(
         )
 
 
+# Порог визуальной уверенности (косинус CLIP). Ниже — клиенту показать
+# "выбери вручную" вместо подсовывания одного результата как точного.
+_COVER_MATCH_THRESHOLD = 0.75
+# Сколько верхних кандидатов прогонять через CLIP (downloads + inference).
+_COVER_RERANK_TOPN = 12
+
+
+async def _visual_rerank(image_base64: str, candidates: list) -> list:
+    """Переранжирует кандидатов по визуальной близости их обложек к фото юзера.
+
+    Для каждого кандидата качает обложку (cover_image_url, fallback thumb),
+    эмбеддит через CLIP, считает косинус с эмбеддингом фото, проставляет
+    match_score и сортирует по убыванию. Кандидаты без скачанной/валидной
+    обложки уходят в конец с match_score=None.
+    """
+    import base64 as _b64
+
+    from app.services.cover_matcher import CoverMatcher
+
+    try:
+        query_bytes = _b64.b64decode(image_base64)
+    except Exception:
+        return candidates
+
+    matcher = await CoverMatcher.get()
+    query_vec = await matcher.embed(query_bytes)
+    if query_vec is None:
+        return candidates
+
+    subset = candidates[:_COVER_RERANK_TOPN]
+
+    def _cover_url(c) -> str | None:
+        return getattr(c, "cover_image_url", None) or getattr(c, "thumb_image_url", None)
+
+    async def _fetch(url: str | None) -> bytes | None:
+        if not url:
+            return None
+        try:
+            async with httpx.AsyncClient(timeout=10.0, follow_redirects=True) as client:
+                resp = await client.get(url, headers={"User-Agent": "Vertushka/1.0"})
+                resp.raise_for_status()
+                return resp.content
+        except Exception:
+            return None
+
+    images = await asyncio.gather(*[_fetch(_cover_url(c)) for c in subset])
+    vecs = await matcher.embed_many([img if img else b"" for img in images])
+
+    for cand, img, vec in zip(subset, images, vecs):
+        if img and vec is not None:
+            cand.match_score = round(matcher.cosine(query_vec, vec), 4)
+        else:
+            cand.match_score = None
+
+    scored = [c for c in subset if c.match_score is not None]
+    unscored = [c for c in subset if c.match_score is None]
+    scored.sort(key=lambda c: c.match_score, reverse=True)
+    # хвост кандидатов за пределами top-N сохраняем как есть, после переранжированных
+    tail = candidates[_COVER_RERANK_TOPN:]
+    return scored + unscored + tail
+
+
 @router.post("/scan/cover/", response_model=CoverScanResponse)
 async def scan_cover(
     request: CoverScanRequest,
@@ -754,7 +818,7 @@ async def scan_cover(
     async def _search_releases(query: str) -> list:
         """Поиск релизов без жёсткого artist-фильтра."""
         try:
-            resp = await discogs.search(query=query, per_page=10)
+            resp = await discogs.search(query=query, per_page=15)
             return resp.results
         except Exception:
             return []
@@ -762,7 +826,7 @@ async def scan_cover(
     async def _search_masters(query: str) -> list:
         """Поиск мастер-релизов, конвертируем в RecordSearchResult."""
         try:
-            resp = await discogs.search_masters(query=query, per_page=10)
+            resp = await discogs.search_masters(query=query, per_page=15)
             return [
                 RecordSearchResult(
                     discogs_id=m.master_id,
@@ -807,10 +871,27 @@ async def scan_cover(
             detail="Не удалось найти пластинку по распознанной обложке"
         )
 
+    # ── Визуальный re-rank ─────────────────────────────────────────────
+    # Текстовый поиск даёт ложные срабатывания (особенно обложки без текста).
+    # Сравниваем фото юзера с обложками кандидатов в CLIP-пространстве и
+    # переранжируем по реальной визуальной близости. Best-effort: при любой
+    # ошибке возвращаем исходный текстовый порядок без score.
+    confidence: float | None = None
+    low_confidence = False
+    try:
+        results = await _visual_rerank(request.image_base64, results)
+        if results and results[0].match_score is not None:
+            confidence = results[0].match_score
+            low_confidence = confidence < _COVER_MATCH_THRESHOLD
+    except Exception:
+        logger.exception("Visual re-rank failed, fallback to text order")
+
     return CoverScanResponse(
         recognized_artist=artist,
         recognized_album=album,
         results=results,
+        confidence=confidence,
+        low_confidence=low_confidence,
     )
 
 

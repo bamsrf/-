@@ -838,6 +838,7 @@ interface ScannerState {
   scannedBarcode: string | null;
   scanResults: RecordSearchResult[];
   recognizedInfo: { artist: string; album: string } | null;
+  lowConfidence: boolean;
   isScanning: boolean;
   isLoading: boolean;
 
@@ -854,10 +855,11 @@ export const useScannerStore = create<ScannerState>((set) => ({
   scannedBarcode: null,
   scanResults: [],
   recognizedInfo: null,
+  lowConfidence: false,
   isScanning: false,
   isLoading: false,
 
-  setScanMode: (mode) => set({ scanMode: mode, scanResults: [], recognizedInfo: null, scannedBarcode: null }),
+  setScanMode: (mode) => set({ scanMode: mode, scanResults: [], recognizedInfo: null, lowConfidence: false, scannedBarcode: null }),
 
   setScannedBarcode: (barcode) => set({ scannedBarcode: barcode }),
 
@@ -882,15 +884,16 @@ export const useScannerStore = create<ScannerState>((set) => ({
           artist: response.recognized_artist,
           album: response.recognized_album,
         },
+        lowConfidence: response.low_confidence ?? false,
         isLoading: false,
       });
     } catch (error) {
-      set({ isLoading: false, scanResults: [], recognizedInfo: null });
+      set({ isLoading: false, scanResults: [], recognizedInfo: null, lowConfidence: false });
       throw error;
     }
   },
 
-  clearScan: () => set({ scannedBarcode: null, scanResults: [], recognizedInfo: null }),
+  clearScan: () => set({ scannedBarcode: null, scanResults: [], recognizedInfo: null, lowConfidence: false }),
 }));
 
 // ==================== Profile Store ====================

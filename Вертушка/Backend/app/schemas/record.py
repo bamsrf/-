@@ -142,6 +142,8 @@ class RecordSearchResult(BaseModel):
     is_collectible: bool = False
     is_limited: bool = False
     is_hot: bool = False
+    # Визуальная близость фото к обложке (косинус CLIP, 0..1). None если re-rank не делался.
+    match_score: float | None = None
 
 
 class RecordSearchResponse(BaseModel):
@@ -255,6 +257,10 @@ class CoverScanResponse(BaseModel):
     recognized_artist: str
     recognized_album: str
     results: list[RecordSearchResult]
+    # Визуальный re-rank: уверенность лучшего совпадения (косинус CLIP, 0..1).
+    confidence: float | None = None
+    # True если лучший score ниже порога — клиенту показать "выбери вручную".
+    low_confidence: bool = False
 
 
 class ArtistSearchResult(BaseModel):

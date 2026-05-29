@@ -231,6 +231,8 @@ export interface RecordSearchResult {
   is_collectible?: boolean;
   is_limited?: boolean;
   is_hot?: boolean;
+  // Визуальная близость фото к обложке (косинус CLIP, 0..1) при скане по обложке
+  match_score?: number | null;
 }
 
 export interface RecordSearchResponse {
@@ -269,6 +271,8 @@ export interface CoverScanResponse {
   recognized_artist: string;
   recognized_album: string;
   results: RecordSearchResult[];
+  confidence?: number | null;
+  low_confidence?: boolean;
 }
 
 // ==================== Master Releases ====================

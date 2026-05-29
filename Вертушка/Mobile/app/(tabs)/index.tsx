@@ -50,6 +50,7 @@ export default function ScannerScreen() {
     setScanMode,
     scanResults,
     recognizedInfo,
+    lowConfidence,
     isLoading,
     searchByBarcode,
     searchByCover,
@@ -327,6 +328,15 @@ export default function ScannerScreen() {
             </View>
           )}
 
+          {/* Низкая визуальная уверенность — просим выбрать вручную */}
+          {recognizedInfo && lowConfidence && scanResults.length > 0 && (
+            <View style={styles.lowConfidenceHint}>
+              <Text style={styles.lowConfidenceText} numberOfLines={2}>
+                Не уверены в совпадении — выберите нужную пластинку из списка
+              </Text>
+            </View>
+          )}
+
           <FlatList
             data={scanResults}
             keyExtractor={(item) => item.discogs_id}
@@ -527,6 +537,17 @@ const styles = StyleSheet.create({
     ...Typography.bodySmall,
     color: Colors.textSecondary,
     flex: 1,
+  },
+  lowConfidenceHint: {
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.sm,
+    backgroundColor: Colors.surface,
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.divider,
+  },
+  lowConfidenceText: {
+    ...Typography.caption,
+    color: Colors.textSecondary,
   },
   resultsList: {
     padding: Spacing.md,
