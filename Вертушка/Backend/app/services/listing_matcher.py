@@ -57,6 +57,26 @@ _ACCESSORY_TITLE_RE = re.compile(
 def _is_accessory(listing: StoreListing) -> bool:
     return bool(_ACCESSORY_TITLE_RE.search(listing.title_raw or ""))
 
+
+# WS3.1 — нормализация artist/title перед similarity. Симметрично с обеих
+# сторон (Python-параметр и SQL-колонка через _SQL_NORM), чтобы пунктуация и
+# регистр не занижали score. Cyrillic сохраняется ([:alnum:] в UTF-8 ловит
+# кириллицу). RU↔translit намеренно НЕ делаем — рискует смержить разные релизы;
+# отложено. Thresholds (DEDUP/CROSS_SHOP) не трогаем — нормализация лишь
+# убирает шум, поведение порога остаётся прежним.
+_NORM_PUNCT_RE = re.compile(r"[^\w\s]", re.UNICODE)
+_NORM_WS_RE = re.compile(r"\s+")
+# SQL-зеркало нормализации: {col} → lower + не-alnum→пробел. Применяется к
+# колонкам records.artist/title и store_listings.artist_raw/title_raw.
+_SQL_NORM = "lower(regexp_replace({col}, '[^[:alnum:] ]+', ' ', 'g'))"
+
+
+def _normalize_text(s: str | None) -> str:
+    if not s:
+        return ""
+    s = _NORM_PUNCT_RE.sub(" ", s.lower())
+    return _NORM_WS_RE.sub(" ", s).strip()
+
 # Discogs on-demand: верхняя крышка против burst-нагрузки. Per-minute rate-limit
 # (60 req/min) уже выровнен через discogs_limiter (TokenBucketRateLimiter capacity=55,
 # refill_rate=0.95 = ~57 req/min). Hourly limit — это анти-DDOS для batch matcher'а:
@@ -593,9 +613,20 @@ async def _should_create_store_native(listing: StoreListing, db: AsyncSession) -
     """
     if _is_accessory(listing):
         return False
-    if not listing.artist_raw or not listing.title_raw or not listing.year_raw:
+    if not listing.artist_raw or not listing.title_raw:
         return False
     if not (listing.raw_payload or {}).get("image_url"):
+        return False
+
+    # WS3.2 — доверенный магазин: создаём сразу, год опционален. Остальным
+    # год обязателен (анти-шум) + persist/cross-shop подтверждение.
+    from app.models.store import Store
+    is_trusted = await db.scalar(
+        select(Store.is_trusted).where(Store.id == listing.store_id)
+    )
+    if is_trusted:
+        return True
+    if not listing.year_raw:
         return False
 
     persisted_long = (
@@ -611,8 +642,10 @@ async def _should_create_store_native(listing: StoreListing, db: AsyncSession) -
 
 async def _has_cross_shop_confirmation(listing: StoreListing, db: AsyncSession) -> bool:
     """Существует ли второй unmatched-листинг похожего релиза в другом магазине."""
+    na = _SQL_NORM.format(col="sl.artist_raw")
+    nt = _SQL_NORM.format(col="sl.title_raw")
     sql = text(
-        """
+        f"""
         SELECT 1
         FROM store_listings sl
         WHERE sl.matched_record_id IS NULL
@@ -620,7 +653,7 @@ async def _has_cross_shop_confirmation(listing: StoreListing, db: AsyncSession) 
           AND sl.store_id <> cast(:store_id as uuid)
           AND sl.artist_raw IS NOT NULL
           AND sl.title_raw IS NOT NULL
-          AND (similarity(sl.artist_raw, cast(:artist as text)) + similarity(sl.title_raw, cast(:title as text))) >= :thr
+          AND (similarity({na}, cast(:artist as text)) + similarity({nt}, cast(:title as text))) >= :thr
         LIMIT 1
         """
     )
@@ -629,8 +662,8 @@ async def _has_cross_shop_confirmation(listing: StoreListing, db: AsyncSession) 
         {
             "listing_id": listing.id,
             "store_id": listing.store_id,
-            "artist": listing.artist_raw,
-            "title": listing.title_raw,
+            "artist": _normalize_text(listing.artist_raw),
+            "title": _normalize_text(listing.title_raw),
             "thr": STORE_NATIVE_CROSS_SHOP_SCORE,
         },
     )
@@ -643,13 +676,15 @@ async def _find_store_native_duplicate(
     """Существующая store-native запись для того же релиза. Дедуп между магазинами."""
     # NB: явные касты ::text и ::int — asyncpg не определяет тип NULL-параметра,
     # без них падает AmbiguousParameterError на :year когда year=None.
+    na = _SQL_NORM.format(col="artist")
+    nt = _SQL_NORM.format(col="title")
     sql = text(
-        """
-        SELECT id, (similarity(artist, cast(:artist as text)) + similarity(title, cast(:title as text))) AS score
+        f"""
+        SELECT id, (similarity({na}, cast(:artist as text)) + similarity({nt}, cast(:title as text))) AS score
         FROM records
         WHERE source = 'store'
           AND (cast(:year as int) IS NULL OR year IS NULL OR ABS(year - cast(:year as int)) <= 1)
-          AND (similarity(artist, cast(:artist as text)) + similarity(title, cast(:title as text))) >= :thr
+          AND (similarity({na}, cast(:artist as text)) + similarity({nt}, cast(:title as text))) >= :thr
         ORDER BY score DESC
         LIMIT 1
         """
@@ -658,8 +693,8 @@ async def _find_store_native_duplicate(
         await db.execute(
             sql,
             {
-                "artist": artist,
-                "title": title,
+                "artist": _normalize_text(artist),
+                "title": _normalize_text(title),
                 "year": year,
                 "thr": STORE_NATIVE_DEDUP_SCORE,
             },
@@ -857,16 +892,24 @@ async def rematch_store_native_batch(batch_size: int = 200) -> dict[str, int]:
             counters["processed"] += 1
             sp = await db.begin_nested()
             try:
-                # NB: _try_discogs_fetch_by_text создаёт Record при успехе.
-                # Это побочный эффект: новая Discogs-запись сама по себе ОК
-                # (она пригодится при поиске других листингов), а её
-                # discogs_id мы прикрепляем к store-native через candidate.
-                found = await _try_discogs_fetch_by_text(
-                    db,
-                    artist=rec.artist,
-                    title=rec.title,
-                    year=rec.year,
-                )
+                # WS3.3 — каскад сигналов от точного к нечёткому: barcode/catalog
+                # (exact, низкий риск ложного кандидата) → текст. NB:
+                # _try_discogs_fetch* создаёт Record при успехе — это ОК (новая
+                # Discogs-запись пригодится для других листингов), её discogs_id
+                # прикрепляем к store-native через candidate. Auto-merge всё равно
+                # ждёт ≥STORE_NATIVE_MERGE_MIN_CONFIRMATIONS подтверждений.
+                found = None
+                if rec.barcode:
+                    found = await _try_discogs_fetch(db, barcode=rec.barcode, catalog=None)
+                if not found and rec.catalog_number:
+                    found = await _try_discogs_fetch(db, barcode=None, catalog=rec.catalog_number)
+                if not found:
+                    found = await _try_discogs_fetch_by_text(
+                        db,
+                        artist=rec.artist,
+                        title=rec.title,
+                        year=rec.year,
+                    )
                 if not (found and found.discogs_id and found.id != rec.id):
                     counters["no_match"] += 1
                     await sp.commit()
