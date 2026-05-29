@@ -1,0 +1,103 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-settings.json",
+  "model": "sonnet",
+  "env": {
+    "ENABLE_PROMPT_CACHING_1H": "1",
+    "ENABLE_TOOL_SEARCH": "auto",
+    "MAX_THINKING_TOKENS": "8000"
+  },
+  "permissions": {
+    "allow": [
+      "mcp__pencil",
+      "mcp__vertushka-docs",
+      "mcp__gbrain",
+      "mcp__4fb73a27-22f2-42fd-9697-20d12602ad4b__list_projects",
+      "mcp__4fb73a27-22f2-42fd-9697-20d12602ad4b__list_tables",
+      "mcp__4fb73a27-22f2-42fd-9697-20d12602ad4b__list_extensions",
+      "mcp__4fb73a27-22f2-42fd-9697-20d12602ad4b__list_migrations",
+      "mcp__4fb73a27-22f2-42fd-9697-20d12602ad4b__list_branches",
+      "mcp__4fb73a27-22f2-42fd-9697-20d12602ad4b__list_organizations",
+      "mcp__4fb73a27-22f2-42fd-9697-20d12602ad4b__list_edge_functions",
+      "mcp__4fb73a27-22f2-42fd-9697-20d12602ad4b__get_project",
+      "mcp__4fb73a27-22f2-42fd-9697-20d12602ad4b__get_project_url",
+      "mcp__4fb73a27-22f2-42fd-9697-20d12602ad4b__get_logs",
+      "mcp__4fb73a27-22f2-42fd-9697-20d12602ad4b__get_advisors",
+      "mcp__4fb73a27-22f2-42fd-9697-20d12602ad4b__get_publishable_keys",
+      "mcp__4fb73a27-22f2-42fd-9697-20d12602ad4b__get_edge_function",
+      "mcp__4fb73a27-22f2-42fd-9697-20d12602ad4b__generate_typescript_types",
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(git push:*)",
+      "Bash(git diff:*)",
+      "Bash(git log:*)",
+      "Bash(git status:*)",
+      "Bash(git stash:*)",
+      "Bash(git checkout:*)",
+      "Bash(git branch:*)",
+      "Bash(gh pr:*)",
+      "Bash(gh repo:*)",
+      "Bash(gh issue:*)",
+      "Bash(gh api:*)",
+      "Bash(uvicorn:*)",
+      "Bash(pytest:*)",
+      "Bash(gbrain:*)",
+      "Bash(curl -s:*)",
+      "Bash(curl -sS:*)",
+      "Bash(curl -sL:*)",
+      "Bash(curl -sf:*)",
+      "Bash(curl -sk:*)",
+      "Bash(./node_modules/.bin/tsc --noEmit:*)",
+      "Bash(open:*)",
+      "Bash(ssh deploy@85.198.85.12:*)",
+      "Read",
+      "Glob",
+      "Grep"
+    ],
+    "deny": [
+      "Bash(rm -rf:*)",
+      "Bash(git reset --hard:*)",
+      "Bash(git push --force:*)",
+      "Bash(git push -f:*)",
+      "Bash(git clean -fd:*)",
+      "Bash(git checkout --:*)"
+    ]
+  },
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "startup|resume",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "$CLAUDE_PROJECT_DIR/.claude/hooks/session-start.sh",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "Read",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "$CLAUDE_PROJECT_DIR/.claude/hooks/limit-large-reads.sh",
+            "timeout": 3
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "$CLAUDE_PROJECT_DIR/.claude/hooks/log-commit-to-gbrain.sh",
+            "timeout": 10
+          }
+        ]
+      }
+    ]
+  }
+}
