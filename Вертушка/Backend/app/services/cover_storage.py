@@ -9,7 +9,7 @@ import asyncio
 import logging
 import os
 import uuid
-from datetime import datetime
+from datetime import datetime, timedelta
 from io import BytesIO
 from pathlib import Path
 
@@ -170,6 +170,7 @@ class CoverStorageService:
         Возвращает количество удалённых обложек.
         """
         from app.models.record import Record  # отложенный импорт
+        from app.models.store_listing import StoreListing
 
         current_mb = self._get_cache_size_mb()
         if current_mb <= target_size_mb:
@@ -179,10 +180,24 @@ class CoverStorageService:
         # Берём с запасом 20% — чтобы не запускать очистку при каждом новом файле
         to_free_mb = excess_mb * 1.2
 
-        # Выбираем старейшие записи с локальными обложками
+        # WS1.3: НЕ эвиктим зеркала записей, активно показываемых в Маркете
+        # (есть свежий in_stock-листинг). Иначе серый квадрат: эвикция → next
+        # view → self-heal бьёт в Discogs → возможный 403 на протухшем URL.
+        cutoff = datetime.utcnow() - timedelta(days=7)
+        active_in_stock = (
+            select(StoreListing.id)
+            .where(
+                StoreListing.matched_record_id == Record.id,
+                StoreListing.status == "in_stock",
+                StoreListing.last_seen_at >= cutoff,
+            )
+            .exists()
+        )
+
+        # Выбираем старейшие записи с локальными обложками (кроме активных)
         result = await db.execute(
             select(Record.id, Record.discogs_id, Record.cover_local_path)
-            .where(Record.cover_local_path.isnot(None))
+            .where(Record.cover_local_path.isnot(None), ~active_in_stock)
             .order_by(Record.cover_cached_at.asc())
         )
         candidates = result.all()

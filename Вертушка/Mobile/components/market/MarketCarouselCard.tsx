@@ -10,7 +10,7 @@
  * Источник: record-card.jsx variant 'carousel' из Design Claude handoff
  * + docs/plans/MARKET_AND_PRICE_DRAWER.md §1.9.
  */
-import React from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   Image,
   Pressable,
@@ -44,20 +44,56 @@ interface MarketCarouselCardProps {
   style?: StyleProp<ViewStyle>;
 }
 
+// Один отложенный ретрай: первый запрос `/covers/{id}.jpg` бьёт в nginx
+// @covers_fallback → 302 + фоновое зеркалирование. Повтор через 3с обычно
+// попадает уже в готовый локальный файл. После — плейсхолдер.
+const RETRY_DELAY_MS = 3000;
+
 export function MarketCarouselCard({
   data,
   width = 132,
   onPress,
   style,
 }: MarketCarouselCardProps) {
+  const [failed, setFailed] = useState(false);
+  const [retry, setRetry] = useState(0);
+  const retriedRef = useRef(false);
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    // Новый URL — сбрасываем состояние ретрая.
+    retriedRef.current = false;
+    setFailed(false);
+    setRetry(0);
+  }, [data.coverUrl]);
+
+  useEffect(() => {
+    return () => {
+      if (timerRef.current) clearTimeout(timerRef.current);
+    };
+  }, []);
+
+  const handleError = () => {
+    if (!retriedRef.current) {
+      retriedRef.current = true;
+      timerRef.current = setTimeout(() => setRetry((n) => n + 1), RETRY_DELAY_MS);
+      return;
+    }
+    setFailed(true);
+  };
+
+  const showImage = data.coverUrl && !failed;
+  const uri = retry > 0 ? `${data.coverUrl}?r=${retry}` : data.coverUrl;
+
   const content = (
     <View style={[{ width }, style]}>
       <View style={[styles.coverWrap, { width, height: width }]}>
-        {data.coverUrl ? (
+        {showImage ? (
           <Image
-            source={{ uri: data.coverUrl }}
+            source={{ uri: uri as string }}
             style={styles.cover}
             resizeMode="cover"
+            onError={handleError}
           />
         ) : (
           <View style={[styles.cover, styles.coverPlaceholder]} />

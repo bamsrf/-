@@ -186,18 +186,6 @@ def _first_label_name(elem) -> str | None:
     return None
 
 
-def _cover_image(elem) -> str | None:
-    """`<images><image type="primary" uri150="..." uri="..."/>` — для thumb предпочитаем uri150."""
-    for image in elem.findall(".//images/image"):
-        if image.get("type") == "primary":
-            return image.get("uri150") or image.get("uri")
-    # Fallback — первая image вообще
-    first = elem.find(".//images/image")
-    if first is not None:
-        return first.get("uri150") or first.get("uri")
-    return None
-
-
 def _parse_release(elem, dump_date: date) -> dict[str, Any] | None:
     """Парсит один <release>. Возвращает dict для COPY или None если skip.
 
@@ -229,7 +217,7 @@ def _parse_release(elem, dump_date: date) -> dict[str, Any] | None:
         "label": _first_label_name(elem),
         "barcode_norm": _norm_barcode_from_identifiers(elem),
         "catalog_norm": _catalog_from_labels(elem),
-        "cover_image_url": _cover_image(elem),
+        "cover_image_url": None,  # dump has 0 cover URLs (verified 0/13.1M on prod) — column kept for schema stability
         "dump_version": dump_date,
         "created_at": datetime.utcnow(),
     }

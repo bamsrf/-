@@ -203,3 +203,103 @@ async def update_prices_batch():
 
     except Exception:
         logger.exception("update_prices_batch failed")
+
+
+async def enrich_market_covers():
+    """WS2.2 — лечит обложки записей, активно показываемых в Маркете.
+
+    Цель: in_stock matched записи с discogs_master_id, но без локального
+    зеркала (cover_local_path IS NULL) — у них cover_image_url либо пуст,
+    либо протух (signed Discogs URL → 403 → серый квадрат). По каждому
+    уникальному мастеру 1 вызов get_master → свежий cover_image_url →
+    зеркалируем на диск (download_and_store ставит cover_local_path).
+
+    Дедуп по master: один fetch на мастер за прогон. Батч ограничен, чтобы
+    не упереться в Discogs rate limit; добивается за несколько прогонов.
+    """
+    from app.services.discogs import DiscogsService
+    from app.services.cover_storage import CoverStorageService
+    from app.models.store_listing import StoreListing
+
+    discogs = DiscogsService()
+    cover_service = CoverStorageService()
+    cutoff = datetime.utcnow() - timedelta(days=7)
+    master_cover_cache: dict[str, str | None] = {}
+    enriched = 0
+
+    try:
+        async with async_session_maker() as session:
+            active_in_stock = (
+                select(StoreListing.id)
+                .where(
+                    StoreListing.matched_record_id == Record.id,
+                    StoreListing.status == "in_stock",
+                    StoreListing.last_seen_at >= cutoff,
+                )
+                .exists()
+            )
+            result = await session.execute(
+                select(Record)
+                .where(
+                    Record.cover_local_path.is_(None),
+                    Record.discogs_id.isnot(None),
+                    Record.discogs_master_id.isnot(None),
+                    active_in_stock,
+                )
+                .limit(BATCH_SIZE)
+            )
+            records = result.scalars().all()
+
+            for record in records:
+                master_id = record.discogs_master_id
+                if master_id in master_cover_cache:
+                    cover_url = master_cover_cache[master_id]
+                else:
+                    try:
+                        master = await discogs.get_master(master_id)
+                        cover_url = master.cover_image_url
+                    except Exception:
+                        logger.exception("enrich_market_covers: get_master %s failed", master_id)
+                        cover_url = None
+                    master_cover_cache[master_id] = cover_url
+
+                if not cover_url:
+                    continue
+
+                record.cover_image_url = cover_url
+                try:
+                    rel_path = await cover_service.download_and_store(
+                        record.discogs_id, cover_url, session
+                    )
+                    if rel_path:
+                        enriched += 1
+                except Exception:
+                    logger.exception(
+                        "enrich_market_covers: mirror failed for %s", record.discogs_id
+                    )
+
+            await session.commit()
+            if enriched:
+                logger.info("enrich_market_covers: mirrored %d covers", enriched)
+
+    except Exception:
+        logger.exception("enrich_market_covers failed")
+
+
+async def refresh_market_store_stats():
+    """WS4.1 — REFRESH matview market_store_stats (витрина магазинов).
+
+    CONCURRENTLY: не блокирует читателей эндпоинта /market/stores. Требует
+    уникальный индекс (ix_market_store_stats_store_id, создан в миграции).
+    """
+    from sqlalchemy import text
+
+    try:
+        async with async_session_maker() as db:
+            await db.execute(
+                text("REFRESH MATERIALIZED VIEW CONCURRENTLY market_store_stats")
+            )
+            await db.commit()
+        logger.info("refresh_market_store_stats: matview refreshed")
+    except Exception:
+        logger.exception("refresh_market_store_stats failed")

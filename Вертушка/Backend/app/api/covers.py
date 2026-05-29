@@ -18,11 +18,45 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.config import get_settings
 from app.database import get_db
 from app.models.record import Record
-from app.services.cover_storage import CoverStorageService, _download_cover_background
+from app.services.cover_storage import (
+    CoverStorageService,
+    _download_cover_background,
+    schedule_store_native_cover_cache,
+)
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["Обложки"])
+
+
+@router.get("/store/{record_id}")
+async def get_store_cover(
+    record_id: str,
+    db: AsyncSession = Depends(get_db),
+) -> RedirectResponse:
+    """
+    nginx @covers_fallback для store-native обложек (covers/store/{uuid}.jpg).
+
+    Файл зеркала отсутствует на диске (эвикция / ещё не скачан) — пускаем
+    фоновое скачивание из cover_image_url и 302-редиректим на store CDN.
+    """
+    rid = record_id.removesuffix(".jpg")
+    result = await db.execute(
+        select(Record.id, Record.cover_image_url, Record.cover_local_path)
+        .where(Record.id == rid)
+    )
+    record = result.first()
+
+    if record is None:
+        raise HTTPException(status_code=404, detail="Record not found")
+
+    if not record.cover_local_path and record.cover_image_url:
+        schedule_store_native_cover_cache(record.id, record.cover_image_url)
+
+    if not record.cover_image_url:
+        raise HTTPException(status_code=404, detail="Cover image not available")
+
+    return RedirectResponse(url=record.cover_image_url, status_code=302)
 
 
 @router.get("/{discogs_id}")
@@ -36,6 +70,8 @@ async def get_cover(
     Если запись есть в БД — запускаем фоновое скачивание и возвращаем
     302 redirect на оригинальный Discogs URL (signed URL из БД).
     """
+    # nginx проксирует полный путь `/covers/{discogs_id}.jpg` — снимаем суффикс.
+    discogs_id = discogs_id.removesuffix(".jpg")
     result = await db.execute(
         select(Record.discogs_id, Record.cover_image_url, Record.cover_local_path)
         .where(Record.discogs_id == discogs_id)

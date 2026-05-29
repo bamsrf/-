@@ -50,9 +50,9 @@ NEW_TODAY_HOURS = 24
 # Cache-namespace зашит с версией: при изменении формы ответа (например,
 # дедупа по master_id вместо record_id) бампаем суффикс — старые ключи
 # в Redis самотухнут по TTL, а свежие запросы сразу получают новую логику.
-CACHE_NS_STORES = "market_stores:v2"
-CACHE_NS_STORE_LISTINGS = "market_store_listings:v3"
-CACHE_NS_SEARCH = "market_search:v3"
+CACHE_NS_STORES = "market_stores:v3"
+CACHE_NS_STORE_LISTINGS = "market_store_listings:v4"
+CACHE_NS_SEARCH = "market_search:v5"
 CACHE_TTL_STORES = 1800       # 30 мин — список магазинов меняется редко
 CACHE_TTL_LISTINGS = 600      # 10 мин — карусели чаще обновляем
 CACHE_TTL_SEARCH = 300        # 5 мин — поиск свежее
@@ -63,17 +63,33 @@ CACHE_TTL_SEARCH = 300        # 5 мин — поиск свежее
 # на Discogs CDN из record, на raw_payload листинга. Используется во всех
 # 3 market-эндпоинтах (carousel / store-all / global search). При смене
 # выражения бампать cache namespace versions выше.
-_COVER_EXPR_LISTING = (
-    "COALESCE("
-    "CASE WHEN r.cover_local_path IS NOT NULL "
-    "THEN '/uploads/' || r.cover_local_path END, "
-    "r.cover_image_url, sl.raw_payload->>'image_url')"
+#
+# WS1.2: для discogs-записей отдаём self-healing путь `/covers/{discogs_id}.jpg`
+# (nginx `/covers/` location: disk-hit → отдаёт мгновенно; disk-miss →
+# @covers_fallback → FastAPI get_cover → 302 + фоновое зеркалирование). Это
+# чинит (а) серые квадраты после LRU-эвикции зеркала, (б) проактивно зеркалит
+# записи у которых cover_image_url ещё живой но зеркала нет. Мостим только когда
+# есть источник (local ИЛИ cover_image_url) — иначе get_cover вернёт 404 и мы
+# потеряем store-фото. Store-native (discogs_id IS NULL) отдаём по
+# `/covers/store/{uuid}.jpg` (== '/' || cover_local_path). При смене выражения
+# бампать cache namespace versions выше.
+_COVER_BRIDGE = (
+    "CASE "
+    "WHEN r.discogs_id IS NOT NULL "
+    "AND (r.cover_local_path IS NOT NULL OR r.cover_image_url IS NOT NULL) "
+    "THEN '/covers/' || r.discogs_id || '.jpg' "
+    "WHEN r.cover_local_path IS NOT NULL "
+    "THEN '/' || r.cover_local_path END"
 )
-_COVER_EXPR_RECORD_ONLY = (
-    "COALESCE("
-    "CASE WHEN r.cover_local_path IS NOT NULL "
-    "THEN '/uploads/' || r.cover_local_path END, "
-    "r.cover_image_url)"
+_COVER_EXPR_LISTING = (
+    f"COALESCE({_COVER_BRIDGE}, r.cover_image_url, sl.raw_payload->>'image_url')"
+)
+# Для /market/search финальный SELECT идёт по agg-CTE (нет `sl` в scope) —
+# store-фото самого дешёвого листинга тащим через agg.chosen_store_photo,
+# чтобы записи только со store-фото (проходят фильтр) не отдавались с NULL
+# cover (баг серых квадратов в search).
+_COVER_EXPR_SEARCH_FINAL = (
+    f"COALESCE({_COVER_BRIDGE}, r.cover_image_url, agg.chosen_store_photo)"
 )
 
 
@@ -179,61 +195,21 @@ async def list_market_stores(
     if cached is not None:
         return [MarketStoreInfo.model_validate(item) for item in cached]
 
-    cutoff = datetime.utcnow() - timedelta(days=STALE_AFTER_DAYS)
-    new_cutoff = datetime.utcnow() - timedelta(hours=NEW_TODAY_HOURS)
-
-    # in_stock_count и new_today_count согласованы с фильтрами /listings и /all:
-    # листинг считается «доступным» только если он matched, имеет обложку И цену.
-    # Без цены тапнуть «Купить» бессмысленно, а карусель/сетка такие пропускают —
-    # шапка обязана показывать ровно столько же.
-    # r.merged_into_id IS NULL — подстраховка от листингов, не перепривязанных
-    # safe_merge_store_native_into (теоретически таких быть не должно, но если
-    # будут — лучше не учитывать, чем выдать кривое число).
+    # WS4.1 — читаем из matview market_store_stats (per-request агрегация
+    # оффлоадится туда; REFRESH каждые ~15м фоновым джобом). FILTER-условия и
+    # временные пороги (7d stale / 24h new) зашиты в саму matview, поэтому
+    # консистентны с каруселями/сеткой. min_in_stock фильтруем при чтении.
     sql = text(
         """
-        SELECT
-            s.slug, s.name, s.logo_url, s.rating,
-            COUNT(sl.id) FILTER (
-                WHERE sl.status = 'in_stock'
-                  AND sl.last_seen_at >= :cutoff
-                  AND sl.matched_record_id IS NOT NULL
-                  AND sl.price_rub IS NOT NULL
-                  AND r.merged_into_id IS NULL
-                  AND COALESCE(r.cover_local_path, r.cover_image_url, sl.raw_payload->>'image_url') IS NOT NULL
-            ) AS in_stock_count,
-            AVG(sl.price_rub) FILTER (
-                WHERE sl.status = 'in_stock'
-                  AND sl.last_seen_at >= :cutoff
-                  AND sl.price_rub IS NOT NULL
-                  AND sl.matched_record_id IS NOT NULL
-                  AND r.merged_into_id IS NULL
-            ) AS avg_price_rub,
-            COUNT(sl.id) FILTER (
-                WHERE sl.status = 'in_stock'
-                  AND sl.first_seen_at >= :new_cutoff
-                  AND sl.matched_record_id IS NOT NULL
-                  AND sl.price_rub IS NOT NULL
-                  AND r.merged_into_id IS NULL
-                  AND COALESCE(r.cover_local_path, r.cover_image_url, sl.raw_payload->>'image_url') IS NOT NULL
-            ) AS new_today_count
-        FROM stores s
-        LEFT JOIN store_listings sl ON sl.store_id = s.id
-        LEFT JOIN records r ON r.id = sl.matched_record_id
-        WHERE s.is_active = true
-        GROUP BY s.id
-        HAVING COUNT(sl.id) FILTER (
-            WHERE sl.status = 'in_stock'
-              AND sl.last_seen_at >= :cutoff
-              AND sl.matched_record_id IS NOT NULL
-              AND sl.price_rub IS NOT NULL
-              AND r.merged_into_id IS NULL
-              AND COALESCE(r.cover_local_path, r.cover_image_url, sl.raw_payload->>'image_url') IS NOT NULL
-        ) >= :min_in_stock
-        ORDER BY s.rating DESC NULLS LAST, s.name ASC
+        SELECT slug, name, logo_url, rating,
+               in_stock_count, avg_price_rub, new_today_count
+        FROM market_store_stats
+        WHERE in_stock_count >= :min_in_stock
+        ORDER BY rating DESC NULLS LAST, name ASC
         """
     )
     rows = (
-        await db.execute(sql, {"cutoff": cutoff, "new_cutoff": new_cutoff, "min_in_stock": min_in_stock})
+        await db.execute(sql, {"min_in_stock": min_in_stock})
     ).mappings().all()
 
     items = [
@@ -497,7 +473,8 @@ async def search_market(
                 COUNT(DISTINCT sl.store_id) AS stores_with_stock,
                 MAX(sl.first_seen_at) AS first_seen_at,
                 (ARRAY_AGG(s.slug ORDER BY sl.price_rub ASC NULLS LAST))[1] AS cheapest_store_slug,
-                (ARRAY_AGG(r.id ORDER BY sl.price_rub ASC NULLS LAST))[1] AS chosen_record_id
+                (ARRAY_AGG(r.id ORDER BY sl.price_rub ASC NULLS LAST))[1] AS chosen_record_id,
+                (ARRAY_AGG(sl.raw_payload->>'image_url' ORDER BY sl.price_rub ASC NULLS LAST))[1] AS chosen_store_photo
             FROM store_listings sl
             JOIN stores s ON s.id = sl.store_id
             JOIN records r ON r.id = sl.matched_record_id
@@ -516,7 +493,7 @@ async def search_market(
             agg.chosen_record_id AS record_id, agg.min_price, agg.stores_with_stock,
             agg.first_seen_at, agg.cheapest_store_slug,
             r.discogs_id, r.artist, r.title, r.year, r.format_type,
-            {_COVER_EXPR_RECORD_ONLY} AS cover_image_url
+            {_COVER_EXPR_SEARCH_FINAL} AS cover_image_url
         FROM agg
         JOIN records r ON r.id = agg.chosen_record_id
         ORDER BY {order_clause}

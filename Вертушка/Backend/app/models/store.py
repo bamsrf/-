@@ -30,6 +30,10 @@ class Store(Base):
 
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="true")
     requires_browser: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="false")
+    # WS3.2 — доверенный магазин: store-native запись создаётся сразу (без
+    # 7-дневного persist / cross-shop ожидания), год опционален. Включается
+    # вручную оператором; по умолчанию false → поведение не меняется.
+    is_trusted: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="false")
 
     last_successful_scrape_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
