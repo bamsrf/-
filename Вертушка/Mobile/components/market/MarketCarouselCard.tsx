@@ -179,12 +179,17 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
+    // Ограничиваем строку шириной карточки — иначе длинный формат + цена
+    // переполняют контейнер и наезжают на соседнюю карточку карусели.
+    overflow: 'hidden',
   },
   meta: {
     fontFamily: 'Inter_400Regular',
     fontSize: 10,
     color: 'rgba(255,255,255,0.55)',
     includeFontPadding: false,
+    // Год·формат ужимается с многоточием, цена остаётся целой.
+    flexShrink: 1,
   },
   metaDot: {
     width: 2,

@@ -152,18 +152,31 @@ def _format_clause(fmt: Optional[str]) -> tuple[str, dict]:
     if not fmt:
         return ("", {})
     if fmt == "vinyl":
-        # LP / 2xLP / 3xLP / EP / Single / Box Set + raw 12"/7"/10"
+        # LP / 2xLP / 3xLP / EP / Single / Box Set + raw 12"/7"/10".
+        # Двойной гейт: listing format_raw (что распарсил магазин) И, если у
+        # записи есть discogs format_type, он тоже должен быть vinyl. Иначе
+        # vinyl-листинг, ошибочно смэтченный на CD-запись, всплывал бы под
+        # фильтром «Винил» с подписью «CD» (баг рассинхрона listing↔record).
         return (
-            " AND (sl.format_raw ILIKE ANY(:vinyl_fmts) OR sl.format_raw ~ :vinyl_re)",
+            " AND (sl.format_raw ILIKE ANY(:vinyl_fmts) OR sl.format_raw ~ :vinyl_re)"
+            " AND (r.format_type IS NULL OR r.format_type ILIKE '%vinyl%')",
             {
                 "vinyl_fmts": ["LP", "2xLP", "3xLP", "EP", "Single", "Box Set"],
                 "vinyl_re": r'^(\d+x?LP|12"|10"|7")',
             },
         )
     if fmt == "cd":
-        return (" AND sl.format_raw ILIKE ANY(:cd_fmts)", {"cd_fmts": ["CD", "2CD", "SACD"]})
+        return (
+            " AND sl.format_raw ILIKE ANY(:cd_fmts)"
+            " AND (r.format_type IS NULL OR r.format_type ILIKE '%cd%')",
+            {"cd_fmts": ["CD", "2CD", "SACD"]},
+        )
     if fmt == "cassette":
-        return (" AND sl.format_raw ILIKE 'cassette%'", {})
+        return (
+            " AND sl.format_raw ILIKE 'cassette%'"
+            " AND (r.format_type IS NULL OR r.format_type ILIKE '%cassette%')",
+            {},
+        )
     raise HTTPException(400, f"Unknown format filter: {fmt}")
 
 
