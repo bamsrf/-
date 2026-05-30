@@ -615,11 +615,25 @@ async def get_collection_stats(
             Collection.user_id == current_user.id
         )
     )
-    if not result.scalar_one_or_none():
+    collection = result.scalar_one_or_none()
+    if not collection:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Коллекция не найдена"
         )
+
+    # record_id, которые пользователь разложил по папкам (= коллекции с большим
+    # sort_order, чем текущая). Для статистики общей коллекции такие пластинки
+    # считаются «вынесенными в папку» и в общий счёт не попадают.
+    foldered_result = await db.execute(
+        select(CollectionItem.record_id)
+        .join(Collection, CollectionItem.collection_id == Collection.id)
+        .where(
+            Collection.user_id == current_user.id,
+            Collection.sort_order > collection.sort_order,
+        )
+    )
+    foldered_record_ids = set(foldered_result.scalars().all())
 
     # Получаем все пластинки коллекции
     result = await db.execute(
@@ -629,13 +643,13 @@ async def get_collection_stats(
     )
     items = result.scalars().all()
 
-    # Дедуп по record_id: одна и та же пластинка может лежать в нескольких
-    # папках (= отдельных Collection) — в статистике общей коллекции её нужно
-    # учитывать один раз, а не суммировать копии из папок.
+    # Дедуп по record_id + исключаем разложенные по папкам пластинки.
     seen_records: set = set()
     unique_items = []
     for item in items:
         if item.record_id in seen_records:
+            continue
+        if item.record_id in foldered_record_ids:
             continue
         seen_records.add(item.record_id)
         unique_items.append(item)
