@@ -21,19 +21,27 @@
         "NSPrivacyAccessedAPITypes": [
           {
             "NSPrivacyAccessedAPIType": "NSPrivacyAccessedAPICategoryUserDefaults",
-            "NSPrivacyAccessedAPITypeReasons": ["CA92.1"]
+            "NSPrivacyAccessedAPITypeReasons": [
+              "CA92.1"
+            ]
           },
           {
             "NSPrivacyAccessedAPIType": "NSPrivacyAccessedAPICategoryFileTimestamp",
-            "NSPrivacyAccessedAPITypeReasons": ["C617.1"]
+            "NSPrivacyAccessedAPITypeReasons": [
+              "C617.1"
+            ]
           },
           {
             "NSPrivacyAccessedAPIType": "NSPrivacyAccessedAPICategorySystemBootTime",
-            "NSPrivacyAccessedAPITypeReasons": ["35F9.1"]
+            "NSPrivacyAccessedAPITypeReasons": [
+              "35F9.1"
+            ]
           },
           {
             "NSPrivacyAccessedAPIType": "NSPrivacyAccessedAPICategoryDiskSpace",
-            "NSPrivacyAccessedAPITypeReasons": ["E174.1"]
+            "NSPrivacyAccessedAPITypeReasons": [
+              "E174.1"
+            ]
           }
         ]
       },
@@ -69,7 +77,7 @@
       [
         "@react-native-google-signin/google-signin",
         {
-          "iosUrlScheme": "com.googleusercontent.apps.REPLACE_WITH_REVERSED_CLIENT_ID"
+          "iosUrlScheme": "com.googleusercontent.apps.550292169554-quqge5locvvkfkgcv2f9in4ka9spgd4h"
         }
       ],
       [
@@ -77,7 +85,11 @@
         {
           "cameraPermission": "Приложению нужен доступ к камере для сканирования штрихкодов пластинок"
         }
-      ]
+      ],
+      "@sentry/react-native",
+      "expo-notifications",
+      "expo-font",
+      "expo-web-browser"
     ],
     "experiments": {
       "typedRoutes": true
@@ -88,8 +100,8 @@
       "devApiUrl": "https://api.vinyl-vertushka.ru/api",
       "sentryDsn": "",
       "amplitudeApiKey": "",
-      "googleWebClientId": "",
-      "googleIosClientId": "",
+      "googleWebClientId": "550292169554-d0nfo6gmsidmmrooci4iiftcp77jqpgj.apps.googleusercontent.com",
+      "googleIosClientId": "550292169554-quqge5locvvkfkgcv2f9in4ka9spgd4h.apps.googleusercontent.com",
       "router": {},
       "eas": {
         "projectId": "a603ba4b-61d4-4179-9384-e5f3ed4e4bca"

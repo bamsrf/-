@@ -27,8 +27,8 @@
   "submit": {
     "production": {
       "ios": {
-        "ascAppId": "REPLACE_WITH_APP_STORE_CONNECT_APP_ID",
-        "appleTeamId": "REPLACE_WITH_APPLE_TEAM_ID"
+        "ascAppId": "6774999020",
+        "appleTeamId": "G47JLHB869"
       },
       "android": {
         "serviceAccountKeyPath": "./google-services.json",
