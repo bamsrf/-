@@ -411,7 +411,11 @@ export const useSearchStore = create<SearchState>((set, get) => ({
         correctedQuery,
       };
 
-      useCacheStore.getState().setSearch(cacheKey, searchResult);
+      // Не кешируем пустую выдачу: при деградации Discogs бэкенд может отдать
+      // пустой результат — закешировав, залипли бы на «ничего не найдено» весь TTL.
+      if (searchResult.results.length > 0 || searchResult.artistResults.length > 0) {
+        useCacheStore.getState().setSearch(cacheKey, searchResult);
+      }
 
       set({
         ...searchResult,

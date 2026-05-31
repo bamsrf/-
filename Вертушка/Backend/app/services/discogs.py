@@ -804,9 +804,13 @@ class DiscogsService:
             page=pagination.get("page", page),
             per_page=pagination.get("per_page", per_page)
         )
-        resp_dict = response.model_dump()
-        await cache.set("search_master", ck, resp_dict, TTL_SEARCH)
-        await save_to_search_cache("master", params, resp_dict)
+        # Не кешируем пустую выдачу: Discogs под нагрузкой/rate-limit нередко
+        # отдаёт 200 с пустым массивом вместо 429. Закешировав это, мы бы залипали
+        # на «ничего не найдено» весь TTL даже после восстановления Discogs.
+        if results:
+            resp_dict = response.model_dump()
+            await cache.set("search_master", ck, resp_dict, TTL_SEARCH)
+            await save_to_search_cache("master", params, resp_dict)
         return response
 
     async def search_releases(
@@ -888,9 +892,12 @@ class DiscogsService:
             page=pagination.get("page", page),
             per_page=pagination.get("per_page", per_page)
         )
-        resp_dict = response.model_dump()
-        await cache.set("search_releases", ck, resp_dict, TTL_SEARCH)
-        await save_to_search_cache("releases", params, resp_dict)
+        # Не кешируем пустую выдачу (см. search_masters): защита от залипания на
+        # пустом ответе Discogs при rate-limit/деградации.
+        if results:
+            resp_dict = response.model_dump()
+            await cache.set("search_releases", ck, resp_dict, TTL_SEARCH)
+            await save_to_search_cache("releases", params, resp_dict)
         return response
 
     async def get_master(self, master_id: str) -> MasterRelease:
@@ -1074,9 +1081,15 @@ class DiscogsService:
             page=pagination.get("page", page),
             per_page=pagination.get("per_page", per_page)
         )
-        resp_dict = response.model_dump()
-        await cache.set("search_artist", ck, resp_dict, TTL_SEARCH)
-        await save_to_search_cache("artists", params, resp_dict)
+        # Кешируем по сырому ответу Discogs, а не по отфильтрованным results:
+        # results может легитимно опустеть после фильтра псевдонимов/без-thumb,
+        # хотя Discogs реально что-то вернул — это валидно кешировать. Но если
+        # Discogs отдал пустоту целиком (rate-limit/деградация) — не кешируем,
+        # чтобы не залипать на «ничего не найдено».
+        if data.get("results"):
+            resp_dict = response.model_dump()
+            await cache.set("search_artist", ck, resp_dict, TTL_SEARCH)
+            await save_to_search_cache("artists", params, resp_dict)
         return response
 
     async def get_artist(self, artist_id: str) -> Artist:

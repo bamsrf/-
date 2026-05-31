@@ -1233,7 +1233,6 @@ async def search_masters(
     Поиск мастер-релизов в Discogs.
     Не требует авторизации.
     """
-    response.headers["Cache-Control"] = "public, max-age=300"
     discogs = DiscogsService()
 
     try:
@@ -1242,6 +1241,10 @@ async def search_masters(
             page=page,
             per_page=per_page
         )
+        # Кешируем на CDN только непустую выдачу — пустой ответ при деградации
+        # Discogs не должен залипать в HTTP-кеше.
+        if results.results:
+            response.headers["Cache-Control"] = "public, max-age=300"
         return results
     except Exception as e:
         raise HTTPException(
@@ -1268,7 +1271,6 @@ async def search_releases(
     Поиск конкретных релизов с фильтрами в Discogs.
     Не требует авторизации.
     """
-    response.headers["Cache-Control"] = "public, max-age=300"
     discogs = DiscogsService()
 
     try:
@@ -1285,6 +1287,9 @@ async def search_releases(
         await _enrich_search_results_with_rarity(
             results.results, db, id_attr="release_id", format_attr="format"
         )
+        # Кешируем на CDN только непустую выдачу (см. search_masters).
+        if results.results:
+            response.headers["Cache-Control"] = "public, max-age=300"
         return results
     except Exception as e:
         raise HTTPException(
@@ -1738,7 +1743,6 @@ async def search_artists(
     Поиск артистов в Discogs.
     Не требует авторизации.
     """
-    response.headers["Cache-Control"] = "public, max-age=300"
     discogs = DiscogsService()
 
     try:
@@ -1749,6 +1753,11 @@ async def search_artists(
         )
         for artist in results.results:
             artist.name = clean_artist_name(artist.name) or artist.name
+        # Кешируем на CDN только когда Discogs реально что-то вернул (total>0).
+        # results может быть пуст после фильтра псевдонимов при total>0 — это
+        # валидно кешировать; пустой total — деградация, не кешируем.
+        if results.total:
+            response.headers["Cache-Control"] = "public, max-age=300"
         return results
     except Exception as e:
         raise HTTPException(
